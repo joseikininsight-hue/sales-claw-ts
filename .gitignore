@@ -21,6 +21,12 @@ data/form-search-results.json
 data/search-result.json
 data/instructions-*.json
 data/form-patterns.json
+data/dashboard-server.lock
+data/*.lock
+
+# Electron runtime stdout/stderr captures (dev only)
+/electron-*.out
+/electron-*.err
 
 # Screenshots (user-generated)
 screenshots/
