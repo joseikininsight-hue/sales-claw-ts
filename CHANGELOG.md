@@ -1,5 +1,113 @@
 # Changelog
 
+## Unreleased (2.0.1 候補) — 公開準備 Phase 2
+
+**OSS 公開・配布のための深掘り監査と修正パス。**
+
+### セキュリティ
+- **依存脆弱性ゼロ達成**: `npm audit` で 5 件 (xlsx high×2 含む) → **0 件**
+  - `xlsx` を SheetJS CDN の patched 版に切替 (Prototype Pollution + ReDoS 解消)
+  - `npm` 依存を最新化 (picomatch high / ip-address moderate 等を解消)
+  - `esbuild` を最新化 (dev-only 脆弱性解消)
+
+### `package.json` メタデータ強化
+- `engines.node: ">=20"` を追加 (実行環境の明示)
+- `repository.url` を `git+https://github.com/joseikininsight-hue/sales-claw-ts.git` に設定
+- `bugs.url` を Issue tracker に設定
+- `homepage` を GitHub README に設定
+- `author` を空文字 → `"Sales Claw contributors"` に修正
+
+### 法的書類整備
+- **`PRIVACY.md` 新規** (5KB): プライバシー・データ取扱の包括的説明
+  - Sales Claw は完全ローカル動作 (運営側でデータ収集なし) を明示
+  - 外部 API 利用時の各 provider プライバシーポリシーへの導線
+  - ローカル保存データの場所一覧 (Win/macOS/Linux)
+  - 日本法 (特定電子メール法・個人情報保護法) ガイダンス
+  - GDPR / CAN-SPAM Act の参考言及
+  - DISCLAIMER (AS IS 提供、ユーザー責任)
+
+### LICENSE 更新
+- 著作権年: `2025` → `2025-2026` (2026 年版に対応)
+
+### ドキュメント整合性
+- `docs/release-parity-and-autoupdate.md` の stale 参照を修正:
+  - `joseikininsight-hue/sales-claw` → `joseikininsight-hue/sales-claw-ts`
+  - `verify-release-readiness.cjs` → `.ts (via tsx)`
+  - `dashboard-server.cjs` → `dashboard-server (now dist-ts/src/dashboard-server)`
+
+### 公開可能性検査結果
+- 実シークレット (API key / token) の漏洩: **0 件** (テスト用の placeholder のみ)
+- 個人情報 / ハードコードパス: **0 件** (公開連絡先 `abckeishi@gmail.com` のみ意図的)
+- TODO/FIXME/HACK/XXX 残骸: **0 件** (src/ 内)
+- 依存ライセンス互換性: 全て MIT / Apache-2.0 / Artistic-2.0 (MIT 互換)
+- ビルド検証: `verify:release` **41/41 checks**
+- typecheck: 0 errors / lint: 0 errors
+
+## Unreleased (2.0.1 候補)
+
+**TS化完成度を最大化 + OSS hygiene 整備の一括 PR。**
+
+### OSS hygiene 整備
+- **`SECURITY.md`** 新規: 脆弱性報告ポリシー (報告先・タイムライン・スコープ)
+- **`CODE_OF_CONDUCT.md`** 新規: Contributor Covenant 2.1 採用
+- **`.editorconfig`** 新規: エディタ間で改行・インデント・末尾改行を統一
+- **`.gitattributes`** 新規: LF/CRLF・バイナリ判定・linguist 設定
+- **`.github/ISSUE_TEMPLATE/bug_report.md`** + **`feature_request.md`** 新規
+- **`.github/PULL_REQUEST_TEMPLATE.md`** 新規: PR チェックリスト
+
+### ドキュメント更新
+- **`README.md`**: 2.0.0 リリースバッジ + ステータス追記
+- **`MIGRATION.md`**: TS化完了状況を一覧化 (src/ 100% TS など)
+- **`CONTRIBUTING.md`**: 63行 → 215行に充実 (開発フロー / コーディング規約 / プロジェクト構造 / リリース手順)
+- **`src/ai-runtime/pty-log.ts`**: 古い `@ts-nocheck` を示唆するコメント整理
+
+### scripts/*.cjs を *.ts に変換 (18 ファイル)
+- **`tsx`** を devDep 追加 (TypeScript ランタイム、chicken-egg なしで .ts 直接実行)
+- `scripts/*.cjs` 17 件 + `scripts/lib/png-mock.cjs` 1 件 → `*.ts`
+- `package.json::build` / `clean` / `dashboard:preview` / `dashboard:restart` /
+  `verify:*` を `tsx scripts/xxx.ts` 経由に書き換え
+- `.github/workflows/release.yml` の post-release verify も `npx tsx` に
+- 内部 `require('./lib/png-mock.cjs')` / `require('./seed-demo-data.cjs')` →
+  拡張子なしに更新 (tsx が .ts を自動解決)
+- `scripts/restart-dashboard.ts` の dashboard-server プロセス grep を
+  `dashboard-server\.(js|cjs)` に拡張 (新旧両対応)
+
+### Stage 2: as any 段階削減 (83 件)
+- `Record<string, any>` → `Record<string, unknown>` を 85件 → 60件 (−25)
+- `: any[]` → `: unknown[]` を 99件 → 54件 (−45)
+- `Promise<any>` → `Promise<unknown>` を 22件 → 9件 (−13)
+- 型エラーが出るファイル (dashboard-server / approval-artifacts / form-session-manager
+  / list-builder/extractor / local-toolchain / message-quality-gate /
+  official-site-resolver / routes/simple-api / settings-excel など) は revert し、
+  個別 PR で正しい narrow に置換予定
+
+### Stage 3: tsconfig 厳格化 (3 オプション追加)
+- `noFallthroughCasesInSwitch: true` — switch case fall-through バグ防止
+- `noImplicitReturns: true` — 関数の return 漏れ検出
+- `noImplicitOverride: true` — メソッド override 明示 強制
+- `useUnknownInCatchVariables: true` は 164 errors のため見送り (次回 PR)
+
+### Stage 4: dashboard-server.ts 分割 (proof-of-concept)
+- **`src/dashboard-lock.ts`** 新規 (約 100 行): lock ファイル I/O を切り出し
+  - `getDashboardLockFile` / `readDashboardLock` / `writeDashboardLock` /
+    `removeDashboardLock` (新規 helper) / `isProcessAlive`
+- `dashboard-server.ts` は 30 行削減、`require('./dashboard-lock')` で連携
+- `claimStandaloneDashboardLock` 等の状態管理はサーバー状態に密結合のため
+  dashboard-server.ts に残置 (proof-of-concept、残りは個別 PR で順次)
+
+### Stage 4.5: ブラウザコード型化の土台
+- **`tsconfig.browser.json`** 新規: `lib: ["DOM", "DOM.Iterable"]` + `isolatedModules` +
+  `noEmit` で型チェック専用
+- **`src/ui/client-scripts/browser/`** ディレクトリ + README 新規:
+  ブラウザ TS の本格切り出し作業の置き場所、今後の段階作業を明文化
+
+### 検証
+- `npm run typecheck`: **0 errors**
+- `npm run lint`: **0 errors** / 1059 warnings (前: 1129、Stage 2 で −70)
+- `npm run test:unit`: 全件パス
+- `npm run verify:release`: **41/41 checks**
+- 実機 Electron 起動 → port 3456 で正常応答確認済み
+
 ## 2.0.0 - 2026-05-14 (First Stable Public Release)
 
 **TypeScript 移植版の最初の安定リリース。autoUpdater が本番運用可能な状態。**
@@ -21,6 +129,32 @@
 ### 関連リポジトリ
 - 公式リポジトリ: https://github.com/joseikininsight-hue/sales-claw-ts
 - electron-builder.yml::publish.repo = `sales-claw-ts`
+
+### Browser client-scripts を TypeScript 化 (esbuild 統合)
+- **`src/ui/client-scripts/*.cjs` (11 ファイル, 4006 行) を全て `.ts` に変換**:
+  - `provider-icon-fix.ts` / `column-resizer.ts` / `update-check-controls.ts` /
+    `launch-crash-guard.ts` / `pagination.ts` / `sent-card-redesign.ts` /
+    `settings-redesign.ts` / `dashboard-analytics.ts` / `awaiting-card-redesign.ts` /
+    `cli-terminal.ts` / `dashboard.ts` (100K トークンの巨大ファイル含む)
+- **esbuild を devDep に追加 + `scripts/bundle-client-scripts.cjs` 新規**:
+  - `tsc` が `.ts` を `dist-ts/src/ui/client-scripts/*.js` にコンパイル
+  - その後 `esbuild` が `platform: node / format: cjs / target: node20` で整形
+  - sourcemap 付き、minify 無し (template literal 内の改行維持)
+  - 11 ファイル / 400ms 未満でビルド
+- **`scripts/postbuild-copy.cjs` 整理**: 旧 `.cjs` ミラーリング処理を廃止、
+  代わりに `dist-ts/` 配下の stale `.cjs` を自動削除する処理に置換
+- **`src/dashboard-server.ts` の require パス更新**: `./ui/client-scripts/xxx.cjs` →
+  `./ui/client-scripts/xxx` (拡張子なし、tsc 出力 `.js` を Node が自動解決)
+- 検証: `npm run build` 成功 / `npm run test:unit` 152件 全パス / Electron 起動して
+  http://127.0.0.1:3456 から 681KB の HTML が返り、`__providerIconFixInit` /
+  `pgn-bar` / `mt:colWidths:v1` 等の inline 注入 keyword を全部確認
+
+### TypeScript Migration Roadmap: Stage 4.5 を追加
+- `src/ui/client-scripts/*.ts` 内の template literal に閉じ込められた**ブラウザ JS
+  自体を真の TypeScript に切り出す**ロードマップを `docs/typescript-migration-roadmap.md`
+  に追加 (Stage 4.5 として記載)
+- 完了すれば DOM globals の型補完 / `tsconfig.browser.json` での `lib: ["DOM"]` 制約 /
+  esbuild の `bundle: true / platform: browser` でツリーシェイクが効くようになる
 
 ## 2.0.0-rc.1 - 2026-05-14 (OSS / Public Release 準備完了)
 

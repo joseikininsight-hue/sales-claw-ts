@@ -40,10 +40,10 @@ powershell -ExecutionPolicy Bypass -File scripts/install-latest-win.ps1 -AllUser
 
 ## What The Gate Enforces
 
-`scripts/verify-release-readiness.cjs` fails the build if:
+`scripts/verify-release-readiness.ts` (via `tsx`) fails the build if:
 
 - `package.json` and `package-lock.json` versions diverge
-- `electron-builder.yml` does not point to `joseikininsight-hue/sales-claw`
+- `electron-builder.yml` does not point to `joseikininsight-hue/sales-claw-ts`
 - `publishAutoUpdate: true` or `channel: latest` is missing
 - `local-test`, `${env.GH_OWNER}`, or `${env.GH_REPO}` remains in the update feed
 - Release workflow does not upload the installer, `.blockmap`, and `latest*.yml`
@@ -51,11 +51,11 @@ powershell -ExecutionPolicy Bypass -File scripts/install-latest-win.ps1 -AllUser
 - packaged `latest.yml` does not match the current package version
 - dev-only directories such as `.claude`, `.electron-userdata`, `.aidesigner`, `.code-review-graph`, or `dist` are packaged into the desktop app
 
-`scripts/verify-surface-parity.cjs` fails the build if:
+`scripts/verify-surface-parity.ts` (via `tsx`) fails the build if:
 
 - the operational dashboard no longer imports the shared UI bundles
 - the dashboard theme toggle or dark theme tokens disappear
-- preview stops loading `../src/dashboard-server.cjs`
+- preview stops loading `../dist-ts/src/dashboard-server`
 - Electron stops using the root dashboard server
 - local vendor assets are missing from the package filters
 
@@ -107,7 +107,7 @@ npm run verify:github
   ↓ 5秒後
 [electron-updater が GitHub Releases/latest.yml を fetch]
   ├─ owner: joseikininsight-hue
-  ├─ repo: sales-claw
+  ├─ repo: sales-claw-ts
   ├─ channel: latest
   └─ キャッシュなし (Cache-Control: no-cache)
   ↓

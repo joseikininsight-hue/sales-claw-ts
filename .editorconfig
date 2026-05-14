@@ -1,0 +1,29 @@
+# EditorConfig — https://editorconfig.org/
+# Sales Claw のエディタ間で改行・インデント・末尾改行を統一する。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Markdown は末尾空白を意図的に残すこと (改行のため)
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefile はタブインデント
+[Makefile]
+indent_style = tab
+
+# Windows shell scripts は CRLF が必要
+[*.{cmd,bat,ps1}]
+end_of_line = crlf
+
+# package-lock.json はツール管理
+[package-lock.json]
+indent_size = 2
+insert_final_newline = false

@@ -1,0 +1,44 @@
+# .gitattributes — LF/CRLF とバイナリ判定の統一
+
+# テキストはデフォルト LF (Windows ユーザでも commit 時に変換)
+* text=auto eol=lf
+
+# Windows-only シェルスクリプトは CRLF を保持
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# バイナリ (差分表示・改行変換を無効化)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.exe binary
+*.dll binary
+*.dmg binary
+*.AppImage binary
+*.node binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.mp3 binary
+*.mp4 binary
+*.webm binary
+
+# 言語別の linguist override (GitHub 統計用)
+# client-scripts は ブラウザ JS が混在するが TS として表示
+src/ui/client-scripts/**/*.ts linguist-language=TypeScript
+
+# ビルド成果物は GitHub 統計から除外
+dist-ts/** linguist-generated=true
+dist/** linguist-generated=true
+*.min.js linguist-generated=true

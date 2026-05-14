@@ -171,4 +171,4 @@ jobs:
       - name: Verify GitHub Releases latest.yml is reachable & non-empty
         run: |
           # latest.yml の 0KB チェック・CDN 疎通確認まで verify:github が自動でやってくれる
-          node scripts/verify-release-readiness.cjs --github
+          npx tsx scripts/verify-release-readiness.ts --github

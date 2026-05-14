@@ -106,26 +106,58 @@ Top 15 ファイル (any 件数の 70% を占める) から順に修正する。
 
 ## Stage 4: 構造の整理
 
-### outDir の分離
+### outDir の分離 ✅ 完了 (2.0.0)
 
-現状 `tsconfig.json` は `rootDir: "."` / `outDir: "."` で、`.ts` と `.js` が
-同じディレクトリに出力される。これは以下の問題がある:
+`tsconfig.json::outDir` を `"./dist-ts"` に変更済み。`.ts` ソースと `.js` ビルド
+成果物が別ディレクトリで分離されており、`git status` が綺麗な状態に保たれる。
 
-- hand-written `.cjs` ファイルと TS 出力 `.js` が見分けにくい
-- `git status` が build 後に汚れる
-- `.gitignore` ルールが複雑になる
+`scripts/postbuild-copy.cjs` で `package.json` を dist-ts/ にミラー。
+`scripts/bundle-client-scripts.cjs` で esbuild により `src/ui/client-scripts/*.ts`
+を `dist-ts/src/ui/client-scripts/*.js` に整形。
 
-**修正案**: `outDir: "dist-ts"` に変更し、参照を一括置換。
+### Stage 4.5: ブラウザ client-scripts の真の TypeScript 化
 
-影響範囲:
-- `package.json` の `main`, `start`, `dashboard` script
-- `electron-main.ts` 内の require パス (相対のまま動くが要確認)
-- `tsconfig.json` の `rootDir` / `outDir`
-- `.gitignore` に `dist-ts/` を追加
-- `electron-builder.yml` の `files` パターン
-- すべての `require('./xxx')` パス (現状 `src/xxx.js` 想定 → `dist-ts/src/xxx.js`)
+2.0.0 で `src/ui/client-scripts/*.cjs` → `*.ts` への rename と
+esbuild トランスパイル統合は完了したが、**ブラウザで実行される JS は
+依然として template literal 内の string** であり、型補完が効かない。
 
-これは独立 PR で実施する。実施前にバックアップ + 全テスト通過を保証すること。
+```ts
+// 現状: src/ui/client-scripts/pagination.ts
+const SCRIPT: string = `(function(){
+  const STORAGE_KEY = 'mt:colWidths:v1';   // <- ここは型補完されない
+  document.querySelector('#mt').addEventListener(...)
+})();`;
+module.exports = function renderPaginationScript(): string {
+  return SCRIPT;
+};
+```
+
+**ゴール**:
+```ts
+// 将来 (Stage 4.5):
+// src/ui/client-scripts/pagination/browser.ts  (ブラウザ実行コード本体)
+const STORAGE_KEY: string = 'mt:colWidths:v1';  // <- DOM types で完全に型補完
+document.querySelector<HTMLElement>('#mt')?.addEventListener('click', ...);
+
+// src/ui/client-scripts/pagination/index.ts  (サーバー側ラッパー)
+import bundledBrowserScript from './browser.bundled';  // esbuild output
+import { STYLE } from './style';
+export = function renderPaginationScript(): string {
+  return `<style>${STYLE}</style>${bundledBrowserScript}`;
+};
+```
+
+**必要な作業**:
+1. `tsconfig.browser.json` 新規 (`lib: ["DOM", "ES2022"]`, `module: "esnext"`)
+2. `scripts/bundle-client-scripts.cjs` を改修: `bundle: true / platform: 'browser' / format: 'iife'`
+3. 各 client-script を `xxx/browser.ts` + `xxx/style.ts` + `xxx/index.ts` に分割
+4. テンプレートリテラル内の文字列を `browser.ts` に物理移動
+5. グローバル汚染を防ぐため IIFE / Module パターンを統一
+6. CI で browser bundle のサイズ regression を見張る
+
+**優先度**: 中。短期は機能追加優先、Stage 2 (any 削減) と並行不可 (リファクタ衝突)。
+
+### dashboard-server.ts の分割 (9540 行)
 
 ### dashboard-server.ts の分割 (9540 行)
 
@@ -171,3 +203,4 @@ npm run typecheck && npm run lint && npm run test:unit
 | 日付 | 内容 |
 |---|---|
 | 2026-05-14 | 初版 (Stage 1 完了、Stage 2 計画) |
+| 2026-05-14 | 2.0.0 リリース: outDir 分離完了、client-scripts esbuild 統合、Stage 4.5 追加 |

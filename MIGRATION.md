@@ -1,6 +1,25 @@
 # TypeScript 移行ノート
 
-このプロジェクトは `C:\bp-outreach` (Sales Claw v1.2.111) を TypeScript へ書き直したコピー版です。
+このプロジェクトは `C:\bp-outreach` (Sales Claw v1.2.111 = CJS版) を
+TypeScript へ書き直した派生版です。
+
+## ステータス (2026-05-14, 2.0.0 リリース時点)
+
+**`src/` 配下は 100% TypeScript 化完了。** サーバーコード・ブラウザ
+client-scripts の全てが `.ts` で記述されています。
+
+| 範囲 | 状態 |
+|---|---|
+| `src/**/*.ts` | ✅ 100% TypeScript |
+| `electron-main.ts` | ✅ TypeScript (strict, `@ts-nocheck` なし) |
+| `src/ui/client-scripts/*.ts` | ✅ TypeScript (esbuild 統合済み、Stage 4.5 で内部本格化予定) |
+| `scripts/*.cjs` | 🟡 Node ビルドツールとして CJS 維持 (Stage 2 で `.ts` 化計画) |
+| `tests/*.test.cjs` | 🟡 Node 直接実行テストとして CJS 維持 |
+| `as any` / `: any` 使用 | 🟡 949 件 → 段階削減中 (詳細: [docs/typescript-migration-roadmap.md](./docs/typescript-migration-roadmap.md)) |
+
+リリース成果物: [GitHub Releases](https://github.com/joseikininsight-hue/sales-claw-ts/releases)
+
+詳細な変更内容: [CHANGELOG.md](./CHANGELOG.md)
 
 ## 移行完了範囲
 

@@ -4,26 +4,26 @@
   "description": "Automated B2B company outreach via web contact forms — TypeScript port (Electron main + dashboard server)",
   "main": "dist-ts/electron-main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/postbuild-copy.cjs",
+    "build": "tsc -p tsconfig.json && tsx scripts/bundle-client-scripts.ts && tsx scripts/postbuild-copy.ts",
     "build:watch": "tsc -p tsconfig.json --watch",
-    "clean": "node scripts/clean-build.cjs",
+    "clean": "tsx scripts/clean-build.ts",
     "rebuild": "npm run clean && npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "start": "npm run build && electron .",
     "start:fast": "electron .",
     "dashboard": "npm run build && node dist-ts/src/dashboard-server.js",
-    "dashboard:preview": "node scripts/preview-dashboard.cjs",
-    "dashboard:restart": "node scripts/restart-dashboard.cjs",
+    "dashboard:preview": "tsx scripts/preview-dashboard.ts",
+    "dashboard:restart": "tsx scripts/restart-dashboard.ts",
     "lint": "eslint src/ scripts/ tests/ electron-main.ts --ext .ts,.cjs,.js",
     "lint:fix": "npm run lint -- --fix",
     "test:unit": "npm run build && node tests/redact.test.cjs && node tests/settings-cache.test.cjs && node tests/mcp-config-helpers.test.cjs && node tests/spawn-env-sanitizer.test.cjs && node tests/analysis-cache.test.cjs && node tests/playwright-wrapper-syntax.test.cjs && node tests/dashboard-runtime.test.cjs",
     "test": "npm run test:unit && playwright test",
     "verify:unit": "npm run test:unit",
-    "verify:release": "npm run typecheck && npm run test:unit && node scripts/verify-release-readiness.cjs",
-    "verify:dist": "node scripts/verify-release-readiness.cjs --dist",
-    "verify:installed": "node scripts/verify-release-readiness.cjs --installed",
-    "verify:github": "node scripts/verify-release-readiness.cjs --github",
+    "verify:release": "npm run typecheck && npm run test:unit && tsx scripts/verify-release-readiness.ts",
+    "verify:dist": "tsx scripts/verify-release-readiness.ts --dist",
+    "verify:installed": "tsx scripts/verify-release-readiness.ts --installed",
+    "verify:github": "tsx scripts/verify-release-readiness.ts --github",
     "install:win": "powershell -ExecutionPolicy Bypass -File scripts/install-latest-win.ps1",
     "preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/preflight-ai.ps1",
     "clean:workspace": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-workspace.ps1",
@@ -51,18 +51,29 @@
     "typescript",
     "electron"
   ],
-  "author": "",
+  "author": "Sales Claw contributors",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joseikininsight-hue/sales-claw-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/joseikininsight-hue/sales-claw-ts/issues"
+  },
+  "homepage": "https://github.com/joseikininsight-hue/sales-claw-ts#readme",
   "dependencies": {
     "@playwright/mcp": "^0.0.70",
     "electron-updater": "^6.8.3",
     "fs-extra": "^10.1.0",
     "node-pty": "^1.1.0",
-    "npm": "^10.9.8",
+    "npm": "^11.14.1",
     "playwright": "^1.58.2",
     "universalify": "^2.0.1",
     "ws": "^8.20.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -73,9 +84,11 @@
     "@typescript-eslint/parser": "^8.20.0",
     "electron": "^42.0.1",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.3.0",
     "eslint-plugin-n": "^17.15.1",
     "eslint-plugin-promise": "^7.2.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },
   "build": {

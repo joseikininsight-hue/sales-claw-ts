@@ -1,7 +1,15 @@
 # Sales Claw
 
+[![Release](https://img.shields.io/github/v/release/joseikininsight-hue/sales-claw-ts?style=flat-square)](https://github.com/joseikininsight-hue/sales-claw-ts/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-100%25-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
+
 AI CLI を活用した企業問い合わせフォーム営業ツールです。
 ターゲット企業のWebサイトを分析し、カスタマイズされたメッセージを生成し、問い合わせフォームへの入力を支援します。
+
+> **2.0.0 (2026-05-14)**: TypeScript 完全移植版の初回安定リリース。`src/` 配下は
+> 100% TypeScript、サーバー側コードの型安全性が確立しました。
+> 詳細は [CHANGELOG](./CHANGELOG.md) を参照してください。
 
 最新バージョンは [GitHub Releases](https://github.com/joseikininsight-hue/sales-claw-ts/releases) を参照してください。
 
