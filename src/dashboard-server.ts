@@ -2273,7 +2273,13 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
   const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
   const playwrightMcp = localToolchain.getPlaywrightMcpCommandSpec();
   const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
-  const removeArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'remove', 'playwright'] : ['mcp', 'remove', 'playwright'];
+  // claude の remove は scope を明示しないと「user scope」の登録が残ったまま、
+  // 直後の add が "already exists in user config" で失敗する。
+  const removeArgs = normalized === 'gemini'
+    ? ['--debug', 'mcp', 'remove', 'playwright']
+    : normalized === 'claude'
+      ? ['mcp', 'remove', '--scope', 'user', 'playwright']
+      : ['mcp', 'remove', 'playwright'];
   const check: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
   const combined = `${check.stdout}\n${check.stderr}`;
 
@@ -2354,7 +2360,24 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
 
   const add: any = await runProviderCliCommand(normalized, addArgs, { timeout: 30000, env: cliOptions.env });
   if (!add.ok) {
-    const message = `${getProviderDisplayName(normalized)} で MCP Playwright の設定に失敗しました。${String(add.stderr || add.stdout || '').trim()}`;
+    // "already exists" / "duplicate" 等の冪等性エラーは success として扱う。
+    // 過去にユーザーが手動 registration した、または前回の Sales Claw 起動が
+    // 不完全に終了して登録だけ残った、というケースで Phase B が完全停止していた。
+    const stderrOut = String(add.stderr || add.stdout || '').trim();
+    const isAlreadyExists = /already\s+exists|duplicate|MCP\s+server\s+\w+\s+already/i.test(stderrOut);
+    if (isAlreadyExists) {
+      // 念のため list で実在確認 → playwright があれば configured 扱い
+      const verifyExisting: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
+      const verifyExistingOutput = `${verifyExisting.stdout}\n${verifyExisting.stderr}`;
+      if (verifyExisting.ok && /playwright/i.test(verifyExistingOutput)) {
+        appendDiagnosticEvent('mcp_playwright_already_exists_accepted', {
+          provider: normalized,
+          stderr: stderrOut.slice(0, 400),
+        });
+        return { ok: true, required: true, configured: true, alreadyExists: true };
+      }
+    }
+    const message = `${getProviderDisplayName(normalized)} で MCP Playwright の設定に失敗しました。${stderrOut}`;
     return { ok: false, required: true, configured: false, error: message };
   }
 

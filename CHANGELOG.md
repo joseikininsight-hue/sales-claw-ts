@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.0.7 - 2026-05-15 — Phase B 停止バグ修正 (MCP Playwright 「already exists」)
+
+**150 社まとめて投入したら Phase A (分析) は完了するが Phase B (フォーム入力) が永久に動かない致命バグの修正。**
+
+### 症状 (ユーザー報告)
+- 企業リストに 150 社追加
+- ダッシュボードで実行 → 「企業分析」「メッセージ作成」だけ延々と続く
+- フォーム入力が一向に始まらない
+
+### 診断ログ (`%APPDATA%\sales-claw-ts\runtime\data\dashboard-diagnostics.jsonl`)
+```
+22:54:12 managed_ai_form_fill_autostart
+22:55:11 ai_form_fill_not_ready
+         error: "Claude で MCP Playwright の設定に失敗しました。
+                 MCP server playwright already exists in user config"
+22:55:39 phase_a_batch_started (153 社)
+23:02:08 phase_a_batch_completed (139 社成功, 47 バッチ enqueue)
+23:02:08 managed_ai_batch_dispatch (最初のバッチ)
+23:02:08 ai_form_fill_internal_error: "Managed AI session is not running."
+       ← 以降ログ更新停止、47 バッチがキューに滞留
+```
+
+### 根本原因 (`src/dashboard-server.ts::ensureProviderPlaywrightMcp`)
+
+ユーザーが過去に手動で `claude mcp add playwright ...` を user scope に登録済みだった場合:
+1. Sales Claw は `mcp list` で playwright を検出
+2. 「実行パスが期待値と違う」と判定 (`registeredButValid = false`)
+3. **remove → re-add** を試みる
+4. 旧コードの remove は scope を指定していなかったため user scope の登録が消えず残存
+5. add が `"MCP server playwright already exists in user config"` で失敗
+6. `ensureProviderPlaywrightMcp` が `ok: false` を返す
+7. Phase B の autostart が「Playwright MCP 未準備」と判定して中止
+8. **Phase B は永久に走らず、47 バッチがキューで滞留**
+
+### 修正 (`src/dashboard-server.ts`)
+
+1. **`removeArgs` に scope 明示** (claude のみ):
+   - 旧: `['mcp', 'remove', 'playwright']`
+   - 新: `['mcp', 'remove', '--scope', 'user', 'playwright']`
+2. **add が "already exists" を返したら success として扱う** (idempotent):
+   - stderr が `already\s+exists` / `duplicate` / `MCP server X already` にマッチ
+   - その場合 `mcp list` で playwright の実在を再確認 → ok:true で返す
+   - 診断イベント `mcp_playwright_already_exists_accepted` を記録 (後追い用)
+
+これで:
+- 既存登録が valid → そのまま使う (従来通り)
+- 既存登録が stale → remove (scope 指定で確実) → 再 add
+- 再 add が「already exists」と言ったら → 既存を活かして success にする (新規動作、Phase B が止まらない)
+
+### ユーザーへの影響
+
+- v2.0.7 が auto-update で配信されると次回起動から自動修正
+- 起動後、stuck していた 47 バッチが「Recovery snapshot detected」として復活する場合あり (UI 上部のオレンジバナー「続きから / 破棄」で選択)
+- 「破棄」を選んで再度「実行」を押せば、150 社が正しく流れる
+- 1 バッチ (3社) あたり 5-10 分の form fill が走るため、150 社の完走には **5-8 時間程度**かかる想定
+
 ## 2.0.6 - 2026-05-14 — 個人情報・固有名の徹底匿名化 + メアド連絡先撤去
 
 **git tracked 全ファイルの 1 ファイル単位レビューで残っていた固有名・個人連絡先を完全撤去。**
