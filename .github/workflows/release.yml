@@ -96,6 +96,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # max-parallel: 1 で順次ビルド。
+      # 並列だと 3 OS が同時に gh release create v{version} を呼んで
+      # "already_exists" 422 race condition が起きる (v2.0.2 で実例あり)。
+      max-parallel: 1
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
 
