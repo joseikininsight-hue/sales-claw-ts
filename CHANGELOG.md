@@ -1,8 +1,72 @@
 # Changelog
 
+## 2.0.0 - 2026-05-14 (First Stable Public Release)
+
+**TypeScript 移植版の最初の安定リリース。autoUpdater が本番運用可能な状態。**
+
+### リリース成果物
+- Windows: `Sales-Claw-Setup-2.0.0.exe`
+- macOS: `Sales-Claw-2.0.0-arm64.dmg` / `Sales-Claw-2.0.0-x64.dmg`
+- Linux: `Sales-Claw-2.0.0-x86_64.AppImage`
+- update metadata: `latest.yml` / `latest-mac.yml` / `latest-linux.yml`
+
+### 仕組み
+- main へ push すると `.github/workflows/release.yml` が `package.json::version`
+  を読み取り、tag `v{version}` を自動作成
+- Windows / macOS / Linux 3 OS で electron-builder がインストーラをビルド
+- `--publish always` で GitHub Releases に上記アセットをアップロード
+- インストール済みアプリは起動 5 秒後 + 6 時間ごとに `latest.yml` を polling し、
+  新版があれば自動 DL → 「再起動で更新」ダイアログを表示
+
+### 関連リポジトリ
+- 公式リポジトリ: https://github.com/joseikininsight-hue/sales-claw-ts
+- electron-builder.yml::publish.repo = `sales-claw-ts`
+
 ## 2.0.0-rc.1 - 2026-05-14 (OSS / Public Release 準備完了)
 
 **最初のパブリックリリース候補。TypeScript 移植 + 公開可能化パッチ。**
+
+### Dashboard Port Lifecycle 修正 (「ネットワークに接続できません」の再発防止)
+
+過去に Sales Claw が `kill -9` 等で異常終了すると `dashboard-runtime.json` /
+`dashboard-server.lock` がゴミとして残置され、次回起動時に Electron renderer が
+**死亡 PID の古い port を読んで「ネットワークに接続できません」エラー**を
+出していた。これを根本的に解消する:
+
+- **`src/dashboard-runtime.ts`** 拡張:
+  - `DashboardRuntime` に `pid: number` フィールドを必須化
+  - `writeRuntime()` がデフォルトで `process.pid` を自動付与
+  - `isPidAlive(pid)` を export (`process.kill(pid, 0)` で生存確認)
+  - `isRuntimeStale(runtime)` を export (死亡 PID / 24h 経過 / 壊れた JSON を判定)
+  - `readRuntime()` で stale な runtime は自動的に除外 (port は live PID のものだけ返す)
+  - **`clearStaleRuntimes()`** 新規: primary + alternates の runtime.json を走査し、stale なものを実体削除
+- **`src/dashboard-server.ts`** 起動シーケンス改善:
+  - `claimStandaloneDashboardLock` の中で「死亡 PID lock」を検出したら **lock ファイルを実体削除**してから自分の lock を書く (旧: 上書きのみ)
+  - 削除イベントを diagnostics に `stale_dashboard_lock_cleaned` として記録
+  - lock 取得直後に `clearStaleRuntimes()` を呼び、stale runtime ファイルを一掃
+  - 削除イベントを diagnostics に `stale_dashboard_runtime_cleaned` として記録
+- **`tests/dashboard-runtime.test.cjs`** 拡張: PID 検証 / staleness 判定 / clearStaleRuntimes / readRuntime stale 除外を 21 件のテストでカバー
+- **`docs/dashboard-port-lifecycle.md`** 新規: 起動シーケンス・障害シナリオ・データディレクトリの違いを完全文書化
+
+実機検証 (`.electron-userdata/runtime/data/`):
+```jsonc
+// dashboard-runtime.json (NEW format)
+{
+  "bindHost": "127.0.0.1",
+  "host": "127.0.0.1",
+  "port": 3456,
+  "preferredPort": 3456,
+  "startedAt": "2026-05-14T06:49:17.439Z",
+  "url": "http://127.0.0.1:3456",
+  "pid": 38864   ← NEW
+}
+```
+
+起動ログ例:
+```
+[startup] removed stale dashboard-server.lock (dead pid=22032, startedAt=2026-05-14T06:33:04.712Z)
+[startup] cleaned 2 stale dashboard-runtime file(s): data/dashboard-runtime.json, data/dashboard-runtime.json
+```
 
 ### Programmatic Credit 対応 (2026-06-15 ポリシー)
 - **`src/spawn-env-sanitizer.ts`** (新規): `claude -p` ヘッドレス起動時に `ANTHROPIC_API_KEY` / `AWS_*` / `GOOGLE_*` / `OPENAI_API_KEY` 等 **22 種の課金リーク env を spawn options.env から削除**するサニタイザを導入。subscription credit 枠 (= 月額プラン) で課金される経路に切替
