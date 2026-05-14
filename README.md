@@ -178,41 +178,6 @@ Excel (.xlsx) または CSV ファイルにターゲット企業を記載しま�
 > 企業Aに問い合わせを送って
 ```
 
-## Web (Landing / Blog / Docs)
-
-`https://sales-claw.dev` は Next.js 16 App Router で実装されたランディング・ブログ・ドキュメントです。
-ソースは本リポジトリの `app/`, `components/`, `lib/`, `public/` に同居しますが、`electron-builder.yml` の
-`files` 設定で Electron 配布パッケージからは除外されており、Vercel ビルドだけで参照されます。
-
-### ローカル開発
-
-```bash
-npm run lp:dev      # http://localhost:3000 で Next.js dev サーバー
-```
-
-### Vercel デプロイ
-
-1. リポジトリを Vercel にインポート (Framework Preset: Next.js)
-2. 環境変数を Settings → Environment Variables に登録 (`NEXT_PUBLIC_GA_MEASUREMENT_ID`, `GITHUB_TOKEN`, `REVALIDATE_SECRET` など)
-3. ドメイン `sales-claw.dev` を割当て
-
-詳細は [`docs/vercel-deployment.md`](./docs/vercel-deployment.md) を参照してください。
-
-### 主要ルート
-
-| パス | 役割 |
-|---|---|
-| `/` | ランディング (Hero / Features / Pricing / FAQ / Download CTA) |
-| `/download` | GitHub Releases API から最新版を取得 (ISR `revalidate: 3600`) |
-| `/docs/*` | クイックスタート / 設定リファレンス / ワークフロー詳解 等 |
-| `/blog`, `/blog/[slug]` | AI 営業ノウハウ・リリースニュース |
-| `/about`, `/pricing`, `/contact`, `/authors/[handle]` | 会社情報・料金・お問い合わせ・著者プロフィール |
-| `/legal/terms`, `/legal/tokusho`, `/privacy` | 利用規約 / 特商法 / プライバシーポリシー |
-| `/sitemap.xml`, `/robots.txt` | SEO 用 |
-| `/api/revalidate` | リリース時に GitHub Actions から叩く ISR 再生成 |
-
----
-
 ## Release
 
 `v*` タグを push すると [release workflow](./.github/workflows/release.yml) が動き、GitHub Releases に各 OS 向けの成果物を公開します。

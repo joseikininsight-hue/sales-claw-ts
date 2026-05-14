@@ -1,0 +1,31 @@
+# CODEOWNERS — レビュー責任者の指定
+# https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+#
+# このファイルは PR レビュアーを自動アサインするためのものです。
+# 該当パスが変更された PR には、ここに記載されたユーザーがレビュアーとして
+# 自動アサインされます。
+
+# プロジェクト全体のデフォルトオーナー (最終決裁)
+* @joseikininsight-hue
+
+# 重要なリリース / セキュリティ関連
+/.github/workflows/                @joseikininsight-hue
+/.github/CODEOWNERS                @joseikininsight-hue
+/SECURITY.md                       @joseikininsight-hue
+/PRIVACY.md                        @joseikininsight-hue
+/LICENSE                           @joseikininsight-hue
+/electron-builder.yml              @joseikininsight-hue
+/electron-main.ts                  @joseikininsight-hue
+
+# ビルド・スクリプト
+/scripts/                          @joseikininsight-hue
+/package.json                      @joseikininsight-hue
+
+# Programmatic Credit / 課金安全機構
+/src/spawn-env-sanitizer.ts        @joseikininsight-hue
+/src/analysis-cache.ts             @joseikininsight-hue
+
+# Dashboard / ポート ライフサイクル
+/src/dashboard-server.ts           @joseikininsight-hue
+/src/dashboard-runtime.ts          @joseikininsight-hue
+/src/dashboard-lock.ts             @joseikininsight-hue
