@@ -516,6 +516,29 @@ void app.whenReady().then(async () => {
   createWindow();
 
   if (AUTO_UPDATE_ENABLED) {
+    // Stale な update-status.json をクリア:
+    // 前回起動時に v{X} を download → 再起動でインストール → 今この v{X} を実行中、
+    // という流れの場合、update-status.json には "downloaded" + version=X が残っており、
+    // ダッシュボードが「v{X} の準備完了 — 今すぐ再起動してインストール」を出し続ける。
+    // 既に当該バージョンを実行中なので "up-to-date" に補正してから動かす。
+    try {
+      if (fs.existsSync(UPDATE_STATUS_FILE)) {
+        const existing = JSON.parse(fs.readFileSync(UPDATE_STATUS_FILE, 'utf8'));
+        const staleStates = ['downloaded', 'downloading', 'available'];
+        if (existing && staleStates.includes(existing.state) &&
+            existing.version && String(existing.version) === String(APP_VERSION)) {
+          writeUpdateStatus({
+            state: 'up-to-date',
+            version: APP_VERSION,
+            remoteVersion: APP_VERSION,
+            checkReason: 'startup-reconciled',
+            lastCheckedAt: Date.now(),
+            message: `Already running v${APP_VERSION}; cleared stale "${existing.state}" banner from prior run.`,
+          });
+        }
+      }
+    } catch (_err) { /* best-effort, ignore parse errors */ }
+
     setTimeout(() => checkForUpdates('startup'), 5000);
     setInterval(() => checkForUpdates('periodic'), UPDATE_CHECK_INTERVAL_MS);
 

@@ -636,6 +636,20 @@ module.exports = function createSimpleApiRoutes(ctx) {
       const statusFile = resolveDataPath('update-status.json');
       if (fs.existsSync(statusFile)) {
         const raw = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+        // Stale state 自動補正:
+        // 直前の起動で「v2.0.X downloaded」のままアプリが再起動 → 新版インストール →
+        // 起動した瞬間は update-status.json がまだ "downloaded" を指している。
+        // しかし APP_VERSION === raw.version なら**既にそのバージョンを実行中**なので、
+        // バナーを「準備完了」ではなく「最新版」として返す。
+        // これをしないと「v2.0.4 の準備完了 — 今すぐ再起動してインストール」が
+        // 永久に出続ける (1 分後の polling まで自然に消えない場合がある)。
+        const STALE_DOWNLOADED_STATES = ['downloaded', 'downloading', 'available'];
+        if (raw && STALE_DOWNLOADED_STATES.includes(raw.state) &&
+            raw.version && String(raw.version) === String(APP_VERSION)) {
+          raw.state = 'up-to-date';
+          raw.message = `Already running v${APP_VERSION} — banner suppressed by API normalization.`;
+          raw.autoCorrectedFrom = 'downloaded-stale';
+        }
         jsonResponse(res, 200, { ok: true, buildSource: APP_BUILD_SOURCE, autoUpdateEnabled: AUTO_UPDATE_ENABLED, ...raw, appVersion: APP_VERSION });
       } else {
         jsonResponse(res, 200, { ok: true, state: 'unknown', appVersion: APP_VERSION, buildSource: APP_BUILD_SOURCE, autoUpdateEnabled: AUTO_UPDATE_ENABLED });

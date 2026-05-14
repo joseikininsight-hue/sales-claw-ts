@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.5 - 2026-05-14 — Update banner stale state 修正 + dismiss ボタン
+
+**「v2.0.X の準備完了 — 今すぐ再起動してインストール」が最新版でも消えない問題の修正。**
+
+### 問題
+ユーザーが v2.0.X へ自動更新後、起動した本人がもう v2.0.X を実行中なのに、
+ダッシュボード上部の緑バナーが「v2.0.X の準備完了 — 今すぐ再起動してインストール」を
+表示し続ける。`update-status.json` に古い `state: "downloaded"` が残っていたため。
+さらに**閉じることができない**ため、画面領域を圧迫していた。
+
+### 修正
+3 段階のフェールセーフで対処:
+
+1. **Electron 起動時の reconcile** (`electron-main.ts`):
+   - 起動時 `update-status.json` を読み、`state` が `downloaded`/`downloading`/`available` で
+     かつ `version === APP_VERSION` なら `state: "up-to-date"` に書き換える
+   - 1 度の起動でファイルそのものが正しい状態になる
+
+2. **API 側の自動補正** (`src/routes/simple-api.ts::/api/update-status`):
+   - レスポンス組み立て時に同じ条件チェック
+   - `update-status.json` を物理的に変更せず、レスポンスだけ補正
+   - 二重防御 (1) と (2) で確実にバナーが消える
+
+3. **UI 側のフォールバック + dismiss ボタン** (`src/ui/client-scripts/dashboard.ts`):
+   - クライアント側でも `appVersion === version` を比較してバナー抑止
+   - **`×` 閉じるボタン**追加: クリックで `window.__updateBannerDismissedAt = Date.now()` を記録、
+     1 時間は banner を再表示しない (タイムラグや別経路で stale state が来ても再表示されない)
+
+### 動作確認
+- 起動: update-status.json 物理書き換え → API/UI ともに最新表示
+- 同 version で API レスポンス: `state: "up-to-date"` + `autoCorrectedFrom: "downloaded-stale"`
+- バナーの × クリック → 即時消滅 + 1 時間 suppress
+
 ## 2.0.4 - 2026-05-14 — CLI / Playwright 検出ロジック修正
 
 **「AI CLI / Playwright の準備が必要です」誤表示の修正。**
