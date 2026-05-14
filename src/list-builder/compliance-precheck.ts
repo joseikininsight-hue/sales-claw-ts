@@ -84,7 +84,7 @@ function someMatch(text, patterns) {
 // フォーム自体の意図を強く示すスコープに絞る。
 function extractFormScopeText(html) {
   if (!html) return '';
-  const pieces: any[] = [];
+  const pieces: unknown[] = [];
 
   // <title>
   const titleMatch = html.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i);
@@ -118,7 +118,7 @@ function analyze(input) {
   const html = typeof input?.html === 'string' ? input.html : '';
   const status = typeof input?.statusCode === 'number' ? input.statusCode : 0;
 
-  const riskFlags: any[] = [];
+  const riskFlags: unknown[] = [];
   let blocked = false;
   let blockReason: any = null;
   let formType = 'unknown';
@@ -195,8 +195,8 @@ function analyze(input) {
 // 入力: robots.txt のテキスト
 // 出力: { disallowedPaths: string[], allowedPaths: string[], crawlDelay?: number }
 function parseRobotsTxt(text) {
-  const disallowedPaths: any[] = [];
-  const allowedPaths: any[] = [];
+  const disallowedPaths: unknown[] = [];
+  const allowedPaths: unknown[] = [];
   let crawlDelay: any = null;
 
   if (typeof text !== 'string' || !text) {

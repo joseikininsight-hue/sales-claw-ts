@@ -229,7 +229,7 @@ function appendEvent(state, previous, next, kind) {
  * @param {Partial<LiveMonitorEntry>} [patch] - 更新する項目
  * @returns {LiveMonitorEntry|null} 更新後のエントリ（serialize 済み）
  */
-function updateLiveMonitor(companyNo, patch: Record<string, any> = {}) {
+function updateLiveMonitor(companyNo, patch: Record<string, unknown> = {}) {
   const key = String(companyNo);
   const filePath = getLiveMonitorFile();
   const lockFile = acquireFileLock(filePath);
@@ -267,7 +267,7 @@ function updateLiveMonitor(companyNo, patch: Record<string, any> = {}) {
  * @param {Partial<LiveMonitorEntry>} [patch] - 終了時に上書きする項目
  * @returns {LiveMonitorEntry|null} 終了エントリ（serialize 済み）
  */
-function finishLiveMonitor(companyNo, patch: Record<string, any> = {}) {
+function finishLiveMonitor(companyNo, patch: Record<string, unknown> = {}) {
   const filePath = getLiveMonitorFile();
   const lockFile = acquireFileLock(filePath);
   try {

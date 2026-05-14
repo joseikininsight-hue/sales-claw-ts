@@ -152,7 +152,7 @@ function fetchText(targetUrl, options: Record<string, any> = {}, redirects = 3) 
     ...(options.headers || {}),
   };
 
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     if (redirects <= 0) {
       resolve('');
       return;
@@ -378,7 +378,7 @@ async function verifyCandidateOfficialSite(candidate, companyName, fetcher = def
 function withTimeout(promise, timeoutMs, fallbackValue) {
   return Promise.race([
     promise,
-    new Promise<any>((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs)),
+    new Promise<unknown>((resolve) => setTimeout(() => resolve(fallbackValue), timeoutMs)),
   ]);
 }
 

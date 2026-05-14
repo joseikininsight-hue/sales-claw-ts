@@ -277,7 +277,7 @@ function saveCommittedRecordArtifacts({ runId, targetNo, record }) {
 }
 
 // 全 run を一覧（メタ情報のみ）
-function listRuns(filter: Record<string, any> = {}) {
+function listRuns(filter: Record<string, unknown> = {}) {
   const runsDir = getRunsDir();
   if (!fs.existsSync(runsDir)) return [];
   const dirs = fs.readdirSync(runsDir).filter((d: any) => /^run_/.test(d));

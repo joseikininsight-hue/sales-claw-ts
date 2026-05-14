@@ -59,7 +59,7 @@ function evaluate({
   ownContext?: Record<string, any>;
   idealCustomer?: any;
   style?: any;
-  protectedPartners?: any[];
+  protectedPartners?: unknown[];
 } = {}) {
   if (!message || typeof message !== 'string') {
     return failure('reject', [{ name: 'message_present', severity: 'fatal', reason: 'message が空' }]);
@@ -69,7 +69,7 @@ function evaluate({
     return failure('reject', [{ name: 'min_length', severity: 'fatal', reason: `本文 ${trimmed.length} 字 (最低 50 字)` }]);
   }
 
-  const failures: any[] = [];
+  const failures: unknown[] = [];
 
   // 1. 事実引用検証
   // evidence_quotes が指定されている場合、最低 1 つの quote の主要部分が
@@ -245,7 +245,7 @@ function extractKeyTokens(quote) {
 
 function checkSettingsConsistency(message, ownContext: Record<string, any> = {}) {
   const profile = extractOwnProfile(ownContext);
-  const issues: any[] = [];
+  const issues: unknown[] = [];
   if (!message || typeof message !== 'string') return { pass: true, issues };
 
   const checks = [

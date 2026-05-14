@@ -284,7 +284,7 @@ async function analyzeCompanyLite(url, companyName, companyType) {
    */
   function fetchText(targetUrl, redirects = 3) {
     if (!isSafeUrl(targetUrl)) { return Promise.resolve(''); }
-    return new Promise<any>((resolve) => {
+    return new Promise<unknown>((resolve) => {
       if (redirects <= 0) { resolve(''); return; }
       const mod = targetUrl.startsWith('https') ? https : http;
       const req = mod.get(targetUrl, { timeout: 15000, lookup: safeLookup, headers: BROWSER_HEADERS }, (res) => {
@@ -675,7 +675,7 @@ async function main() {
         }
       : await Promise.race([
           analyzeCompanyLite(effectiveUrl, companyName, companyType),
-          new Promise<any>((resolve) => setTimeout(() => resolve({
+          new Promise<unknown>((resolve) => setTimeout(() => resolve({
             companyName, companyType: companyType || '', companyUrl: effectiveUrl || '', businessAreas: [], gaps: [],
             focusAreas: [], relevantPatterns: [], siteTextLength: 0, siteTextExcerpt: '', analysisMode: 'timeout',
           }), 60000)),

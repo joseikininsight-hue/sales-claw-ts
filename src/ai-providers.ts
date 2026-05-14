@@ -89,7 +89,7 @@ function getExecutableFallbackCandidates(providerId) {
   const userProfile = process.env.USERPROFILE || os.homedir();
   const localBin = path.join(userProfile, '.local', 'bin');
   const roamingNpm = path.join(appData, 'npm');
-  const candidates: any[] = [];
+  const candidates: unknown[] = [];
 
   provider.executableNames.forEach((name: any) => {
     candidates.push(path.join(localBin, name));
@@ -122,11 +122,11 @@ function hasAnyAuthFile(providerId) {
   return getAuthFiles(providerId).some((filePath: any) => fs.existsSync(filePath));
 }
 
-function buildLaunchArgs(providerId, mode = 'default', options: Record<string, any> = {}) {
+function buildLaunchArgs(providerId, mode = 'default', options: Record<string, unknown> = {}) {
   const provider = getProvider(providerId);
   const currentMode = typeof mode === 'string' && mode ? mode : provider.defaultMode;
   const model = typeof options.model === 'string' ? options.model.trim() : '';
-  const flags: any[] = [];
+  const flags: unknown[] = [];
 
   if (provider.id === 'claude') {
     if (currentMode === 'acceptEdits') flags.push('--permission-mode', 'acceptEdits');
@@ -164,7 +164,7 @@ function buildLaunchArgs(providerId, mode = 'default', options: Record<string, a
   return flags;
 }
 
-function buildHeadlessArgs(providerId, mode = 'auto', options: Record<string, any> = {}) {
+function buildHeadlessArgs(providerId, mode = 'auto', options: Record<string, unknown> = {}) {
   const provider = getProvider(providerId);
   const currentMode = typeof mode === 'string' && mode ? mode : provider.defaultMode;
   const model = typeof options.model === 'string' ? options.model.trim() : '';

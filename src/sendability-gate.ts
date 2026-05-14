@@ -86,7 +86,7 @@ function evaluate({ analysis, idealCustomer, protectedGroups }: { analysis?: any
   }
   const ic = normalizeIdealCustomer(idealCustomer);
   const normalizedProtectedGroups = normalizeProtectedGroups(protectedGroups);
-  const failures: any[] = [];
+  const failures: unknown[] = [];
 
   // 0. 保護グループチェック（既存協業先・グループ会社）
   // 設定の protected_groups に含まれる会社名パターンが companyName / siteText に
@@ -350,7 +350,7 @@ function normalizeProtectedGroups(groups) {
   return groups
     .filter((g: any) => g && typeof g === 'object' && String(g.name || '').trim())
     .map((g: any) => {
-      const patterns: any[] = [];
+      const patterns: unknown[] = [];
       if (g.name) patterns.push(String(g.name));
       if (Array.isArray(g.match_patterns)) patterns.push(...g.match_patterns);
       if (Array.isArray(g.patterns)) patterns.push(...g.patterns);

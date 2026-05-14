@@ -110,7 +110,7 @@ function hasCommitBlockingRisk(candidate) {
 }
 
 function buildTargetListPayload(candidate, runId) {
-  const notes: any[] = [];
+  const notes: unknown[] = [];
   if (Array.isArray(candidate.fitReasons) && candidate.fitReasons.length > 0) {
     notes.push(candidate.fitReasons.join(' / '));
   }
@@ -529,7 +529,7 @@ module.exports = function createListBuilderRoutes(ctx) {
 
       const recordIdSet = new Set(recordIds.map(String));
       let appended = 0, skippedDuplicate = 0, flaggedSimilar = 0, skippedBlocked = 0, appendFailed = 0;
-      const duplicateDetails: any[] = [];
+      const duplicateDetails: unknown[] = [];
       const threshold = settings.getListBuilderConfig?.()?.dedupeThreshold || 0.9;
       const supList = suppression.loadSuppressionList();
       const existingRecords = buildExistingRecords(readTargetList, getAllHistorySummary);
@@ -632,7 +632,7 @@ module.exports = function createListBuilderRoutes(ctx) {
   // GET /api/list-builder/runs
   function handleListRuns(req, res, searchParams) {
     try {
-      const filter: Record<string, any> = {};
+      const filter: Record<string, unknown> = {};
       const status = searchParams && searchParams.get('status');
       const mode = searchParams && searchParams.get('mode');
       // 列挙値以外は無視 (任意文字列が listRuns に渡らないようにする)
@@ -717,7 +717,7 @@ module.exports = function createListBuilderRoutes(ctx) {
 
   function handleListSuppressions(req, res, searchParams) {
     try {
-      const filter: Record<string, any> = {};
+      const filter: Record<string, unknown> = {};
       const type = searchParams && searchParams.get('type');
       const reason = searchParams && searchParams.get('reason');
       if (type) filter.type = type;

@@ -449,7 +449,7 @@ class FormSessionManager {
     const raw: any = await session.view.webContents.executeJavaScript(`
       (function () {
         const escapeCSS = (str) => str.replace(/([!"#$%&'()*+,./:;<=>?@[\\]^{|}~])/g, '\\\\$1');
-        const fields: any[] = [];
+        const fields: unknown[] = [];
         const inputs = document.querySelectorAll('input, textarea, select');
 
         inputs.forEach((el: any) => {
@@ -550,7 +550,7 @@ class FormSessionManager {
     const session = this._sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-    const results: any[] = [];
+    const results: unknown[] = [];
 
     for (const { selector, value, type } of mappings) {
       if (!selector || value == null) continue;

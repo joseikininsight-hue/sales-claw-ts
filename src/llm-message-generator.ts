@@ -25,7 +25,7 @@ const MAX_BUFFER_BYTES = 256 * 1024;
 /**
  * Prompt injection 緩和。詳細は llm-site-analyzer.cjs::sanitizePromptInput と同等。
  */
-function sanitizePromptInput(value, options: Record<string, any> = {}) {
+function sanitizePromptInput(value, options: Record<string, unknown> = {}) {
   if (value == null) return '';
   let s = typeof value === 'string' ? value : String(value);
   s = s.replace(/[ --]/g, '');
@@ -117,7 +117,7 @@ async function generateMessageWithCli({
  * - 守秘違反検出のための禁止リスト
  */
 function buildGeneratorPrompt({ targetProfile, ownContext, idealCustomer, style }) {
-  const parts: any[] = [];
+  const parts: unknown[] = [];
   parts.push('あなたは経験豊富な BtoB 営業のプロです。問い合わせフォーム経由で送る短い文面を 1 通だけ書いてください。');
   parts.push('');
   parts.push('# 普遍的原則 (業界を問わない)');
@@ -266,7 +266,7 @@ function appendBuffer(current, chunk, mode) {
 }
 
 function runCliHeadless({ providerId, executablePath, prompt, timeoutMs, model = '', providerHomeDir = '' }) {
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     let args;
     let bufferMode = 'both';
     const modelArg = typeof model === 'string' && model.trim() ? model.trim() : '';
@@ -367,7 +367,7 @@ function extractMessageFromCliOutput(text) {
   // Codex --json は line-by-line JSON。各 event の type=='item.completed' で
   // item.item_type=='agent_message' のものに content[].text を取り出す。
   if (body.startsWith('{') && body.includes('"item_type"')) {
-    const messages: any[] = [];
+    const messages: unknown[] = [];
     body.split(/\r?\n/).forEach((line: any) => {
       const trimmed = line.trim();
       if (!trimmed.startsWith('{')) return;

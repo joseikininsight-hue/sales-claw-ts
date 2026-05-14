@@ -59,7 +59,7 @@ function defaultHttpFetch(targetUrl, opts: Record<string, any> = {}) {
     });
   };
 
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     let parsed;
     try { parsed = new URL(targetUrl); }
     catch { return resolve({ ok: false, error: 'invalid URL' }); }
@@ -297,7 +297,7 @@ const CONTACT_LINK_PATTERNS = [
 
 function findContactLinks(html, baseUrl) {
   if (!html) return [];
-  const found: any[] = [];
+  const found: unknown[] = [];
   const seen = new Set<any>();
   const anchorRegex = /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]{0,200}?)<\/a>/gi;
   let m;

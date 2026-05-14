@@ -345,7 +345,7 @@ function parseFieldSheet(rows, defaultSection) {
 
 function parseListRows(rows, columns, mapper) {
   if (!rows || !rows.length) return null;
-  const parsed: any[] = [];
+  const parsed: unknown[] = [];
   rows.forEach((row: any) => {
     const entry: Record<string, any> = {};
     let hasValue = false;
@@ -368,7 +368,7 @@ function parseWorkbookBuffer(buffer) {
   }
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const parsedSections: Record<string, any> = {};
-  const applied: any[] = [];
+  const applied: unknown[] = [];
 
   const companyProfile = parseFieldSheet(
     readSheetRows(workbook, [SHEET_NAMES.companyProfile, 'CompanyProfile', 'Company Profile']),

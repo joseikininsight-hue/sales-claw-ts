@@ -34,7 +34,7 @@ function isSafeUrl(rawUrl) {
 
 function fetchText(targetUrl, redirects = 3) {
   if (!isSafeUrl(targetUrl)) return Promise.resolve('');
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     if (redirects <= 0) {
       resolve('');
       return;
@@ -103,7 +103,7 @@ function normalizeCandidateUrl(baseUrl, href) {
 }
 
 function extractLinks(html, baseUrl) {
-  const links: any[] = [];
+  const links: unknown[] = [];
   const seen = new Set<any>();
   const re = /<a\b[^>]*href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
   let match;

@@ -117,7 +117,7 @@ async function runPipeline({ mode, payload, runId: providedRunId, options = {} }
 
     // ---- Stage 2: Extractor ----
     onProgress(makeProgress(runId, 'extracting', candidates.length, 0));
-    const enriched: any[] = [];
+    const enriched: unknown[] = [];
     let extractedCount = 0;
     const fetchHtml = options.fetchHtml || extractor.defaultHttpFetch;
 
@@ -303,7 +303,7 @@ async function runDiscovery(mode, payload, options) {
 //
 // 既存 run の candidates から status='failed'/'blocked' のものを抜き出して再パイプライン。
 // 結果は元 run にマージする。
-async function retryFailed(runId, options: Record<string, any> = {}) {
+async function retryFailed(runId, options: Record<string, unknown> = {}) {
   const run = runManager.getRun(runId);
   if (!run) return { ok: false, error: 'run not found' };
   const candidates = runManager.loadCandidates(runId);

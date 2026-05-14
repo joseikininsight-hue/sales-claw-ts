@@ -126,7 +126,7 @@ async function enforceRateLimit(hostname: string, minIntervalMs: number | undefi
   const last = lastRequestAt.get(hostname) ?? 0;
   const elapsed = Date.now() - last;
   if (elapsed < minIntervalMs) {
-    await new Promise<any>((resolve) => setTimeout(resolve, minIntervalMs - elapsed));
+    await new Promise<unknown>((resolve) => setTimeout(resolve, minIntervalMs - elapsed));
   }
   lastRequestAt.set(hostname, Date.now());
 }

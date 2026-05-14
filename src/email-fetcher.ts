@@ -133,7 +133,7 @@ async function fetchEmails() {
 
     console.log('  取得: ' + emailList.length + '件');
 
-    const detailedEmails: any[] = [];
+    const detailedEmails: unknown[] = [];
     const existingData = loadEmails();
     const existingIds = new Set(existingData.emails.map(e => e.id));
 
@@ -181,7 +181,7 @@ async function fetchEmails() {
     }
 
     const allEmails = [...detailedEmails, ...existingData.emails];
-    const unique: any[] = [];
+    const unique: unknown[] = [];
     const seen = new Set<any>();
     for (const e of allEmails) {
       if (!seen.has(e.id)) {

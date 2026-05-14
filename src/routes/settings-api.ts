@@ -165,13 +165,13 @@ module.exports = function createSettingsApiRoutes(ctx) {
       if (val === null || val === undefined) return val;
       if (Array.isArray(val)) return val.map((v, i) => clone(v, String(i)));
       if (typeof val === 'object') {
-        const out: Record<string, any> = {};
+        const out: Record<string, unknown> = {};
         for (const k of Object.keys(val)) {
           // Section 全体をマスク (apiKeys 配下は中身全部 *** に)
           if (SENSITIVE_KEY_RE.test(k)) {
             const v = val[k];
             if (v && typeof v === 'object') {
-              const masked: Record<string, any> = {};
+              const masked: Record<string, unknown> = {};
               for (const subk of Object.keys(v)) {
                 masked[subk] = (typeof v[subk] === 'string' && v[subk].length > 0) ? '***' : v[subk];
               }
@@ -384,8 +384,8 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       const uniqueCompanyNos = Array.from(new Set(companyNos.map((value: any) => String(value))));
-      const deletedCompanies: any[] = [];
-      const skippedCompanies: any[] = [];
+      const deletedCompanies: unknown[] = [];
+      const skippedCompanies: unknown[] = [];
       const runtimeCompanyMap: Map<string, any> = new Map(loadData().companies.map((company: any) => [String(company.no), company]));
       for (const companyNo of uniqueCompanyNos) {
         let removed = deleteCompany(companyNo);

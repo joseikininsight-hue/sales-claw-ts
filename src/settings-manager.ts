@@ -296,7 +296,7 @@ function readSettingsFile(filePath) {
 interface SettingsCache {
   filePath: string | null;
   signature: string | null;
-  data: Record<string, any> | null;
+  data: Record<string, unknown> | null;
 }
 const settingsCache: SettingsCache = {
   filePath: null,
@@ -1037,7 +1037,7 @@ function hasApiKey(name) {
  */
 function getApiKeyStatus() {
   const keys = getApiKeys();
-  const result: Record<string, any> = {};
+  const result: Record<string, unknown> = {};
   for (const name of Object.keys(keys)) {
     result[name] = typeof keys[name] === 'string' && keys[name].trim().length > 0;
   }

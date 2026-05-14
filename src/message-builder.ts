@@ -40,7 +40,7 @@ function applyLetterTemplate(message) {
   if (!template.enabled) return message;
 
   const body = String(message || '').trim();
-  const parts: any[] = [];
+  const parts: unknown[] = [];
   if (template.header) parts.push(template.header.trim());
   if (body) parts.push(body);
   if (template.footer) parts.push(template.footer.trim());
@@ -123,7 +123,7 @@ function getSecondaryStrength(gaps, primaryKey) {
 }
 
 function buildObservationPoints(companyName, companyType, businessAreas, focusAreas) {
-  const observations: any[] = [];
+  const observations: unknown[] = [];
   const focuses = uniqueStrings(focusAreas);
   const areaLabel = formatAreaList((businessAreas || []).map((area: any) => area && area.label), 2);
 
@@ -528,7 +528,7 @@ function buildMessagePrompt(analysis) {
       // 数値・事実系フィールド — これ以外の値を生成するのは禁止（ハルシネーション防止）
       facts: (() => {
         const profile = settings.getSection('companyProfile') || {};
-        const f: Record<string, any> = {};
+        const f: Record<string, unknown> = {};
         if (profile.employeeCount) f.employeeCount = profile.employeeCount;
         if (profile.established) f.established = profile.established;
         if (profile.capital) f.capital = profile.capital;
@@ -573,7 +573,7 @@ function buildMessagePrompt(analysis) {
 }
 
 function formatPromptText(ctx) {
-  const lines: any[] = [];
+  const lines: unknown[] = [];
   lines.push('以下の情報をもとに、この企業専用の問い合わせメッセージを生成してください。');
   lines.push('テンプレート感を出さず、相手企業を実際に調べて書いたと伝わる文面にしてください。');
   lines.push('メッセージ本文のみを出力してください（プロンプトへの応答や説明は不要）。');

@@ -63,8 +63,8 @@ function publicLookup(hostname, options, callback) {
   });
 }
 
-function fetchHtml(url, options: Record<string, any> = {}) {
-  return new Promise<any>((resolve) => {
+function fetchHtml(url, options: Record<string, unknown> = {}) {
+  return new Promise<unknown>((resolve) => {
     let parsed;
     try { parsed = new URL(url); }
     catch { return resolve({ ok: false, error: 'invalid URL' }); }
@@ -170,7 +170,7 @@ function getMetaContent(html, propertyName) {
   const tagRe = /<meta\b[^>]*>/gi;
   let match;
   while ((match = tagRe.exec(String(html || '')))) {
-    const attrs: Record<string, any> = {};
+    const attrs: Record<string, unknown> = {};
     const attrRe = /([\w:-]+)\s*=\s*(["'])(.*?)\2/g;
     let attr;
     while ((attr = attrRe.exec(match[0]))) {
@@ -222,9 +222,9 @@ function nameMatches(companyName, identifiers, hostname) {
  * @param {function} [options.onProgress] (done, total)
  * @returns {Promise<{ checked, issues: Array<{no, name, url, type, severity, reason}> }>}
  */
-async function validateTargetList(targets, options: Record<string, any> = {}) {
+async function validateTargetList(targets, options: Record<string, unknown> = {}) {
   const list = Array.isArray(targets) ? targets : [];
-  const issues: any[] = [];
+  const issues: unknown[] = [];
   let done = 0;
 
   // 1.2.92 F2: 重複 No. 検出

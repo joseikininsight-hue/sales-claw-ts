@@ -51,7 +51,7 @@ function buildQueries(params) {
   const revenueRanges = Array.isArray(params.revenueRanges) ? params.revenueRanges : [];
   const keywords = Array.isArray(params.keywords) ? params.keywords : [];
 
-  const queries: any[] = [];
+  const queries: unknown[] = [];
 
   const industryList = industries.length > 0 ? industries : [''];
   const prefectureList = prefectures.length > 0 ? prefectures : [''];
@@ -59,7 +59,7 @@ function buildQueries(params) {
   for (const industry of industryList) {
     for (const prefecture of prefectureList) {
       if (queries.length >= MAX_CROSS_PRODUCT) break;
-      const parts: any[] = [];
+      const parts: unknown[] = [];
       if (prefecture) parts.push(prefecture);
       if (industry) parts.push(industry);
       parts.push('企業');
@@ -127,7 +127,7 @@ function buildLooseningSteps(params) {
 }
 
 function summarize(params) {
-  const bits: any[] = [];
+  const bits: unknown[] = [];
   if (params.prefectures?.length) bits.push(params.prefectures.join('/'));
   if (params.industries?.length) bits.push(params.industries.join('/'));
   if (params.employeeRanges?.length) bits.push('従業員' + params.employeeRanges.join(','));
@@ -156,7 +156,7 @@ function expandEmployeeRanges(ranges) {
 // opts:
 //   - searchInvoker: async (query) => { ok, results: Array<{title, url, snippet}> }
 //   - limit: payload.limit と同じ（無視されない）
-async function discover(payload, opts: Record<string, any> = {}) {
+async function discover(payload, opts: Record<string, unknown> = {}) {
   if (!payload || typeof payload !== 'object') {
     return { ok: false, error: 'payload required' };
   }
@@ -166,9 +166,9 @@ async function discover(payload, opts: Record<string, any> = {}) {
     return { ok: false, error: 'searchInvoker (SerpApi等) is required' };
   }
 
-  const collected: any[] = [];
+  const collected: unknown[] = [];
   const seenUrls = new Set<any>();
-  const loosenedConditions: any[] = [];
+  const loosenedConditions: unknown[] = [];
 
   const steps = buildLooseningSteps(payload);
 

@@ -28,7 +28,7 @@ const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
  * Build the prompt that instructs the CLI agent to discover companies and
  * return ONLY a JSON array.
  */
-function buildAgentPrompt(query, limit, options: Record<string, any> = {}) {
+function buildAgentPrompt(query, limit, options: Record<string, unknown> = {}) {
   const safeLimit = Math.max(1, Math.min(Number(limit) || DEFAULT_LIMIT, MAX_LIMIT));
   const userQuery = String(query || '').trim();
   const extraGuidance = options.extraGuidance ? `\n${options.extraGuidance}\n` : '';
@@ -72,7 +72,7 @@ function parseAgentOutput(rawText) {
   const text = String(rawText || '');
   if (!text.trim()) return { candidates: null, error: 'empty output', rawJson: null };
 
-  const candidates: any[] = [];
+  const candidates: unknown[] = [];
   // 1. Prefer fenced ```json ... ```
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fence) candidates.push(fence[1]);
@@ -105,7 +105,7 @@ function parseAgentOutput(rawText) {
  * Normalize raw agent records to CompanyRecord-shaped entries that the rest of
  * list-builder pipeline can consume (dedupe / qualification-scorer).
  */
-function normalizeAgentRecords(rawRecords, options: Record<string, any> = {}) {
+function normalizeAgentRecords(rawRecords, options: Record<string, unknown> = {}) {
   if (!Array.isArray(rawRecords)) return [];
   const now = new Date().toISOString();
   const sourceUrlFallback = options.sourceUrl || null;
@@ -174,7 +174,7 @@ async function runCliAgent({ query, limit, providerId = 'claude', mode = 'bypass
   const spawnSpec = ctx.buildCliCommandSpec(executable, headlessSpec.args);
   const env = ctx.buildBaseEnv(providerId);
 
-  return await new Promise<any>((resolve) => {
+  return await new Promise<unknown>((resolve) => {
     const startedAt = Date.now();
     let stdoutBuf = '';
     let stderrBuf = '';

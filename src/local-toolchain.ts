@@ -279,10 +279,10 @@ function buildToolEnv(baseEnv = process.env) {
   return env;
 }
 
-function runProcess(command, args: any[] = [], options: Record<string, any> = {}) {
+function runProcess(command, args: unknown[] = [], options: Record<string, any> = {}) {
   const timeoutMs = options.timeout || PROCESS_TIMEOUT_MS;
   const maxBuffer = options.maxBuffer || 4 * 1024 * 1024;
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     const child = spawn(command, args, {
       cwd: options.cwd || PROJECT_ROOT,
       env: options.env || process.env,
@@ -329,14 +329,14 @@ function buildEmbeddedNodeEnv(extraEnv: Record<string, any> = {}) {
   return env;
 }
 
-async function runEmbeddedNode(args: any[] = [], options: Record<string, any> = {}) {
+async function runEmbeddedNode(args: unknown[] = [], options: Record<string, any> = {}) {
   return runProcess(process.execPath, args, {
     ...options,
     env: buildEmbeddedNodeEnv(options.env),
   });
 }
 
-async function runEmbeddedNpm(args: any[] = [], options: Record<string, any> = {}) {
+async function runEmbeddedNpm(args: unknown[] = [], options: Record<string, any> = {}) {
   ensureToolchainFiles();
   return runEmbeddedNode([getNpmCliPath(), ...args], options);
 }
@@ -383,7 +383,7 @@ function findChromiumExecutable(root = getPlaywrightBrowsersDir()) {
     : process.platform === 'darwin'
       ? [['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
       : [['chrome-linux64', 'chrome'], ['chrome-linux', 'chrome']];
-  let entries: any[] = [];
+  let entries: unknown[] = [];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true })
       .filter((entry: any) => entry.isDirectory())
@@ -512,7 +512,7 @@ function getProviderExecutableCandidates(providerId) {
   }
   names.add(provider.id);
 
-  const candidates: any[] = [];
+  const candidates: unknown[] = [];
   for (const name of names) {
     if (!name) continue;
     candidates.push(path.join(binDir, name));

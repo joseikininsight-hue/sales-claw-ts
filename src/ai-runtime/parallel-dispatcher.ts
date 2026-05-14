@@ -56,7 +56,7 @@ const DEFAULT_STAGGER_MS = 30 * 1000;
  * @param {string}   [options.mode='auto']
  * @returns {Promise<{ok, slots: Array, totalCompanies, succeeded, failed}>}
  */
-async function runParallelBatch(companies, ctx, options: Record<string, any> = {}) {
+async function runParallelBatch(companies, ctx, options: Record<string, unknown> = {}) {
   const concurrency = Math.max(1, Math.min(3, Number(options.concurrency) || DEFAULT_CONCURRENCY));
   const configuredTimeoutMs = Number(options.timeoutMs);
   const configuredStaggerMs = Number(options.staggerMs);
@@ -85,7 +85,7 @@ async function runParallelBatch(companies, ctx, options: Record<string, any> = {
     mode,
   });
 
-  const delay = (ms) => new Promise<any>((resolve) => setTimeout(resolve, ms));
+  const delay = (ms) => new Promise<unknown>((resolve) => setTimeout(resolve, ms));
   const slotPromises = groups.map((groupCompanies, slotIdx) =>
     delay(slotIdx * staggerMs)
       .then(() => _runSlot(groupCompanies, slotIdx, ctx, { mode, timeoutMs }))
@@ -135,9 +135,9 @@ async function runParallelBatch(companies, ctx, options: Record<string, any> = {
   };
 }
 
-function _splitIntoGroups(companies: any[], n: number) {
+function _splitIntoGroups(companies: unknown[], n: number) {
   // 「1 company per slot」を最大限優先 = ラウンドロビン分配
-  const groups: any[][] = Array.from({ length: Math.min(n, companies.length) }, () => [] as any[]);
+  const groups: unknown[][] = Array.from({ length: Math.min(n, companies.length) }, () => [] as any[]);
   companies.forEach((c: any, i: number) => { groups[i % groups.length].push(c); });
   return groups;
 }
@@ -236,14 +236,14 @@ async function _runSlot(companies, slotIdx, ctx, options) {
   let stderrBuf = '';
   let resolved = false;
 
-  return new Promise<any>((resolve) => {
+  return new Promise<unknown>((resolve) => {
     const hasTerminalLog = (company) => (
       typeof ctx.hasCompanyTerminalLogSince === 'function'
         ? ctx.hasCompanyTerminalLogSince(company.no, startedAtMs)
         : false
     );
     const companiesWithoutTerminalLog = () => companies.filter((company: any) => !hasTerminalLog(company));
-    const markMissingCompaniesFailed = (reason, extra: Record<string, any> = {}) => {
+    const markMissingCompaniesFailed = (reason, extra: Record<string, unknown> = {}) => {
       const missing = companiesWithoutTerminalLog();
       if (missing.length > 0 && typeof ctx.markCompaniesFailed === 'function') {
         try {

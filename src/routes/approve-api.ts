@@ -207,7 +207,7 @@ module.exports = function createApproveRoutes(ctx) {
             ensureDataDir();
             const fbFile = resolveDataPath('skip-feedback.json');
             ensureParentDir(fbFile);
-            let fbData: any[] = [];
+            let fbData: unknown[] = [];
             try { fbData = JSON.parse(fs.readFileSync(fbFile, 'utf-8')); } catch {}
             fbData.push({ date: new Date().toISOString(), companyNo: companyNoNum, companyName, feedback });
             fs.writeFileSync(fbFile, JSON.stringify(fbData, null, 2), 'utf-8');

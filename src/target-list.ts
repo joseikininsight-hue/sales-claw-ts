@@ -181,8 +181,18 @@ function getFileTypeFromPath(targetPath, fallback = 'xlsx') {
 
 function toRelativeProjectPath(targetPath) {
   if (!targetPath) return '';
-  const relativePath = path.relative(PROJECT_ROOT, targetPath);
-  if (!relativePath || relativePath.startsWith('..')) return targetPath;
+  // 1.2.111+: 相対化基準は runtimeRoot に揃える (settings.getTargetListPath が
+  // runtimeRoot を基準に結合するため)。以前は PROJECT_ROOT を基準にしており、
+  // Electron dev (runtimeRoot=.electron-userdata/runtime) で書き込み時と読み出し時の
+  // 基準がズレて二重 prefix のパスを生成していた。
+  const settingsModule = require('./settings-manager');
+  const runtimeRoot = typeof settingsModule.getRuntimeRoot === 'function'
+    ? settingsModule.getRuntimeRoot()
+    : PROJECT_ROOT;
+  const relativePath = path.relative(runtimeRoot, targetPath);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return targetPath;
+  }
   return relativePath;
 }
 
@@ -218,7 +228,7 @@ function writeJsonAtomic(filePath, data) {
 }
 
 function pickExtendedTargetFields(companyData) {
-  const fields: Record<string, any> = {};
+  const fields: Record<string, unknown> = {};
   if (!companyData || typeof companyData !== 'object') return fields;
   for (const field of EXTENDED_TARGET_FIELDS) {
     if (!Object.prototype.hasOwnProperty.call(companyData, field)) continue;
@@ -326,7 +336,7 @@ function writeWorkbookBundle({ workbook, targetPath, fileType }) {
   XLSX.writeFile(workbook, targetPath);
 }
 
-function readWorkbookBundle(targetPath, options: Record<string, any> = {}) {
+function readWorkbookBundle(targetPath, options: Record<string, unknown> = {}) {
   const targetList = settings.getSection('targetList');
   const fileType = getFileTypeFromPath(targetPath, options.fileType || targetList.fileType || 'xlsx');
   const columnMapping = options.columnMapping || getColumnMapping();
@@ -469,7 +479,7 @@ function findCompaniesByNos(companyNos) {
 }
 
 function detectColumnMapping(headers) {
-  const detected: Record<string, any> = {};
+  const detected: Record<string, unknown> = {};
   (headers || []).forEach((header, index) => {
     const normalized = normalizeHeader(header);
     if (!normalized) return;
@@ -533,7 +543,7 @@ function selectImportSheet(workbook) {
 }
 
 function normalizeImportedCompanies(rows, columnMapping) {
-  const normalized: any[] = [];
+  const normalized: unknown[] = [];
   const usedNos = new Set<any>();
   let nextGeneratedNo = 1;
 
