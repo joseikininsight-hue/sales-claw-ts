@@ -383,20 +383,51 @@ function findChromiumExecutable(root = getPlaywrightBrowsersDir()) {
     : process.platform === 'darwin'
       ? [['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
       : [['chrome-linux64', 'chrome'], ['chrome-linux', 'chrome']];
-  let entries: unknown[] = [];
-  try {
-    entries = fs.readdirSync(root, { withFileTypes: true })
-      .filter((entry: any) => entry.isDirectory())
-      .map((entry: any) => path.join(root, entry.name))
-      .filter((entryPath: any) => /(?:^|[\\/])chromium-|(?:^|[\\/])chrome-for-testing-/.test(entryPath));
-  } catch (_) {
-    entries = [];
+
+  // 検索対象のルート: 引数 root + Playwright 標準パス + env で上書きされたパス
+  //   ユーザーが手動で `npx playwright install chromium` した場合、
+  //   ブラウザは Playwright のデフォルトパスに入る (sales-claw toolchain では無い)。
+  //   そちらも見ないと「Chromium 未インストール」と誤判定される。
+  const searchRoots = new Set<string>();
+  if (root) searchRoots.add(root);
+
+  // Playwright 標準パス
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    searchRoots.add(process.env.PLAYWRIGHT_BROWSERS_PATH);
   }
-  entries.sort().reverse();
-  for (const entry of entries) {
-    for (const parts of subpaths) {
-      const candidate = path.join(entry, ...parts);
-      if (fs.existsSync(candidate)) return candidate;
+  if (process.platform === 'win32') {
+    if (process.env.LOCALAPPDATA) {
+      searchRoots.add(path.join(process.env.LOCALAPPDATA, 'ms-playwright'));
+    }
+    if (process.env.USERPROFILE) {
+      searchRoots.add(path.join(process.env.USERPROFILE, 'AppData', 'Local', 'ms-playwright'));
+    }
+  } else if (process.platform === 'darwin') {
+    if (process.env.HOME) {
+      searchRoots.add(path.join(process.env.HOME, 'Library', 'Caches', 'ms-playwright'));
+    }
+  } else {
+    if (process.env.HOME) {
+      searchRoots.add(path.join(process.env.HOME, '.cache', 'ms-playwright'));
+    }
+  }
+
+  for (const searchRoot of searchRoots) {
+    let entries: unknown[] = [];
+    try {
+      entries = fs.readdirSync(searchRoot, { withFileTypes: true })
+        .filter((entry: any) => entry.isDirectory())
+        .map((entry: any) => path.join(searchRoot, entry.name))
+        .filter((entryPath: any) => /(?:^|[\\/])chromium-|(?:^|[\\/])chrome-for-testing-/.test(entryPath));
+    } catch (_) {
+      entries = [];
+    }
+    entries.sort().reverse();
+    for (const entry of entries) {
+      for (const parts of subpaths) {
+        const candidate = path.join(entry, ...parts);
+        if (fs.existsSync(candidate)) return candidate;
+      }
     }
   }
   return null;
@@ -513,6 +544,8 @@ function getProviderExecutableCandidates(providerId) {
   names.add(provider.id);
 
   const candidates: unknown[] = [];
+
+  // 1) Sales Claw 内蔵 toolchain (`<runtime>/tools/...`)
   for (const name of names) {
     if (!name) continue;
     candidates.push(path.join(binDir, name));
@@ -522,6 +555,58 @@ function getProviderExecutableCandidates(providerId) {
       candidates.push(path.join(binDir, `${name}.ps1`));
     }
   }
+
+  // 2) システム全域の npm-global / 既知のグローバルインストール先
+  //    ユーザーが `npm install -g @anthropic-ai/claude-code` 等で
+  //    システムにインストール済みの場合、こちらが先に見つかる。
+  //    これを見落とすと「CLI 入っていても準備が必要」と誤判定される。
+  const globalBinDirs: string[] = [];
+  if (process.platform === 'win32') {
+    if (process.env.APPDATA) globalBinDirs.push(path.join(process.env.APPDATA, 'npm'));
+    if (process.env.ProgramFiles) globalBinDirs.push(path.join(process.env.ProgramFiles, 'nodejs'));
+    if (process.env['ProgramFiles(x86)']) globalBinDirs.push(path.join(process.env['ProgramFiles(x86)'], 'nodejs'));
+  } else {
+    globalBinDirs.push('/usr/local/bin');
+    globalBinDirs.push('/usr/bin');
+    globalBinDirs.push('/opt/homebrew/bin');
+    if (process.env.HOME) {
+      globalBinDirs.push(path.join(process.env.HOME, '.npm-global', 'bin'));
+      globalBinDirs.push(path.join(process.env.HOME, '.nvm', 'versions', 'node'));
+    }
+  }
+  for (const dir of globalBinDirs) {
+    for (const name of names) {
+      if (!name) continue;
+      candidates.push(path.join(dir, name));
+      if (process.platform === 'win32' && !/\.(cmd|exe|ps1)$/i.test(name)) {
+        candidates.push(path.join(dir, `${name}.cmd`));
+        candidates.push(path.join(dir, `${name}.exe`));
+        candidates.push(path.join(dir, `${name}.ps1`));
+      }
+    }
+  }
+
+  // 3) `where` / `which` で PATH 解決 — 上記でカバーされない nvm 等にも対応
+  try {
+    const { execFileSync } = require('child_process');
+    const lookupCmd = process.platform === 'win32' ? 'where' : 'which';
+    for (const name of names) {
+      if (!name) continue;
+      try {
+        const out = execFileSync(lookupCmd, [String(name).replace(/\.(cmd|exe|ps1)$/i, '')], {
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 2000,
+          windowsHide: true,
+          encoding: 'utf8',
+        });
+        for (const line of String(out || '').split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (trimmed) candidates.push(trimmed);
+        }
+      } catch (_) { /* not found in PATH — fine */ }
+    }
+  } catch (_) { /* execFileSync unavailable — fall back to candidate paths only */ }
+
   return Array.from(new Set(candidates.map((entry: any) => path.resolve(entry))));
 }
 
@@ -617,12 +702,15 @@ async function probeAiToolchainStatus(providerId) {
   const provider = getProvider(normalizeProviderId(providerId));
   ensureToolchainFiles();
 
-  // CLI 検出
+  // CLI 検出 — 内蔵 toolchain + システム PATH + npm-global の三段検索
   const cliCandidates = getProviderExecutableCandidates(provider.id).filter((p: any) => fs.existsSync(p));
   const cliInstalled = cliCandidates.length > 0;
+  const cliExecutablePath = cliCandidates[0] || null;
+  const cliBundled = !!(cliExecutablePath && cliExecutablePath.includes(getToolchainRoot()));
 
-  // Chromium 検出
+  // Chromium 検出 — Sales Claw 内蔵 + Playwright 標準パスの両方を検索
   const chromium = findChromiumExecutable();
+  const chromiumBundled = !!(chromium && chromium.includes(getToolchainRoot()));
 
   // npm 内蔵モジュール検出 (新規インストール時に必要)
   let npmReady = false;
@@ -638,12 +726,15 @@ async function probeAiToolchainStatus(providerId) {
     providerLabel: provider.displayName,
     cli: {
       installed: cliInstalled,
-      executablePath: cliCandidates[0] || null,
+      executablePath: cliExecutablePath,
+      // システムグローバル(npm install -g 等)経由なら false、Sales Claw 内蔵 toolchain なら true
+      bundled: cliBundled,
       packageName: provider.installPackage,
     },
     browser: {
       installed: !!chromium,
       executablePath: chromium,
+      bundled: chromiumBundled,
       browsersDir: getPlaywrightBrowsersDir(),
     },
     npm: {

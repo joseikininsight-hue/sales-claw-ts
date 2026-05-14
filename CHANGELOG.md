@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.4 - 2026-05-14 — CLI / Playwright 検出ロジック修正
+
+**「AI CLI / Playwright の準備が必要です」誤表示の修正。**
+
+### 問題
+ユーザーがシステムグローバルに `npm install -g @anthropic-ai/claude-code` でインストール済みでも、
+あるいは Playwright を `npx playwright install chromium` で既に持っていても、
+ダッシュボードのトップに「AI CLI / Playwright の準備が必要です」バナーが表示され続けていた。
+「AI CLI を準備」ボタンを押すと Claude を再インストールしようとしてしまう。
+
+### 根本原因 (`src/local-toolchain.ts`)
+- `getProviderExecutableCandidates()` が **Sales Claw 内蔵 toolchain (`<runtime>/tools/bin/`) のみ** を検索
+- `findChromiumExecutable()` も **Sales Claw 内蔵 `<runtime>/tools/browsers/` のみ** を検索
+- 結果: システムグローバル / npm-global / Playwright 標準パスにある実体を見落としていた
+
+### 修正
+- **`getProviderExecutableCandidates()`**: 3 段階の検索に拡張
+  1. 既存: Sales Claw 内蔵 `<runtime>/tools/bin/`
+  2. 追加: グローバル npm の標準パス (`%APPDATA%\npm` / `/usr/local/bin` / `~/.npm-global/bin` 等)
+  3. 追加: `where` (Windows) / `which` (Unix) で PATH 解決 (nvm 等にも対応)
+- **`findChromiumExecutable()`**: 検索ルートを多重化
+  1. 既存: Sales Claw 内蔵 `<runtime>/tools/browsers/`
+  2. 追加: `PLAYWRIGHT_BROWSERS_PATH` env var
+  3. 追加: Playwright 標準パス
+     - Windows: `%LOCALAPPDATA%\ms-playwright`
+     - macOS: `~/Library/Caches/ms-playwright`
+     - Linux: `~/.cache/ms-playwright`
+- **`probeAiToolchainStatus()` の返り値**に `cli.bundled` / `browser.bundled` を追加
+  - true = Sales Claw 内蔵 toolchain から検出、false = システムグローバル経由
+
+### 動作確認
+内蔵 toolchain を退避した状態でも、システムグローバルの `claude.cmd` と Playwright 標準パスの
+Chromium を正しく検出 → `ok: true` で「準備が必要」バナーが表示されなくなることを実機検証済み。
+
+```text
+Without bundled toolchain:
+  cli.installed:  true (bundled: false, path: %APPDATA%\npm\claude)
+  browser.installed: true (bundled: false, path: %LOCALAPPDATA%\ms-playwright\chromium-1217\...)
+  ok: true
+```
+
 ## 2.0.3 - 2026-05-14 — 個人情報・内部資料の漏洩防止 (二重防御)
 
 **ローカル開発ノート (gitignore 済) を installer に紛れさせない多層防御。**
