@@ -12,8 +12,9 @@ import * as path from 'path';
 import { resolveDataPath, ensureDataDir } from '../data-paths';
 import * as logWriter from '../log-writer';
 
-// 移行中のため batch-utils / redact は @ts-nocheck 状態 (まだ ES module ではない)。
-// require() で読み込んで明示的に型を付ける。
+// batch-utils と redact は循環依存を避けるため require() で遅延読み込みする。
+// 両方とも .ts (2.0.0 で完全に TypeScript 化済み) なので、本当は import でも
+// 動くが、CJS の require ベースでも問題なく型解決される。
 interface BatchUtilsShape {
   stripAnsiCodes: (s: string) => string;
   [key: string]: unknown;

@@ -27,7 +27,7 @@ console.log('[demo] runtime dir:', DEMO_RUNTIME);
 console.log('[demo] port:', DEMO_PORT);
 
 // シードを投入 (毎回再投入するのでデモ後に汚れない)
-const { seedDemoData } = require('./seed-demo-data.cjs');
+const { seedDemoData } = require('./seed-demo-data');
 if (process.env.SALES_CLAW_FRESH_RESEED === '1' && fs.existsSync(DEMO_RUNTIME)) {
   try {
     fs.rmSync(DEMO_RUNTIME, { recursive: true, force: true });

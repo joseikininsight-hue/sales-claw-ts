@@ -69,17 +69,20 @@ function hotInvalidateUi() {
 // Each render is a thin wrapper so HOT mode picks up the latest module.
 // In production (HOT off) this is just one cached require lookup per call.
 const renderStyles = (...a) => require('./ui/styles')(...a);
-const renderDashboardScript = (...a) => require('./ui/client-scripts/dashboard.cjs')(...a);
-const renderAnalyticsScript = (...a) => require('./ui/client-scripts/dashboard-analytics.cjs')(...a);
-const renderColumnResizerScript = (...a) => require('./ui/client-scripts/column-resizer.cjs')(...a);
-const renderAwaitingCardRedesignScript = (...a) => require('./ui/client-scripts/awaiting-card-redesign.cjs')(...a);
-const renderSentCardRedesignScript = (...a) => require('./ui/client-scripts/sent-card-redesign.cjs')(...a);
-const renderCliTerminalScript = (...a) => require('./ui/client-scripts/cli-terminal.cjs')(...a);
-const renderLaunchCrashGuardScript = (...a) => require('./ui/client-scripts/launch-crash-guard.cjs')(...a);
-const renderUpdateCheckControlsScript = (...a) => require('./ui/client-scripts/update-check-controls.cjs')(...a);
-const renderPaginationScript = (...a) => require('./ui/client-scripts/pagination.cjs')(...a);
-const renderSettingsRedesignScript = (...a) => require('./ui/client-scripts/settings-redesign.cjs')(...a);
-const renderProviderIconFixScript = (...a) => require('./ui/client-scripts/provider-icon-fix.cjs')(...a);
+// client-scripts は src/ui/client-scripts/*.ts (2.0.0 で .cjs から TS 化)。
+// tsc が dist-ts/src/ui/client-scripts/*.js にコンパイルし、esbuild が同所を
+// 整形する。require は拡張子なしで Node が .js を解決する。
+const renderDashboardScript = (...a: any[]) => require('./ui/client-scripts/dashboard')(...a);
+const renderAnalyticsScript = (...a: any[]) => require('./ui/client-scripts/dashboard-analytics')(...a);
+const renderColumnResizerScript = (...a: any[]) => require('./ui/client-scripts/column-resizer')(...a);
+const renderAwaitingCardRedesignScript = (...a: any[]) => require('./ui/client-scripts/awaiting-card-redesign')(...a);
+const renderSentCardRedesignScript = (...a: any[]) => require('./ui/client-scripts/sent-card-redesign')(...a);
+const renderCliTerminalScript = (...a: any[]) => require('./ui/client-scripts/cli-terminal')(...a);
+const renderLaunchCrashGuardScript = (...a: any[]) => require('./ui/client-scripts/launch-crash-guard')(...a);
+const renderUpdateCheckControlsScript = (...a: any[]) => require('./ui/client-scripts/update-check-controls')(...a);
+const renderPaginationScript = (...a: any[]) => require('./ui/client-scripts/pagination')(...a);
+const renderSettingsRedesignScript = (...a: any[]) => require('./ui/client-scripts/settings-redesign')(...a);
+const renderProviderIconFixScript = (...a: any[]) => require('./ui/client-scripts/provider-icon-fix')(...a);
 
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
@@ -322,9 +325,14 @@ function getSettingsFiles() {
   return Array.from(new Set([bootstrap, active].filter(Boolean).map((entry: any) => path.resolve(entry))));
 }
 
-function getDashboardLockFile() {
-  return resolveDataPath('dashboard-server.lock');
-}
+// Lock I/O は Stage 4 分割で src/dashboard-lock.ts に切り出した。
+// 排他制御の状態管理 (standaloneDashboardLockHeld / hooks) は依然ここに残置する。
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const dashboardLock = require('./dashboard-lock');
+const getDashboardLockFile = dashboardLock.getDashboardLockFile;
+const readDashboardLock = dashboardLock.readDashboardLock;
+const writeDashboardLock = dashboardLock.writeDashboardLock;
+const isProcessAlive = dashboardLock.isProcessAlive;
 
 function readJsonFileSafe(filePath: string, fallback: any = null) {
   try {
@@ -332,28 +340,6 @@ function readJsonFileSafe(filePath: string, fallback: any = null) {
   } catch (_) {
     return fallback;
   }
-}
-
-function readDashboardLock() {
-  const lockFile = getDashboardLockFile();
-  if (!fs.existsSync(lockFile)) return null;
-  return readJsonFileSafe(lockFile, null);
-}
-
-function isProcessAlive(pid) {
-  const normalized = Number(pid);
-  if (!Number.isFinite(normalized) || normalized <= 0) return false;
-  try {
-    process.kill(normalized, 0);
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function writeDashboardLock(payload) {
-  ensureDataDir();
-  fs.writeFileSync(getDashboardLockFile(), JSON.stringify(payload, null, 2), 'utf8');
 }
 
 function releaseStandaloneDashboardLock() {
@@ -4488,7 +4474,10 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
   const spawnEnv = stripSanitizerMeta(sanitizedEnv);
 
   return await new Promise<any>((resolve) => {
-    const child = spawn(exe, ['src/parallel-analysis.cjs', payload], {
+    // 1.2.111+: TS port 後の実行ファイルは dist-ts/src/parallel-analysis.js。
+    // 旧 src/parallel-analysis.cjs は存在しないため Cannot find module で
+    // Phase A が必ず失敗していた。
+    const child = spawn(exe, ['dist-ts/src/parallel-analysis.js', payload], {
       cwd: PROJECT_ROOT,
       env: spawnEnv,
       windowsHide: true,

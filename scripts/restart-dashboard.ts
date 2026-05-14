@@ -24,11 +24,11 @@ function stopDashboardProcesses() {
     execFileSync('powershell.exe', [
       '-NoProfile',
       '-Command',
-      "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'dashboard-server\\.cjs' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+      "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'dashboard-server\\.(js|cjs)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
     ], { stdio: 'ignore' });
     return;
   }
-  execFileSync('pkill', ['-f', 'dashboard-server\\.cjs'], { stdio: 'ignore' });
+  execFileSync('pkill', ['-f', 'dashboard-server\\.(js|cjs)'], { stdio: 'ignore' });
 }
 
 function startDashboardProcess() {

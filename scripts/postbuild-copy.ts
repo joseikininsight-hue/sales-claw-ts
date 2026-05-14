@@ -1,13 +1,17 @@
 'use strict';
 
 /**
- * tsc は .ts のみコンパイルし、.cjs / .json / その他リソースは出力先にコピーしない。
- * outDir: ./dist-ts への分離に伴い、dashboard-server.js が require する
- *   - src/ui/client-scripts/*.cjs  (手書きのブラウザスクリプト)
- *   - package.json                  (バージョン参照用)
- * を dist-ts 配下にミラーする postbuild step。
+ * tsc は .ts のみコンパイルし、.json / その他リソースは出力先にコピーしない。
+ * outDir: ./dist-ts への分離に伴い、以下を dist-ts 配下にミラーする postbuild step。
+ *   - package.json (simple-api.ts が require する)
  *
- * 冪等。何度実行しても safe (mtime ベースで copy をスキップ)。
+ * 2.0.0 で client-scripts は .cjs → .ts 化された。
+ *   - tsc が src/ui/client-scripts/*.ts を dist-ts/src/ui/client-scripts/*.js に
+ *     コンパイルし、bundle-client-scripts.cjs (esbuild) がさらに整形する。
+ *   - 残置された古い .cjs を起動時に拾わないよう、dist-ts 側の stale .cjs は
+ *     本スクリプトが削除する。
+ *
+ * 冪等。何度実行しても safe。
  */
 
 const fs = require('fs');
@@ -57,12 +61,23 @@ function mirrorDir(srcDir, dstDir, filter) {
   }
 }
 
-// 1) src/ui/client-scripts/**/*.cjs を dist-ts/src/ui/client-scripts/ にミラー
-const CLIENT_SCRIPTS_SRC = path.join(ROOT, 'src', 'ui', 'client-scripts');
+// 1) dist-ts/src/ui/client-scripts/ の stale .cjs を削除 (2.0.0 で .cjs → .ts 化済み)
 const CLIENT_SCRIPTS_DST = path.join(DIST_TS, 'src', 'ui', 'client-scripts');
-mirrorDir(CLIENT_SCRIPTS_SRC, CLIENT_SCRIPTS_DST, (name) => name.endsWith('.cjs') || name.endsWith('.js'));
+let removed = 0;
+if (fs.existsSync(CLIENT_SCRIPTS_DST)) {
+  for (const entry of fs.readdirSync(CLIENT_SCRIPTS_DST)) {
+    if (entry.endsWith('.cjs')) {
+      try {
+        fs.unlinkSync(path.join(CLIENT_SCRIPTS_DST, entry));
+        removed += 1;
+      } catch (e) {
+        console.warn(`[postbuild-copy] failed to remove stale ${entry}: ${e.message}`);
+      }
+    }
+  }
+}
 
 // 2) package.json を dist-ts/ にコピー (simple-api.ts が require する)
 copyFileIfNewer(path.join(ROOT, 'package.json'), path.join(DIST_TS, 'package.json'));
 
-console.log(`[postbuild-copy] copied=${copied} skipped=${skipped}`);
+console.log(`[postbuild-copy] copied=${copied} skipped=${skipped} removed_stale_cjs=${removed}`);

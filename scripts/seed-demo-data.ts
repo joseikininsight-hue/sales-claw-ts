@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { assertDemoDataDirIsSafe } = require('../dist-ts/src/demo-mode');
-const { makeFormMockPng } = require('./lib/png-mock.cjs');
+const { makeFormMockPng } = require('./lib/png-mock');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
 const STATIC_DATA = path.join(PROJECT_ROOT, 'data');
