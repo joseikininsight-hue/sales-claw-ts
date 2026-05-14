@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (2.0.1 候補) — 公開準備 Phase 2
+## 2.0.1 - 2026-05-14 — 公開準備 Phase 2
 
 **OSS 公開・配布のための深掘り監査と修正パス。**
 
@@ -42,8 +42,6 @@
 - 依存ライセンス互換性: 全て MIT / Apache-2.0 / Artistic-2.0 (MIT 互換)
 - ビルド検証: `verify:release` **41/41 checks**
 - typecheck: 0 errors / lint: 0 errors
-
-## Unreleased (2.0.1 候補)
 
 **TS化完成度を最大化 + OSS hygiene 整備の一括 PR。**
 
