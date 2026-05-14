@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.0.3 - 2026-05-14 — 個人情報・内部資料の漏洩防止 (二重防御)
+
+**ローカル開発ノート (gitignore 済) を installer に紛れさせない多層防御。**
+
+### 背景
+ローカル開発環境に `.gitignore` で除外された内部資料 (`docs/message-quality-improvement-requirements.md` と
+`docs/blog-evaluation-2026-05-12-v2.md`) が存在していた。これらには開発者の連絡先や
+過去事例の固有名詞が含まれており、git にも GitHub Releases にも一切含まれていなかったが、
+将来 `.gitignore` の設定が変わるリスクや、ローカルでパッケージングする際の事故を防ぐため、
+多層防御を追加。
+
+### 変更
+- ローカルの該当 2 ファイルを物理削除
+- `electron-builder.yml::files` に **内部 .md と `docs/**` を明示除外** (二重防御):
+  - `!docs/**`
+  - `!AGENTS.md` `!CLAUDE.md` `!DESIGN.md` `!MIGRATION.md`
+  - `!SUPPORT.md` `!ROADMAP.md` `!CODE_OF_CONDUCT.md` `!CONTRIBUTING.md` `!CHANGELOG.md`
+- `CHANGELOG.md` の `/authors/keishi_nakazawa` を `/authors/[handle]` に汎用化 (LP 個別 handle の露出を防止)
+
+### 検証
+- 全 git tracked ファイルから個人情報パターン (中澤 / LYZON / nakazawa / 070-* / @keishi_nakazawa) を grep → **0 件**
+- v2.0.0/2.0.1/2.0.2 リリースは元々個人情報を含まなかったことを `git log --all` で確認
+
 ## 2.0.2 - 2026-05-14 — Onboarding wizard 刷新
 
 **初回セットアップウィザードの UI / UX / 内容を全面刷新。**
@@ -282,7 +305,7 @@ AI 連携機能の強化:
 **Vercel デプロイ向け Next.js サイトの完成版**
 
 ### Sites / Pages
-- **新規ページ**: `/about` `/pricing` `/contact` `/authors/keishi_nakazawa` `/not-found.tsx` を追加
+- **新規ページ**: `/about` `/pricing` `/contact` `/authors/[handle]` `/not-found.tsx` を追加
 - **Blog**: カテゴリフィルタ + 記事検索 (`?category=` `?q=`) を実装
 - **OG Images**: about / pricing / contact / download / blog / docs に Edge runtime の `ImageResponse` ベース OGP 画像を追加 (1200x630)
 - **Sitemap**: LP アンカーのみだった `app/sitemap.ts` を全ページ + ブログ記事に拡張

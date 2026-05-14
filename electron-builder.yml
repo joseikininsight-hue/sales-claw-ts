@@ -52,6 +52,17 @@ files:
   - "!.aidesigner/**"
   - "!.code-review-graph/**"
   - "!.claude/**"
+  # 開発ドキュメントは installer に含めない (内部情報や設計メモが漏れ得る)
+  - "!docs/**"
+  - "!AGENTS.md"
+  - "!CLAUDE.md"
+  - "!DESIGN.md"
+  - "!MIGRATION.md"
+  - "!SUPPORT.md"
+  - "!ROADMAP.md"
+  - "!CODE_OF_CONDUCT.md"
+  - "!CONTRIBUTING.md"
+  - "!CHANGELOG.md"
   # Next/LP assets are served by the public web build, not by the desktop dashboard.
   # Keeping them out of the Windows app cuts installer size and avoids long 7z stalls.
   - "!app/**"
