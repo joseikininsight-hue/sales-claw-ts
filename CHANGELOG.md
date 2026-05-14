@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.0.2 - 2026-05-14 — Onboarding wizard 刷新
+
+**初回セットアップウィザードの UI / UX / 内容を全面刷新。**
+
+### Onboarding Wizard 完全リデザイン (`src/onboarding-wizard.ts`)
+
+UI:
+- **水平 stepper (円 + 接続線)** に変更 (旧: pill 型)、active=primary 色 / done=fill
+- ようこそページを写真の通りに刷新: 👋 / ⚠️ / 📁 アイコン + 詳細リストレイアウト
+- **AI 連携ステップに公式 SVG アイコン**を導入 (`assets/vendor/ai-icons/claude-code.svg` /
+  `codex-openai.svg` / `gemini-cli.svg`) — ダッシュボード Launch Modal と同一アイコン
+- カスタムカラーチップで provider 別に背景色 (Claude オレンジ系 / Codex 黒系 / Gemini 青系)
+- 認証状態を 4 状態のカラードット付き badge で表示 (接続済 / 未ログイン / 未インストール / 確認中)
+- 各 step に絵文字 + タイトルのヘッダ統一 (🏢 / 💪 / 📋 / 🤖)
+- footer の cancel / 次へ ボタンを写真通り両端配置
+
+利用規約 (TERMS_BULLETS):
+- 5 項目 → **12 項目に拡張**、法的にガチガチな表現に強化
+  - AI 生成文面の責任 (誤情報・名誉毀損・著作権侵害含む)
+  - スパム / 大量連投 / なりすまし禁止
+  - リスト取得経路の合法性
+  - 送信先からの返信・クレーム対応はユーザー責任
+  - 紛争処理: 日本法準拠 / 東京地方裁判所合意管轄
+  - 「現状有姿 (AS IS)」明記
+  等を追加
+
+強み プリセット (PRESET_STRENGTHS):
+- 8 → **18 項目に拡張**、SI/Web 偏重を解消し汎用化
+- 4 セクションに分類して表示:
+  - **IT / テクノロジー** (Web 開発 / クラウド / AI / データ分析 / モバイル / セキュリティ / CMS / UI&UX) — 8 種
+  - **営業 / マーケティング** (デジマ / 営業代行 / PR / 市場調査) — 4 種
+  - **コンサルティング / 専門** (経営コンサル / 人事 / 会計税務 / 法務) — 4 種
+  - **BPO / 物流** (BPO / SCM) — 2 種
+
+AI 連携機能の強化:
+- 認証状態を **provider ごとに保存** (旧: state.aiAuthStatus 1 つだけ)
+- provider 切替時に自動で auth check 実行
+- インストール / ログイン状態に応じた次アクション説明文を動的表示
+  - 未インストール → `npm install -g @anthropic-ai/claude-code` 等のコマンドを表示
+  - 未ログイン → `/login` 手順を案内、Claude は claude.ai/login へリンク
+  - 接続済 → ✓ OK 表示で完了可能と提示
+- spinner 表示で「確認中」を可視化
+
+### 検証
+- 全 10 項目の UI チェック PASS (welcome / stepper / AI icons×3 / 12 terms / generic presets×2 / status dot / cancel)
+- HTTP 200, 42KB の HTML 配信確認
+
 ## 2.0.1 - 2026-05-14 — 公開準備 Phase 2
 
 **OSS 公開・配布のための深掘り監査と修正パス。**

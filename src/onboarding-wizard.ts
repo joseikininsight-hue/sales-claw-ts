@@ -16,17 +16,61 @@
  *
  * 状態は localStorage + サーバ側 data/onboarding-progress.json に保存して
  * リロードでも続きから再開できる。
+ *
+ * 2.0.2: デザインを写真通りに刷新 (horizontal stepper + 汎用 preset 拡充
+ * + 詳細利用規約 + AI provider 公式 SVG アイコン)
  */
 
+/**
+ * 汎用テンプレート的に使える強みプリセット (18種)。
+ * 業種に偏らないよう IT / 営業 / コンサル / 製造 / 専門サービス を網羅。
+ * ユーザーは「自社の強み」として 1〜2 個チェックする想定。
+ */
 const PRESET_STRENGTHS = [
-  { key: 'cms', label: 'CMS 構築', detail: 'Sitecore / WordPress / HubSpot 等のサイト構築・運用', keywords: ['cms', 'wordpress', 'sitecore', 'コンテンツ管理', 'ウェブサイト構築'] },
-  { key: 'web_app', label: 'Web アプリ開発', detail: 'フロントエンド / バックエンド / API の業務系 Web 開発', keywords: ['webアプリ', 'システム開発', 'フロントエンド', 'バックエンド', 'api'] },
-  { key: 'ai', label: 'AI 開発', detail: 'RAG・チャットボット・生成 AI 活用案件', keywords: ['ai', '人工知能', '機械学習', 'チャットボット', '生成ai', 'rag'] },
-  { key: 'cloud', label: 'クラウド構築', detail: 'AWS / Azure / GCP のインフラ設計・運用', keywords: ['aws', 'azure', 'gcp', 'クラウド', 'インフラ'] },
-  { key: 'design', label: 'UI/UX デザイン', detail: '戦略からデザイン・実装までの一貫体制', keywords: ['デザイン', 'ui', 'ux', 'クリエイティブ', 'ブランディング'] },
-  { key: 'integration', label: 'システム連携', detail: 'CRM / MA / 基幹システムとの API 連携・SSO', keywords: ['連携', 'api', 'crm', 'salesforce', 'マーケティングオートメーション'] },
-  { key: 'mobile', label: 'モバイルアプリ開発', detail: 'iOS / Android ネイティブ・React Native', keywords: ['ios', 'android', 'モバイル', 'アプリ開発'] },
-  { key: 'data', label: 'データ分析・基盤', detail: 'DWH 構築・BI ダッシュボード・ETL パイプライン', keywords: ['データ分析', 'bi', 'dwh', 'etl', 'データ基盤'] },
+  // IT / Web / Tech 系
+  { key: 'web_app',     label: 'Web アプリ開発',       detail: 'フロントエンド / バックエンド / API の業務系 Web 開発',           keywords: ['webアプリ', 'システム開発', 'フロントエンド', 'バックエンド', 'api', 'react', 'vue'] },
+  { key: 'cloud',       label: 'クラウド構築・運用',   detail: 'AWS / Azure / GCP のインフラ設計・構築・SRE',                    keywords: ['aws', 'azure', 'gcp', 'クラウド', 'インフラ', 'sre', 'kubernetes'] },
+  { key: 'ai',          label: 'AI / 機械学習',         detail: '生成AI 活用・RAG・チャットボット・推論基盤',                       keywords: ['ai', '人工知能', '機械学習', 'チャットボット', '生成ai', 'rag', 'llm'] },
+  { key: 'data',        label: 'データ分析・BI 基盤',  detail: 'DWH 構築・データパイプライン・ダッシュボード設計',                 keywords: ['データ分析', 'bi', 'dwh', 'etl', 'データ基盤', 'tableau', 'looker'] },
+  { key: 'mobile',      label: 'モバイルアプリ開発',   detail: 'iOS / Android ネイティブ・React Native / Flutter',                keywords: ['ios', 'android', 'モバイル', 'アプリ開発', 'flutter', 'react native'] },
+  { key: 'security',    label: 'セキュリティ',          detail: '脆弱性診断・SOC 運用・ゼロトラスト設計',                          keywords: ['セキュリティ', '脆弱性診断', 'soc', 'penetration', 'csirt'] },
+  { key: 'cms',         label: 'CMS / Web 制作',        detail: 'WordPress / Sitecore / HubSpot 等の構築・運用',                  keywords: ['cms', 'wordpress', 'sitecore', 'コンテンツ管理', 'ウェブサイト構築'] },
+  { key: 'design',      label: 'UI / UX デザイン',      detail: '戦略フェーズからデザインまで一貫対応',                            keywords: ['デザイン', 'ui', 'ux', 'クリエイティブ', 'ブランディング'] },
+
+  // 営業 / マーケティング 系
+  { key: 'marketing',   label: 'デジタルマーケティング', detail: 'SEO / 広告運用 / MA / CRM 戦略支援',                              keywords: ['マーケティング', 'seo', '広告', 'ma', 'crm', 'リード獲得'] },
+  { key: 'sales_ops',   label: '営業代行・SDR',         detail: 'インサイドセールス / アポ獲得 / 商談化支援',                       keywords: ['営業代行', 'sdr', 'インサイドセールス', 'アポイント', '商談'] },
+  { key: 'pr_branding', label: 'PR・ブランディング',    detail: '広報戦略・メディア露出・コーポレートブランド構築',                  keywords: ['pr', '広報', 'ブランディング', 'メディア戦略', '広告宣伝'] },
+  { key: 'research',    label: '市場調査・リサーチ',    detail: '定量定性調査・競合分析・カスタマーインサイト',                      keywords: ['市場調査', 'リサーチ', '競合分析', 'インサイト', 'マーケティングリサーチ'] },
+
+  // コンサル / 経営 系
+  { key: 'biz_consult', label: '経営・業務コンサル',    detail: '事業戦略・業務改善・DX 推進支援',                                 keywords: ['コンサル', '経営', '業務改善', 'dx', '戦略立案', 'kpi'] },
+  { key: 'hr',          label: '人事・採用支援',        detail: '採用代行・人事制度設計・タレントマネジメント',                      keywords: ['人事', '採用', 'rpo', 'タレント', 'hr', '組織開発'] },
+  { key: 'finance',     label: '会計・税務・財務',      detail: '記帳代行・税務申告・財務戦略・IPO 準備',                           keywords: ['会計', '税務', '財務', '経理', 'ipo', '監査'] },
+  { key: 'legal',       label: '法務・契約サポート',    detail: '契約レビュー・法務 DD・知財・コンプライアンス',                    keywords: ['法務', '契約', '知財', 'コンプライアンス', '弁護士', 'dd'] },
+
+  // 製造 / 物流 / 専門 系
+  { key: 'bpo',         label: 'BPO・アウトソーシング', detail: '事務代行・コールセンター運営・バックオフィス全般',                  keywords: ['bpo', 'アウトソーシング', 'コールセンター', '事務代行', 'バックオフィス'] },
+  { key: 'logistics',   label: '物流・サプライチェーン', detail: '倉庫運営・配送最適化・SCM 改善',                                 keywords: ['物流', '配送', '倉庫', '在庫管理', 'scm', 'サプライチェーン'] },
+];
+
+/**
+ * 利用規約 (本文)。OSS 利用にあたって押さえるべき責任分界を 12 項目で網羅する。
+ * 「上記内容を理解し、自己責任で使用」のチェックで合意とする。
+ */
+const TERMS_BULLETS = [
+  '送信先企業の問い合わせフォーム利用規約 / 営業お断り表記の遵守',
+  '特定電子メール法 / 個人情報保護法 / GDPR など適用法令の遵守',
+  '誤送信・不適切な文面・誤った相手への送信に起因する損害',
+  'AI が生成した文面の内容責任 (誤情報・名誉毀損・著作権侵害含む)',
+  'AI プロバイダ (Anthropic / OpenAI / Google) への料金・利用規約の遵守',
+  'スパム的送信・大量連投・なりすまし送信の禁止',
+  'リスト取得経路の合法性 (公開情報か、適法に入手したか)',
+  '本ソフトウェアは「現状有姿 (AS IS)」で提供、保証なし (MIT)',
+  'Windows SmartScreen / Antivirus による警告 (本ビルドはコード署名なし)',
+  '送信履歴・スクリーンショット・ログは全てローカルに残るためバックアップ責任',
+  '送信先からの返信・連絡対応・クレーム処理はユーザー側で行う',
+  '紛争が生じた場合の準拠法は日本法、合意管轄は東京地方裁判所',
 ];
 
 function escapeHtml(s) {
@@ -51,6 +95,7 @@ function renderOnboardingPage(ctx: { sessionToken?: string; savedProgress?: Reco
   const sessionToken = ctx.sessionToken || '';
   const savedProgress = ctx.savedProgress || null;
   const presetJson = JSON.stringify(PRESET_STRENGTHS);
+  const termsJson = JSON.stringify(TERMS_BULLETS);
   const progressJson = JSON.stringify(savedProgress || {});
 
   return `<!doctype html>
@@ -61,20 +106,24 @@ function renderOnboardingPage(ctx: { sessionToken?: string; savedProgress?: Reco
 <meta name="viewport" content="width=1200">
 <style>
 :root {
-  --bg: #f7f8fb;
+  --bg: #ffffff;
+  --bg-soft: #f7f8fb;
   --bg-card: #ffffff;
   --border: #e5e8ef;
   --border-strong: #cdd2db;
-  --text-1: #111827;
-  --text-2: #4b5563;
-  --text-3: #9ca3af;
+  --text-1: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
+  --primary-soft: #eff6ff;
   --success: #16a34a;
   --danger: #dc2626;
   --warning: #ea580c;
-  --shadow: 0 6px 24px rgba(15, 23, 42, .08);
-  --radius: 12px;
+  --warning-soft: #fff8ec;
+  --info-soft: #fffbe6;
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, .04), 0 1px 2px rgba(15, 23, 42, .03);
+  --radius: 14px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -84,277 +133,494 @@ body {
   color: var(--text-1);
   min-height: 100vh;
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
-.wiz-shell {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 32px 24px 64px;
-}
-.wiz-header {
+
+/* ─── Title bar (mimics screenshot) ─── */
+.wiz-titlebar {
+  height: 42px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
+  padding: 0 18px;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-2);
 }
-.wiz-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
+.wiz-titlebar .icon { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; color: var(--primary); }
+
+/* ─── Outer shell ─── */
+.wiz-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 32px 40px;
+}
+.wiz-subtitle {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-bottom: 36px;
+}
+
+/* ─── Stepper (写真通り: 円 + 接続線) ─── */
+.wiz-stepper {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin-bottom: 32px;
+  position: relative;
+}
+.wiz-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+}
+.wiz-step .wiz-step-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: #fff;
+  color: var(--text-3);
+  font-weight: 600;
+  font-size: 14px;
   display: grid;
   place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
-}
-.wiz-title-block h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-.wiz-title-block .sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-3);
-}
-.wiz-stepper {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-}
-.wiz-step-pill {
-  flex: 1;
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-3);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  font-weight: 600;
+  position: relative;
+  z-index: 2;
   transition: all .15s;
 }
-.wiz-step-pill .num {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--border);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
+.wiz-step .wiz-step-label {
+  font-size: 13px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.wiz-step.active .wiz-step-circle {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: #fff;
+}
+.wiz-step.active .wiz-step-label {
+  color: var(--primary);
   font-weight: 700;
 }
-.wiz-step-pill.active { color: var(--text-1); border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37, 99, 235, .12); }
-.wiz-step-pill.active .num { background: var(--primary); }
-.wiz-step-pill.done { color: var(--text-2); border-color: var(--success); }
-.wiz-step-pill.done .num { background: var(--success); }
-.wiz-step-pill.done .num::before { content: '✓'; }
-.wiz-step-pill.done .num span { display: none; }
+.wiz-step.done .wiz-step-circle {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.wiz-step.done .wiz-step-circle::before { content: '✓'; font-size: 16px; }
+.wiz-step.done .wiz-step-circle span { display: none; }
+.wiz-step.done .wiz-step-label { color: var(--text-2); }
+/* 接続線: 各 step の circle の右端から次の circle の左端まで */
+.wiz-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: calc(50% + 22px);
+  right: calc(-50% + 22px);
+  height: 2px;
+  background: var(--border-strong);
+  z-index: 1;
+}
+.wiz-step.done:not(:last-child)::after { background: var(--primary); }
+
+/* ─── Card ─── */
 .wiz-card {
   background: var(--bg-card);
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  padding: 32px;
+  box-shadow: var(--shadow-card);
+  padding: 36px 40px;
   min-height: 420px;
 }
-.wiz-card h2 {
-  margin: 0 0 8px;
+
+/* ─── Step 1 (Welcome) layout ─── */
+.welcome-grid {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+.welcome-emoji {
+  font-size: 64px;
+  line-height: 1;
+  margin-top: 4px;
+}
+.welcome-content h2 {
+  margin: 0 0 12px;
   font-size: 22px;
   font-weight: 700;
 }
-.wiz-card .sub {
-  margin: 0 0 24px;
+.welcome-content .lead {
+  margin: 0;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.75;
 }
+
+/* ─── Info blocks (warning + folder) ─── */
+.info-block {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 16px;
+  align-items: start;
+  margin-top: 24px;
+}
+.info-block .ib-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  margin-top: 2px;
+}
+.info-block h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.info-block .ib-body {
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+.info-block ul.terms {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  color: var(--text-2);
+  line-height: 1.85;
+}
+.info-block ul.terms li {
+  position: relative;
+  padding-left: 18px;
+}
+.info-block ul.terms li::before {
+  content: '•';
+  position: absolute;
+  left: 4px;
+  color: var(--text-3);
+}
+.info-block code {
+  font-family: 'Cascadia Mono', 'Consolas', 'Monaco', monospace;
+  font-size: 12.5px;
+  background: var(--bg-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text-1);
+}
+
+/* ─── Divider ─── */
+.divider {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+
+/* ─── Terms checkbox ─── */
+.terms-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--text-1);
+  padding: 4px 0;
+}
+.terms-check input { display: none; }
+.terms-check .box {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  flex-shrink: 0;
+  transition: all .12s;
+}
+.terms-check input:checked + .box {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.terms-check input:checked + .box::after {
+  content: '';
+  width: 6px;
+  height: 11px;
+  border: solid #fff;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  margin-top: -2px;
+}
+
+/* ─── Actions footer ─── */
 .wiz-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--border);
+  margin-top: 36px;
 }
+.wiz-actions-right { display: flex; gap: 12px; align-items: center; }
 .btn {
-  padding: 10px 20px;
-  border-radius: 8px;
+  padding: 12px 28px;
+  border-radius: 10px;
   border: 1px solid transparent;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all .12s;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  font-family: inherit;
+  min-width: 110px;
+  justify-content: center;
 }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-hover); }
-.btn-primary:disabled { background: var(--text-3); cursor: not-allowed; }
-.btn-secondary { background: transparent; border-color: var(--border-strong); color: var(--text-1); }
-.btn-secondary:hover { background: var(--bg); }
-.btn-link { background: transparent; border-color: transparent; color: var(--primary); padding: 10px 8px; }
+.btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; }
+.btn-secondary { background: var(--bg-soft); border-color: var(--border); color: var(--text-1); }
+.btn-secondary:hover { background: #eef2f7; }
+.btn-link { background: transparent; border-color: transparent; color: var(--primary); padding: 10px 8px; font-weight: 500; min-width: 0; }
 .btn-link:hover { text-decoration: underline; }
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
-}
+
+/* ─── Fields (step 2) ─── */
+.field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .field-row .field { margin-bottom: 0; }
 .field label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--text-1);
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.field .req { color: var(--danger); }
+.field .req { color: var(--danger); font-weight: 700; }
 .field input, .field textarea, .field select {
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
-  font-size: 13px;
+  font-size: 14px;
   background: #fff;
   transition: border-color .12s, box-shadow .12s;
   font-family: inherit;
+  color: var(--text-1);
 }
 .field input:focus, .field textarea:focus, .field select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
 }
 .field textarea { min-height: 64px; resize: vertical; }
-.field .hint { font-size: 11px; color: var(--text-3); }
+.field .hint { font-size: 12px; color: var(--text-3); }
 .field.error input, .field.error textarea, .field.error select { border-color: var(--danger); }
-.field .err { font-size: 11px; color: var(--danger); }
-.notice {
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: #fff8ec;
-  border: 1px solid #f5d99a;
-  color: #92590e;
-  margin-bottom: 24px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.notice.danger { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
-.notice.info { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-.notice.ok { background: #f0fdf4; border-color: #86efac; color: #166534; }
-.notice strong { display: block; margin-bottom: 4px; font-size: 13px; }
-.terms-list {
-  margin: 12px 0 4px 16px;
-  padding: 0;
-  font-size: 13px;
-  color: var(--text-2);
-  line-height: 1.7;
-}
-.checkbox {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 16px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.checkbox input { margin-top: 3px; }
+.field .err { font-size: 12px; color: var(--danger); font-weight: 500; }
+
+/* ─── Strengths grid (step 3) ─── */
 .preset-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 12px;
   margin: 16px 0 24px;
 }
 .preset-card {
-  padding: 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: #fff;
   cursor: pointer;
   transition: all .12s;
+  position: relative;
 }
-.preset-card:hover { border-color: var(--border-strong); }
+.preset-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
 .preset-card.selected {
   border-color: var(--primary);
-  background: #f0f6ff;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
+  background: var(--primary-soft);
 }
-.preset-card .label { font-weight: 600; font-size: 13px; }
-.preset-card .detail { font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
+.preset-card.selected::before {
+  content: '✓';
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+.preset-card .label { font-weight: 700; font-size: 14px; color: var(--text-1); padding-right: 32px; }
+.preset-card .detail { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.55; }
+.preset-section {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 24px 0 4px;
+}
+
 .custom-strength {
   border: 1px dashed var(--border-strong);
-  border-radius: 10px;
-  padding: 12px;
-  background: var(--bg);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--bg-soft);
   margin-bottom: 12px;
 }
+
+/* ─── Dropzone (step 4) ─── */
 .dropzone {
   border: 2px dashed var(--border-strong);
-  border-radius: 12px;
-  padding: 48px 24px;
+  border-radius: 14px;
+  padding: 56px 24px;
   text-align: center;
   cursor: pointer;
   transition: all .15s;
-  background: var(--bg);
+  background: var(--bg-soft);
 }
-.dropzone:hover, .dropzone.over { border-color: var(--primary); background: #f0f6ff; }
-.dropzone .ico { font-size: 32px; margin-bottom: 8px; }
-.dropzone .main-text { font-weight: 600; }
-.dropzone .sub-text { font-size: 12px; color: var(--text-3); margin-top: 4px; }
-.target-summary { margin-top: 16px; padding: 14px; border-radius: 10px; background: #f0fdf4; border: 1px solid #86efac; color: #166534; font-size: 13px; }
-.ai-providers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0 24px; }
+.dropzone:hover, .dropzone.over { border-color: var(--primary); background: var(--primary-soft); }
+.dropzone .ico { font-size: 36px; margin-bottom: 8px; }
+.dropzone .main-text { font-weight: 600; font-size: 15px; }
+.dropzone .sub-text { font-size: 12px; color: var(--text-3); margin-top: 6px; }
+.target-summary {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 13.5px;
+}
+
+/* ─── AI cards (step 5, with SVG icons) ─── */
+.ai-providers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0 28px; }
 .ai-card {
-  padding: 16px;
-  border-radius: 10px;
+  padding: 22px 16px 18px;
+  border-radius: 14px;
   border: 2px solid var(--border);
-  background: var(--bg-card);
+  background: #fff;
   cursor: pointer;
   transition: all .12s;
   text-align: center;
+  position: relative;
 }
-.ai-card:hover { border-color: var(--border-strong); }
-.ai-card.selected { border-color: var(--primary); background: #f0f6ff; }
-.ai-card .name { font-weight: 700; font-size: 14px; }
-.ai-card .vendor { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-.ai-card .status { margin-top: 8px; font-size: 11px; padding: 2px 6px; border-radius: 6px; display: inline-block; }
-.ai-card .status.ok { background: #dcfce7; color: #166534; }
-.ai-card .status.bad { background: #fee2e2; color: #991b1b; }
-.ai-card .status.unknown { background: #f3f4f6; color: var(--text-2); }
+.ai-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.ai-card.selected { border-color: var(--primary); background: var(--primary-soft); }
+.ai-card.selected::before {
+  content: '✓';
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+.ai-card .ai-icon-wrap {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(15,23,42,.045);
+  border: 1px solid rgba(15,23,42,.06);
+}
+.ai-card[data-ai="claude"] .ai-icon-wrap { background: rgba(204,120,92,.10); border-color: rgba(204,120,92,.18); }
+.ai-card[data-ai="codex"]  .ai-icon-wrap { background: rgba(15,23,42,.06);    border-color: rgba(15,23,42,.10); }
+.ai-card[data-ai="gemini"] .ai-icon-wrap { background: rgba(66,133,244,.08);  border-color: rgba(66,133,244,.16); }
+.ai-card .ai-icon-wrap img { display: block; width: 34px; height: 34px; }
+.ai-card .name { font-weight: 700; font-size: 15px; color: var(--text-1); }
+.ai-card .vendor { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.ai-card .status {
+  margin-top: 10px;
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  display: inline-block;
+  font-weight: 600;
+}
+.ai-card .status.ok      { background: #dcfce7; color: #166534; }
+.ai-card .status.bad     { background: #fee2e2; color: #991b1b; }
+.ai-card .status.unknown { background: #f1f5f9; color: var(--text-2); }
+.ai-card .status .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.ai-card .status.ok .dot      { background: #16a34a; }
+.ai-card .status.bad .dot     { background: #dc2626; }
+.ai-card .status.unknown .dot { background: var(--text-3); }
+
+/* ─── Notice boxes ─── */
+.notice {
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.65;
+  margin-top: 16px;
+}
+.notice.info { background: var(--primary-soft); border: 1px solid #93c5fd; color: #1d4ed8; }
+.notice.ok   { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+.notice.warn { background: var(--warning-soft); border: 1px solid #f5d99a; color: #92590e; }
+.notice strong { display: block; margin-bottom: 4px; }
+.notice a { color: inherit; text-decoration: underline; }
+
 .errors {
   background: #fef2f2;
   border: 1px solid #fca5a5;
   color: #b91c1c;
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   margin-bottom: 16px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .errors ul { margin: 4px 0 0 18px; padding: 0; }
+
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
+<div class="wiz-titlebar">
+  <span class="icon">
+    <!-- 小さなロゴ的 svg -->
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 12c0-4.97 4.03-9 9-9 4.06 0 7.5 2.69 8.62 6.4"/>
+      <path d="M21 12c0 4.97-4.03 9-9 9-4.06 0-7.5-2.69-8.62-6.4"/>
+    </svg>
+  </span>
+  <span>Sales Claw — 初回セットアップ</span>
+</div>
+
 <div class="wiz-shell">
-  <div class="wiz-header">
-    <div class="wiz-logo">SC</div>
-    <div class="wiz-title-block">
-      <h1>Sales Claw — 初回セットアップ</h1>
-      <p class="sub">5 ステップで完了。後からでも 設定 タブで変更できます。</p>
-    </div>
-  </div>
+  <div class="wiz-subtitle">5 ステップで完了。後からでも <strong style="color: var(--text-1);">設定</strong> タブで変更できます。</div>
   <div class="wiz-stepper" id="stepper"></div>
   <div class="wiz-card" id="cardHost"></div>
+  <div class="wiz-actions" id="actionsHost"></div>
 </div>
 
 <script>
 (function () {
   const SESSION_TOKEN = ${JSON.stringify(sessionToken)};
   const PRESETS = ${presetJson};
+  const TERMS = ${termsJson};
   const SAVED = ${progressJson};
 
   // ---- state ----
@@ -378,13 +644,14 @@ body {
     targetList: null,
     targetListMeta: null,
     aiProvider: 'claude',
-    aiAuthStatus: null,
+    aiAuthStatus: { claude: null, codex: null, gemini: null },
     bypassAi: false,
     errors: [],
   }, SAVED || {});
 
   // ---- helpers ----
   const $ = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   function fetchJson(url, opts) {
@@ -426,7 +693,10 @@ body {
   function renderStepper() {
     $('#stepper').innerHTML = STEPS.map((s) => {
       const cls = state.step === s.n ? 'active' : (state.step > s.n ? 'done' : '');
-      return '<div class="wiz-step-pill ' + cls + '"><span class="num"><span>' + s.n + '</span></span>' + esc(s.label) + '</div>';
+      return '<div class="wiz-step ' + cls + '">' +
+        '<div class="wiz-step-circle"><span>' + s.n + '</span></div>' +
+        '<div class="wiz-step-label">' + esc(s.label) + '</div>' +
+        '</div>';
     }).join('');
   }
 
@@ -440,38 +710,54 @@ body {
 
   // ---- step 1: welcome + terms ----
   function renderStep1() {
-    return \`
-      <h2>👋 Sales Claw へようこそ</h2>
-      <p class="sub">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。Claude / Codex / Gemini CLI と連携してフォーム入力までを実行します。</p>
+    const termsList = TERMS.map((t) => '<li>' + esc(t) + '</li>').join('');
+    return [
+      '<div class="welcome-grid">',
+      '  <div class="welcome-emoji">👋</div>',
+      '  <div class="welcome-content">',
+      '    <h2>Sales Claw へようこそ</h2>',
+      '    <p class="lead">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。<br>',
+      '       Claude / Codex / Gemini CLI と連携してフォーム入力までを実行します。</p>',
+      '  </div>',
+      '</div>',
 
-      <div class="notice danger">
-        <strong>⚠ 利用前のご確認 (OSS / 自己責任)</strong>
-        本ソフトウェアは MIT ライセンスのオープンソースです。以下の責任はすべてユーザー側にあります。
-        <ul class="terms-list">
-          <li>送信先企業の問い合わせフォーム利用規約 / 営業お断り表記の遵守</li>
-          <li>特定電子メール法 / 個人情報保護法など適用法令の遵守</li>
-          <li>誤送信・不適切な文面・誤った相手への送信に起因する損害</li>
-          <li>Claude API / Anthropic への支払い (本アプリの料金には含まれません)</li>
-          <li>Windows SmartScreen / Antivirus による警告 (本ビルドはコード署名されていません)</li>
-        </ul>
-      </div>
+      '<div class="info-block">',
+      '  <div class="ib-icon">⚠️</div>',
+      '  <div>',
+      '    <h3>利用前のご確認 (OSS / 自己責任)</h3>',
+      '    <div class="ib-body">本ソフトウェアは MIT ライセンスのオープンソースです。以下の責任はすべてユーザー側にあります。</div>',
+      '    <ul class="terms">', termsList, '</ul>',
+      '  </div>',
+      '</div>',
 
-      <div class="notice info">
-        <strong>📁 データの保存場所</strong>
-        本アプリの設定 / ログ / スクリーンショットはすべてローカルに保存されます。<br>
-        <code>%APPDATA%\\\\sales-claw\\\\runtime\\\\data\\\\</code> 配下にあります。
-      </div>
+      '<div class="info-block">',
+      '  <div class="ib-icon">📁</div>',
+      '  <div>',
+      '    <h3>データの保存場所</h3>',
+      '    <div class="ib-body">',
+      '      本アプリの設定 / ログ / スクリーンショットはすべて<strong>ローカル</strong>に保存されます。<br>',
+      '      <code>%APPDATA%\\\\sales-claw\\\\runtime\\\\data\\\\</code> 配下にあります。',
+      '    </div>',
+      '  </div>',
+      '</div>',
 
-      <label class="checkbox">
-        <input type="checkbox" id="termsCheck" \${state.termsAgreed ? 'checked' : ''}>
-        <span>上記内容を理解し、自己責任でこのツールを使用することに同意します</span>
-      </label>
+      '<hr class="divider">',
 
-      <div class="wiz-actions">
-        <span></span>
-        <button class="btn btn-primary" id="step1Next" \${state.termsAgreed ? '' : 'disabled'}>次へ →</button>
-      </div>
-    \`;
+      '<label class="terms-check">',
+      '  <input type="checkbox" id="termsCheck"' + (state.termsAgreed ? ' checked' : '') + '>',
+      '  <span class="box"></span>',
+      '  <span>上記内容を理解し、自己責任でこのツールを使用することに同意します</span>',
+      '</label>',
+    ].join('\\n');
+  }
+
+  function renderStep1Actions() {
+    return [
+      '<button class="btn btn-secondary" data-action="cancel">キャンセル</button>',
+      '<div class="wiz-actions-right">',
+      '  <button class="btn btn-primary" id="step1Next"' + (state.termsAgreed ? '' : ' disabled') + '>次へ</button>',
+      '</div>',
+    ].join('');
   }
 
   function bindStep1() {
@@ -481,20 +767,22 @@ body {
       persistProgress();
     });
     $('#step1Next').addEventListener('click', () => setStep(2));
+    const cancel = document.querySelector('[data-action="cancel"]');
+    if (cancel) cancel.addEventListener('click', cancelWizard);
   }
 
   // ---- step 2: company profile ----
   const PROFILE_FIELDS = [
-    { key: 'companyName', label: '会社名', required: true, hint: '株式会社 ○○' },
-    { key: 'contactName', label: '担当者名', required: true, hint: '山田 太郎' },
-    { key: 'contactNameKana', label: '担当者名カナ', required: false, hint: 'ヤマダ タロウ' },
-    { key: 'department', label: '部署', required: false },
-    { key: 'contactTitle', label: '役職', required: false },
-    { key: 'email', label: 'メールアドレス', required: true, hint: 'name@company.co.jp' },
-    { key: 'phone', label: '電話番号', required: true, hint: '03-0000-0000' },
-    { key: 'mobile', label: '携帯番号', required: false },
-    { key: 'website', label: '自社 Web サイト', required: false, hint: 'https://www.example.com/' },
-    { key: 'address', label: '住所', required: true, fullWidth: true },
+    { key: 'companyName',     label: '会社名',        required: true,  hint: '株式会社 ○○' },
+    { key: 'contactName',     label: '担当者名',      required: true,  hint: '山田 太郎' },
+    { key: 'contactNameKana', label: '担当者名カナ',  required: false, hint: 'ヤマダ タロウ' },
+    { key: 'department',      label: '部署',          required: false },
+    { key: 'contactTitle',    label: '役職',          required: false },
+    { key: 'email',           label: 'メールアドレス', required: true,  hint: 'name@company.co.jp' },
+    { key: 'phone',           label: '電話番号',      required: true,  hint: '03-0000-0000' },
+    { key: 'mobile',          label: '携帯番号',      required: false },
+    { key: 'website',         label: '自社 Web サイト', required: false, hint: 'https://www.example.com/' },
+    { key: 'address',         label: '住所',          required: true,  fullWidth: true, hint: '東京都千代田区...' },
   ];
 
   function renderStep2() {
@@ -514,7 +802,6 @@ body {
       const html = '<div class="field' + errCls + '">' +
         '<label>' + esc(f.label) + (f.required ? '<span class="req">*</span>' : '') + '</label>' +
         '<input data-field="' + f.key + '" type="text" value="' + esc(v) + '" placeholder="' + esc(f.hint || '') + '">' +
-        (f.hint ? '<span class="hint">' + esc(f.hint) + '</span>' : '') +
         (err ? '<span class="err">' + esc(err) + '</span>' : '') +
         '</div>';
       if (f.fullWidth) {
@@ -527,16 +814,27 @@ body {
     });
     if (buf.length) rowsHtml += '<div class="field-row">' + buf.join('') + (buf.length === 1 ? '<div></div>' : '') + '</div>';
 
-    return \`
-      <h2>🏢 自社情報</h2>
-      <p class="sub">送信先フォームに自動入力される情報です。* は必須項目。</p>
-      \${errBox}
-      \${rowsHtml}
-      <div class="wiz-actions">
-        <button class="btn btn-secondary" data-action="back">← 戻る</button>
-        <button class="btn btn-primary" data-action="next">次へ →</button>
-      </div>
-    \`;
+    return [
+      '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
+      '  <div style="font-size: 40px;">🏢</div>',
+      '  <div>',
+      '    <h2 style="margin: 0 0 4px;">自社情報</h2>',
+      '    <p class="lead" style="margin: 0;">送信先フォームに自動入力される情報です。<span class="req" style="color: var(--danger);">*</span> は必須項目。</p>',
+      '  </div>',
+      '</div>',
+      '<hr class="divider">',
+      errBox,
+      rowsHtml,
+    ].join('');
+  }
+
+  function renderStep2Actions() {
+    return [
+      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<div class="wiz-actions-right">',
+      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '</div>',
+    ].join('');
   }
 
   function bindStep2() {
@@ -563,45 +861,68 @@ body {
       '<div class="errors"><strong>選択エラー</strong><ul>' +
       state.errors.map((e) => '<li>' + esc(e.message || e.code) + '</li>').join('') +
       '</ul></div>';
-    const presetCards = PRESETS.map((p) => {
-      const sel = state.selectedPresetKeys.indexOf(p.key) >= 0 ? ' selected' : '';
-      return '<div class="preset-card' + sel + '" data-key="' + esc(p.key) + '">' +
-        '<div class="label">' + esc(p.label) + '</div>' +
-        '<div class="detail">' + esc(p.detail) + '</div></div>';
-    }).join('');
-    const customs = state.customStrengths.map((s, i) => \`
-      <div class="custom-strength">
-        <div class="field-row">
-          <div class="field"><label>ラベル<span class="req">*</span></label>
-            <input data-custom="label" data-idx="\${i}" type="text" value="\${esc(s.label || '')}" placeholder="例: 越境 EC 構築">
-          </div>
-          <div class="field"><label>キーワード (カンマ区切り)</label>
-            <input data-custom="keywords" data-idx="\${i}" type="text" value="\${esc((s.keywords || []).join(','))}">
-          </div>
-        </div>
-        <div class="field"><label>詳細<span class="req">*</span></label>
-          <textarea data-custom="detail" data-idx="\${i}">\${esc(s.detail || '')}</textarea>
-        </div>
-        <button class="btn btn-link" data-custom-remove="\${i}" style="padding:4px 8px;font-size:11px">削除</button>
-      </div>
-    \`).join('');
 
-    return \`
-      <h2>💪 自社の強み</h2>
-      <p class="sub">フォーム入力時、相手企業のニーズに応じてここから 1〜2 個を選んで文面に反映します。最低 1 つ必須。</p>
-      \${errBox}
-      <div><strong style="font-size:12px;color:#374151">プリセットから選ぶ</strong></div>
-      <div class="preset-grid">\${presetCards}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong style="font-size:12px;color:#374151">カスタム強み</strong>
-        <button class="btn btn-link" id="addCustom">+ 追加</button>
-      </div>
-      \${customs}
-      <div class="wiz-actions">
-        <button class="btn btn-secondary" data-action="back">← 戻る</button>
-        <button class="btn btn-primary" data-action="next">次へ →</button>
-      </div>
-    \`;
+    // セクション分類: index 0-7 = IT/Tech、 8-11 = 営業/マーケ、 12-15 = コンサル/専門、 16-17 = BPO/物流
+    const sectionRanges = [
+      { name: 'IT / テクノロジー',         start: 0,  end: 8 },
+      { name: '営業 / マーケティング',     start: 8,  end: 12 },
+      { name: 'コンサルティング / 専門',   start: 12, end: 16 },
+      { name: 'BPO / 物流',                start: 16, end: 18 },
+    ];
+    let presetSectionsHtml = '';
+    sectionRanges.forEach((sec) => {
+      const cards = PRESETS.slice(sec.start, sec.end).map((p) => {
+        const sel = state.selectedPresetKeys.indexOf(p.key) >= 0 ? ' selected' : '';
+        return '<div class="preset-card' + sel + '" data-key="' + esc(p.key) + '">' +
+          '<div class="label">' + esc(p.label) + '</div>' +
+          '<div class="detail">' + esc(p.detail) + '</div></div>';
+      }).join('');
+      presetSectionsHtml += '<div class="preset-section">' + esc(sec.name) + '</div><div class="preset-grid">' + cards + '</div>';
+    });
+
+    const customs = state.customStrengths.map((s, i) => [
+      '<div class="custom-strength">',
+      '  <div class="field-row">',
+      '    <div class="field"><label>ラベル<span class="req">*</span></label>',
+      '      <input data-custom="label" data-idx="' + i + '" type="text" value="' + esc(s.label || '') + '" placeholder="例: 越境 EC 構築">',
+      '    </div>',
+      '    <div class="field"><label>キーワード (カンマ区切り)</label>',
+      '      <input data-custom="keywords" data-idx="' + i + '" type="text" value="' + esc((s.keywords || []).join(',')) + '">',
+      '    </div>',
+      '  </div>',
+      '  <div class="field"><label>詳細<span class="req">*</span></label>',
+      '    <textarea data-custom="detail" data-idx="' + i + '">' + esc(s.detail || '') + '</textarea>',
+      '  </div>',
+      '  <button class="btn btn-link" data-custom-remove="' + i + '" style="padding:4px 8px;font-size:11px;color:var(--danger)">削除</button>',
+      '</div>',
+    ].join('')).join('');
+
+    return [
+      '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
+      '  <div style="font-size: 40px;">💪</div>',
+      '  <div>',
+      '    <h2 style="margin: 0 0 4px;">自社の強み</h2>',
+      '    <p class="lead" style="margin: 0;">フォーム送信時に相手企業のニーズに応じて 1〜2 個を選んで文面に反映します。<strong>最低 1 つ必須</strong>。</p>',
+      '  </div>',
+      '</div>',
+      '<hr class="divider">',
+      errBox,
+      presetSectionsHtml,
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin: 24px 0 8px;">',
+      '  <div class="preset-section" style="margin: 0;">カスタム強み (任意)</div>',
+      '  <button class="btn btn-link" id="addCustom">+ 追加</button>',
+      '</div>',
+      customs,
+    ].join('');
+  }
+
+  function renderStep3Actions() {
+    return [
+      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<div class="wiz-actions-right">',
+      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '</div>',
+    ].join('');
   }
 
   function bindStep3() {
@@ -663,31 +984,36 @@ body {
     const errBox = state.errors.length === 0 ? '' :
       '<div class="errors"><ul>' + state.errors.map((e) => '<li>' + esc(e.message) + '</li>').join('') + '</ul></div>';
     const loadedCount = state.targetList ? state.targetList.length : (state.targetListMeta && state.targetListMeta.count) || 0;
-    const summary = state.targetListMeta ? \`
-      <div class="target-summary">
-        ✓ <strong>\${state.targetListMeta.fileName}</strong> を読み込みました — 会社 \${loadedCount} 件
-      </div>
-    \` : '';
-    return \`
-      <h2>📋 ターゲットリスト (任意)</h2>
-      <p class="sub">アプローチしたい会社の Excel/CSV をドラッグ&ドロップしてください。後でも追加可能です。<br>
-      必須カラム: <code>会社名</code>, 推奨: <code>URL</code> <code>フォームURL</code></p>
-      \${errBox}
-      <div class="dropzone" id="dropzone">
-        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
-        <div class="ico">📂</div>
-        <div class="main-text">クリック または ドラッグ&ドロップ</div>
-        <div class="sub-text">.xlsx / .xls / .csv 対応</div>
-      </div>
-      \${summary}
-      <div class="wiz-actions">
-        <button class="btn btn-secondary" data-action="back">← 戻る</button>
-        <div>
-          <button class="btn btn-link" data-action="skip">スキップ</button>
-          <button class="btn btn-primary" data-action="next">次へ →</button>
-        </div>
-      </div>
-    \`;
+    const summary = state.targetListMeta ?
+      '<div class="target-summary">✓ <strong>' + esc(state.targetListMeta.fileName) + '</strong> を読み込みました — 会社 ' + loadedCount + ' 件</div>' : '';
+    return [
+      '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
+      '  <div style="font-size: 40px;">📋</div>',
+      '  <div>',
+      '    <h2 style="margin: 0 0 4px;">ターゲットリスト <span style="color: var(--text-3); font-weight: 500; font-size: 14px;">(任意)</span></h2>',
+      '    <p class="lead" style="margin: 0;">アプローチしたい会社の Excel/CSV をドラッグ&ドロップ。後でも追加可能です。<br>必須カラム: <code>会社名</code> / 推奨: <code>URL</code> <code>フォームURL</code></p>',
+      '  </div>',
+      '</div>',
+      '<hr class="divider">',
+      errBox,
+      '<div class="dropzone" id="dropzone">',
+      '  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>',
+      '  <div class="ico">📂</div>',
+      '  <div class="main-text">クリック または ドラッグ&ドロップ</div>',
+      '  <div class="sub-text">.xlsx / .xls / .csv 対応</div>',
+      '</div>',
+      summary,
+    ].join('');
+  }
+
+  function renderStep4Actions() {
+    return [
+      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<div class="wiz-actions-right">',
+      '  <button class="btn btn-link" data-action="skip">スキップ</button>',
+      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '</div>',
+    ].join('');
   }
 
   function bindStep4() {
@@ -706,7 +1032,6 @@ body {
   function handleFile(file) {
     const reader = new FileReader();
     reader.onload = function () {
-      // ArrayBuffer → base64
       const bytes = new Uint8Array(reader.result);
       let binary = '';
       for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
@@ -734,76 +1059,121 @@ body {
   }
 
   // ---- step 5: AI auth ----
+  const AI_PROVIDERS = [
+    { id: 'claude', name: 'Claude',    vendor: 'Anthropic', icon: '/assets/vendor/ai-icons/claude-code.svg',  desc: 'Claude Code CLI を使って分析・送信' },
+    { id: 'codex',  name: 'Codex',     vendor: 'OpenAI',    icon: '/assets/vendor/ai-icons/codex-openai.svg', desc: 'OpenAI Codex CLI を使って分析・送信' },
+    { id: 'gemini', name: 'Gemini',    vendor: 'Google',    icon: '/assets/vendor/ai-icons/gemini-cli.svg',   desc: 'Google Gemini CLI を使って分析・送信' },
+  ];
+
+  function aiStatusBadge(provider) {
+    const status = state.aiAuthStatus && state.aiAuthStatus[provider];
+    if (!status) return '<span class="status unknown"><span class="dot"></span>未確認</span>';
+    if (status.checking) return '<span class="status unknown"><span class="spinner" style="width:9px;height:9px;border-width:1.5px;vertical-align:middle"></span> 確認中…</span>';
+    if (status.installed && status.loggedIn) return '<span class="status ok"><span class="dot"></span>接続済</span>';
+    if (status.installed) return '<span class="status bad"><span class="dot"></span>未ログイン</span>';
+    return '<span class="status bad"><span class="dot"></span>未インストール</span>';
+  }
+
   function renderStep5() {
     const errBox = state.errors.length === 0 ? '' :
       '<div class="errors"><ul>' + state.errors.map((e) => '<li>' + esc(e.message) + '</li>').join('') + '</ul></div>';
-    const aiCard = (id, name, vendor) => {
-      const sel = state.aiProvider === id ? ' selected' : '';
-      const status = state.aiAuthStatus && state.aiAuthStatus.provider === id ? state.aiAuthStatus : null;
-      let badge = '<span class="status unknown">未確認</span>';
-      if (status) {
-        if (status.installed && status.loggedIn) badge = '<span class="status ok">✓ 接続済</span>';
-        else if (status.installed) badge = '<span class="status bad">未ログイン</span>';
-        else badge = '<span class="status bad">未インストール</span>';
-      }
-      return \`<div class="ai-card\${sel}" data-ai="\${id}">
-        <div class="name">\${esc(name)}</div>
-        <div class="vendor">\${esc(vendor)}</div>
-        <div>\${badge}</div>
-      </div>\`;
-    };
-    return \`
-      <h2>🤖 AI 連携</h2>
-      <p class="sub">フォーム解析と入力を担当する AI CLI を選びます。Sales Claw 自体には課金機能はなく、各 AI プロバイダの料金体系に従います。</p>
-      \${errBox}
-      <div class="ai-providers">
-        \${aiCard('claude', 'Claude', 'Anthropic')}
-        \${aiCard('codex', 'Codex', 'OpenAI')}
-        \${aiCard('gemini', 'Gemini', 'Google')}
-      </div>
+    const cards = AI_PROVIDERS.map((p) => {
+      const sel = state.aiProvider === p.id ? ' selected' : '';
+      return [
+        '<div class="ai-card' + sel + '" data-ai="' + esc(p.id) + '">',
+        '  <div class="ai-icon-wrap"><img src="' + esc(p.icon) + '" alt="' + esc(p.name) + '" width="34" height="34" onerror="this.style.display=\\'none\\'"></div>',
+        '  <div class="name">' + esc(p.name) + '</div>',
+        '  <div class="vendor">' + esc(p.vendor) + '</div>',
+        '  <div>' + aiStatusBadge(p.id) + '</div>',
+        '</div>',
+      ].join('');
+    }).join('');
 
-      <div class="notice info">
-        <strong>📝 ログイン方法</strong>
-        選択した CLI が「未ログイン」の場合、ダッシュボードの「AI を起動」→ ターミナルで <code>/login</code> を入力してください。<br>
-        Claude の場合は <a href="https://claude.ai/login" target="_blank">claude.ai/login</a> 経由のブラウザ認証になります。<br>
-        セットアップ完了後でも変更できます。
-      </div>
+    const selectedProvider = AI_PROVIDERS.find((p) => p.id === state.aiProvider) || AI_PROVIDERS[0];
+    const status = state.aiAuthStatus && state.aiAuthStatus[state.aiProvider];
+    let actionHint = '';
+    if (status && status.installed === false) {
+      actionHint =
+        '<div class="notice warn"><strong>' + esc(selectedProvider.name) + ' CLI が未インストールです</strong>' +
+        'ターミナルで以下のコマンドでインストールしてから「認証状態を再確認」してください:<br>' +
+        '<code style="display:block;margin-top:8px;padding:8px;background:#fff;border:1px solid var(--border);border-radius:6px;font-family:monospace;">' +
+        (state.aiProvider === 'claude' ? 'npm install -g @anthropic-ai/claude-code' :
+         state.aiProvider === 'codex' ? 'npm install -g @openai/codex' :
+         'npm install -g @google/gemini-cli') +
+        '</code></div>';
+    } else if (status && status.installed && !status.loggedIn) {
+      actionHint =
+        '<div class="notice info"><strong>' + esc(selectedProvider.name) + ' CLI に未ログインです</strong>' +
+        'ダッシュボードの「AI を起動」→ ターミナルで <code>/login</code> (または各 CLI のログイン手順) を実行してください。' +
+        (state.aiProvider === 'claude' ? '<br>Claude は <a href="https://claude.ai/login" target="_blank" rel="noopener">claude.ai/login</a> 経由のブラウザ認証です。' : '') +
+        '</div>';
+    } else if (status && status.installed && status.loggedIn) {
+      actionHint =
+        '<div class="notice ok"><strong>✓ ' + esc(selectedProvider.name) + ' 連携 OK</strong>セットアップを完了できます。</div>';
+    } else {
+      actionHint = '<div class="notice info"><strong>認証状態を確認中…</strong>「認証状態を再確認」ボタンで再度チェックできます。</div>';
+    }
 
-      <button class="btn btn-secondary" id="recheckAi">
-        <span class="spinner" id="recheckSpinner" style="display:none"></span>
-        認証状態を確認
-      </button>
+    return [
+      '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
+      '  <div style="font-size: 40px;">🤖</div>',
+      '  <div>',
+      '    <h2 style="margin: 0 0 4px;">AI 連携</h2>',
+      '    <p class="lead" style="margin: 0;">フォーム解析と入力を担当する AI CLI を選びます。Sales Claw 自体には課金機能はなく、各 AI プロバイダの料金体系に従います。</p>',
+      '  </div>',
+      '</div>',
+      '<hr class="divider">',
+      errBox,
+      '<div class="ai-providers">' + cards + '</div>',
+      actionHint,
+      '<button class="btn btn-secondary" id="recheckAi" style="margin-top: 14px;">',
+      '  <span class="spinner" id="recheckSpinner" style="display:none"></span>',
+      '  認証状態を再確認',
+      '</button>',
+      '<label class="terms-check" style="margin-top: 24px;">',
+      '  <input type="checkbox" id="bypassAi"' + (state.bypassAi ? ' checked' : '') + '>',
+      '  <span class="box"></span>',
+      '  <span>後で設定する (AI 連携なしで完了する) — フォーム入力機能は使えません</span>',
+      '</label>',
+    ].join('');
+  }
 
-      <label class="checkbox" style="margin-top:24px">
-        <input type="checkbox" id="bypassAi" \${state.bypassAi ? 'checked' : ''}>
-        <span>後で設定する (AI 連携なしで完了する) — フォーム入力機能は使えません</span>
-      </label>
-
-      <div class="wiz-actions">
-        <button class="btn btn-secondary" data-action="back">← 戻る</button>
-        <button class="btn btn-primary" data-action="finish">セットアップ完了 ✓</button>
-      </div>
-    \`;
+  function renderStep5Actions() {
+    return [
+      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<div class="wiz-actions-right">',
+      '  <button class="btn btn-primary" data-action="finish">セットアップ完了</button>',
+      '</div>',
+    ].join('');
   }
 
   function bindStep5() {
     document.querySelectorAll('.ai-card').forEach((el) => {
-      el.addEventListener('click', () => { state.aiProvider = el.dataset.ai; persistProgress(); render(); });
+      el.addEventListener('click', () => { state.aiProvider = el.dataset.ai; persistProgress(); render(); if (!state.aiAuthStatus[state.aiProvider]) setTimeout(() => checkAiAuth(state.aiProvider), 80); });
     });
-    async function checkAiAuth() {
+    async function checkAiAuth(provider) {
+      const target = provider || state.aiProvider;
+      state.aiAuthStatus[target] = { checking: true };
       const spinner = $('#recheckSpinner');
       if (spinner) spinner.style.display = 'inline-block';
-      const r = await fetchJson('/api/onboarding/check-ai?provider=' + encodeURIComponent(state.aiProvider));
-      if (spinner) spinner.style.display = 'none';
-      state.aiAuthStatus = (r.body && r.body.status) || null;
+      render();
+      try {
+        const r = await fetchJson('/api/onboarding/check-ai?provider=' + encodeURIComponent(target));
+        state.aiAuthStatus[target] = (r.body && r.body.status) || { installed: false, loggedIn: false };
+      } catch (_) {
+        state.aiAuthStatus[target] = { installed: false, loggedIn: false, error: 'check failed' };
+      }
       render();
     }
-    $('#recheckAi').addEventListener('click', checkAiAuth);
-    $('#bypassAi').addEventListener('change', (e) => { state.bypassAi = e.target.checked; persistProgress(); });
+    const recheckBtn = $('#recheckAi');
+    if (recheckBtn) recheckBtn.addEventListener('click', () => checkAiAuth(state.aiProvider));
+    const bypassEl = $('#bypassAi');
+    if (bypassEl) bypassEl.addEventListener('change', (e) => { state.bypassAi = e.target.checked; persistProgress(); });
     document.querySelector('[data-action="back"]').addEventListener('click', () => setStep(4));
     document.querySelector('[data-action="finish"]').addEventListener('click', finish);
-    if (!state.aiAuthStatus || state.aiAuthStatus.provider !== state.aiProvider) {
-      setTimeout(checkAiAuth, 120);
+    // 初回または provider 切替時に未確認なら自動チェック
+    if (!state.aiAuthStatus[state.aiProvider]) {
+      setTimeout(() => checkAiAuth(state.aiProvider), 120);
     }
   }
 
@@ -813,7 +1183,7 @@ body {
       valuePropositions: { strengths: mergeStrengths() },
       targetList: state.targetList,
       aiProvider: state.aiProvider,
-      aiAuthStatus: state.aiAuthStatus,
+      aiAuthStatus: state.aiAuthStatus[state.aiProvider] || null,
       bypassAi: state.bypassAi,
     };
     const r = await fetchJson('/api/onboarding/complete', { method: 'POST', body: JSON.stringify(payload) });
@@ -825,13 +1195,22 @@ body {
     }
   }
 
+  function cancelWizard() {
+    if (confirm('セットアップをキャンセルしますか? 入力した内容は保存されています。再起動時に続きから再開できます。')) {
+      window.location.href = '/' + (SESSION_TOKEN ? '?session=' + encodeURIComponent(SESSION_TOKEN) : '');
+    }
+  }
+
   // ---- main render ----
   function render() {
     renderStepper();
     const host = $('#cardHost');
-    const fns = { 1: renderStep1, 2: renderStep2, 3: renderStep3, 4: renderStep4, 5: renderStep5 };
+    const actions = $('#actionsHost');
+    const card = { 1: renderStep1, 2: renderStep2, 3: renderStep3, 4: renderStep4, 5: renderStep5 };
+    const acts = { 1: renderStep1Actions, 2: renderStep2Actions, 3: renderStep3Actions, 4: renderStep4Actions, 5: renderStep5Actions };
     const binds = { 1: bindStep1, 2: bindStep2, 3: bindStep3, 4: bindStep4, 5: bindStep5 };
-    host.innerHTML = fns[state.step]();
+    host.innerHTML = card[state.step]();
+    actions.innerHTML = acts[state.step]();
     binds[state.step]();
   }
 
@@ -845,4 +1224,5 @@ body {
 module.exports = {
   renderOnboardingPage,
   PRESET_STRENGTHS,
+  TERMS_BULLETS,
 };
