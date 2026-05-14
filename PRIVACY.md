@@ -136,7 +136,7 @@ Sales Claw は **"AS IS"** で提供されます ([LICENSE](./LICENSE) 参照)�
 ## 連絡
 
 - セキュリティ問題: [SECURITY.md](./SECURITY.md)
-- プライバシー関連の問い合わせ: [abckeishi@gmail.com](mailto:abckeishi@gmail.com)
+- プライバシー関連の問い合わせ: [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (タイトルに `[Privacy]` を付けてください)
 
 ## 改訂履歴
 

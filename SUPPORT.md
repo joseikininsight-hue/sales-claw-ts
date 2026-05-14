@@ -10,7 +10,7 @@ Sales Claw のサポート窓口・問い合わせ方法を整理します。
 | **機能要望** | [GitHub Issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues/new?template=feature_request.md) (feature_request テンプレート) |
 | **使い方の質問** | [GitHub Discussions](https://github.com/joseikininsight-hue/sales-claw-ts/discussions) (有効化後) |
 | **セキュリティ脆弱性** | **公開 Issue を立てずに** [SECURITY.md](./SECURITY.md) の手順を参照 |
-| **行動規範 (Code of Conduct) 違反** | [abckeishi@gmail.com](mailto:abckeishi@gmail.com) (確認後対応) |
+| **行動規範 (Code of Conduct) 違反** | [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (タイトル `[CoC]` を付与) |
 
 ## サポート対象バージョン
 

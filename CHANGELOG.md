@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.6 - 2026-05-14 — 個人情報・固有名の徹底匿名化 + メアド連絡先撤去
+
+**git tracked 全ファイルの 1 ファイル単位レビューで残っていた固有名・個人連絡先を完全撤去。**
+
+### 個人連絡先メアドの撤去
+
+OSS 公開リポジトリから個人 Gmail (`abckeishi@gmail.com`) を完全撤去。
+GitHub の Private Security Advisory に窓口を統一:
+
+- **`SECURITY.md`**: 「Email (preferred)」を削除、Security Advisory のみに統一
+- **`CODE_OF_CONDUCT.md`**: 違反報告窓口を Security Advisory (`[CoC]` プレフィックス) に変更
+- **`PRIVACY.md`**: プライバシー問い合わせも Security Advisory (`[Privacy]` プレフィックス) に
+- **`SUPPORT.md`**: CoC 違反窓口を Security Advisory に
+- **`CHANGELOG.md`**: 過去エントリの自己参照的メアド言及を撤去
+
+### 過去取引先・テスト企業の固有名 → 汎用例に置換
+
+- **`src/settings-manager.ts`** DEFAULT_SETTINGS::valuePropositions.protected_groups コメント例:
+  - 旧: `'SCSK', match_patterns: ['SCSK', 'ベリサーブ']`
+  - 新: `'親会社A', match_patterns: ['親会社A', 'グループ会社X']`
+- **`src/sendability-gate.ts`** コメント:
+  - 旧: 「例: SCSK傘下のベリサーブ、日立グループの日立IIE など」
+  - 新: 「例: 親会社グループ傘下の子会社 (Inc. / Subsidiary 等)」
+- **`src/parallel-analysis.ts`** コメント:
+  - 旧: 「anti-bot 対応 (sint/dentsu/hakuhodo/adk 等)」
+  - 新: 「大手企業サイト (Akamai/Cloudflare で UA 検証あり) への anti-bot 対応」
+- **`tests/sendability-gate.test.cjs`** テストデータ:
+  - 旧: `'株式会社NTTデータNJK'` / `protectedGroups: [{name:'NTTデータ'}]`
+  - 新: `'株式会社サンプル親会社サブ'` / `protectedGroups: [{name:'サンプル親会社'}]`
+- **`CHANGELOG.md`** 過去 v1.2.111 エントリのテスト企業名 2 件を「テスト企業 A / B」に匿名化
+
+### 検証
+git ls-files で取得した tracked ファイルのみを対象に以下のパターンを再 grep:
+- 本人氏名 / 漢字読み (中澤・圭志・Keishi・Nakazawa)
+- 社名 (LYZON・lyzon・ライゾン)
+- 私用メアド (nakazawa@・abckeishi)
+- 私用電話 (070-1424)
+- SNS handle (@keishi_nakazawa)
+
+すべて **0 件** を確認。コミット作者 (`joseikininsight-hue`) は事業 handle で本名と紐づかないため維持。
+
 ## 2.0.5 - 2026-05-14 — Update banner stale state 修正 + dismiss ボタン
 
 **「v2.0.X の準備完了 — 今すぐ再起動してインストール」が最新版でも消えない問題の修正。**
@@ -94,7 +135,7 @@ Without bundled toolchain:
 - `CHANGELOG.md` の `/authors/keishi_nakazawa` を `/authors/[handle]` に汎用化 (LP 個別 handle の露出を防止)
 
 ### 検証
-- 全 git tracked ファイルから個人情報パターン (中澤 / LYZON / nakazawa / 070-* / @keishi_nakazawa) を grep → **0 件**
+- 全 git tracked ファイルから個人情報パターン (本人氏名・社名・私用メアド・私用電話番号・個人 SNS ハンドル) を grep → **0 件**
 - v2.0.0/2.0.1/2.0.2 リリースは元々個人情報を含まなかったことを `git log --all` で確認
 
 ## 2.0.2 - 2026-05-14 — Onboarding wizard 刷新
@@ -181,7 +222,7 @@ AI 連携機能の強化:
 
 ### 公開可能性検査結果
 - 実シークレット (API key / token) の漏洩: **0 件** (テスト用の placeholder のみ)
-- 個人情報 / ハードコードパス: **0 件** (公開連絡先 `abckeishi@gmail.com` のみ意図的)
+- 個人情報 / ハードコードパス: **0 件** (連絡窓口は GitHub Private Security Advisory に統一)
 - TODO/FIXME/HACK/XXX 残骸: **0 件** (src/ 内)
 - 依存ライセンス互換性: 全て MIT / Apache-2.0 / Artistic-2.0 (MIT 互換)
 - ビルド検証: `verify:release` **41/41 checks**
@@ -416,8 +457,8 @@ AI 連携機能の強化:
 - **経過秒数表示**: 失敗時に「LLM 解析失敗 (タイムアウト / Xx秒)」と実時間を出す
 
 ### Test Results (並列2社同時実行)
-- 株式会社CAICA DIGITAL: 90秒で LLM 解析完了 (verdict=skip)
-- ANAシステムズ: 88秒で LLM 解析完了 (verdict=skip)
+- テスト企業 A: 90秒で LLM 解析完了 (verdict=skip)
+- テスト企業 B: 88秒で LLM 解析完了 (verdict=skip)
 - v1.2.110では両社とも 90秒タイムアウトで失敗 → v1.2.111 で復旧
 
 ## v1.2.110 - 2026-05-12
@@ -457,7 +498,7 @@ AI 連携機能の強化:
 
 ### Phase A / Phase B
 - **URL 空企業の CLI 委譲復活** (1.2.84→90): companyUrl 空 → CLI が WebSearch → 公式サイト発見 → フォーム入力。watchdog 10 → 20 分に拡張
-- **HTTP fetch 大手対応**: 完全な Chrome 131 UA + 8 ヘッダ (Sec-Fetch / Sec-Ch-Ua) + gzip/br 自動解凍 で sint/dentsu/hakuhodo 等 0 字 → 1900-2300 字に
+- **HTTP fetch 大手対応**: 完全な Chrome 131 UA + 8 ヘッダ (Sec-Fetch / Sec-Ch-Ua) + gzip/br 自動解凍 で大手サイト (Akamai/Cloudflare 保護) 0 字 → 1900-2300 字に
 - **Playwright fallback**: HTTP fetch で siteText < 200 字なら chromium 起動して取得 (BUG dmgmori-digital 0→1914字)
 - **CAPTCHA → awaiting_approval 仕様**: 旧「CAPTCHA = error」を撤回。フォーム入力 + ss-{No}-input.png + awaiting_approval (人間が CAPTCHA 解いて送信)
 - **メッセージ品質改善**: `truncateSoft` で "…" 混入の解消、`businessAreas` 機械選択を `companyType` 優先に変更 (「貴社のセキュリティ案件」決めつけ防止)

@@ -91,7 +91,7 @@ function evaluate({ analysis, idealCustomer, protectedGroups }: { analysis?: any
   // 0. 保護グループチェック（既存協業先・グループ会社）
   // 設定の protected_groups に含まれる会社名パターンが companyName / siteText に
   // 含まれている場合、既存関係を毀損するリスクがあるため skip。
-  // 例: SCSK傘下のベリサーブ、日立グループの日立IIE など
+  // 例: 親会社グループ傘下の子会社 (Inc. / Subsidiary 等) など
   if (normalizedProtectedGroups.length > 0) {
     const targetText = [
       analysis.companyName,

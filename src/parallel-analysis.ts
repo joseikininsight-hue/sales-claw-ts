@@ -234,8 +234,8 @@ async function analyzeCompanyLite(url, companyName, companyType) {
     });
   }
 
-  // 1.2.89 fix: anti-bot 対応 (sint/dentsu/hakuhodo/adk 等)
-  // 旧 UA は "Mozilla/5.0 (...) AppleWebKit/537.36" で途中切れ → Akamai/Cloudflare で弾かれる
+  // 1.2.89 fix: 大手企業サイト (Akamai / Cloudflare で UA 検証あり) への anti-bot 対応。
+  // 旧 UA は "Mozilla/5.0 (...) AppleWebKit/537.36" で途中切れ → 弾かれる。
   // 完全な Chrome UA + Accept-* ヘッダ + gzip/br 解凍 で大手サイトも取得可能にする
   const zlib = require('zlib');
   const FULL_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';

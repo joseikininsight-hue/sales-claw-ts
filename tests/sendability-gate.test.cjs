@@ -136,12 +136,12 @@ function validAnalysis(overrides = {}) {
 {
   const r = gate.evaluate({
     analysis: validAnalysis({
-      companyName: '株式会社NTTデータNJK',
+      companyName: '株式会社サンプル親会社サブ',
       siteTextExcerpt: 'システム開発サービスを提供しています。',
     }),
     idealCustomer: null,
     protectedGroups: [
-      { name: 'NTTデータ', reason: '既存協業先・グループ会社含む' },
+      { name: 'サンプル親会社', reason: '既存協業先・グループ会社含む' },
     ],
   });
   assertEq('protected group name-only schema should skip', r.action, 'skip');

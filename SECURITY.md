@@ -12,13 +12,15 @@
 
 **Please do NOT open public GitHub Issues for security vulnerabilities.**
 
-If you discover a security vulnerability in Sales Claw, please report it by:
+Use **GitHub Private Security Advisory** to report vulnerabilities confidentially:
 
-1. **Email (preferred)**: [abckeishi@gmail.com](mailto:abckeishi@gmail.com)
-   - Subject: `[SECURITY] Sales Claw - <brief description>`
-2. **GitHub Security Advisory** (private): Use the
-   [Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new)
-   form to submit privately.
+[**Report a vulnerability →**](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new)
+
+This is the recommended channel because:
+- The report is visible only to the project maintainers until disclosure
+- GitHub tracks fix progress and lets us coordinate disclosure with you
+- A CVE can be issued from the advisory if needed
+- No personal email addresses are exposed in this repository
 
 Include in your report:
 - A clear description of the vulnerability

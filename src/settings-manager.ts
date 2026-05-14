@@ -73,7 +73,7 @@ const DEFAULT_SETTINGS = {
 
     // 既存協業先・親会社グループなど、雑な営業接触を避ける保護リスト
     protected_groups: [
-      // { name: 'SCSK', match_patterns: ['SCSK', 'ベリサーブ'], reason: '既存協業先・グループ会社含む' }
+      // { name: '親会社A', match_patterns: ['親会社A', 'グループ会社X'], reason: '既存協業先・グループ会社含む' }
     ],
 
     // 直接競合・営業対象外になりやすい事業シグナル

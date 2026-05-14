@@ -20,8 +20,11 @@ Unacceptable behavior:
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported by emailing
-[abckeishi@gmail.com](mailto:abckeishi@gmail.com).
+Instances of unacceptable behavior should be reported confidentially via
+**[GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new)**.
+While that channel is primarily for security issues, it is the project's only
+confidential reporting endpoint, and CoC reports are treated with the same
+discretion. Mark the title with `[CoC]` so we can route it correctly.
 
 All complaints will be reviewed and investigated promptly and fairly. The project team is obligated to maintain confidentiality with regard to the reporter of an incident.
 
