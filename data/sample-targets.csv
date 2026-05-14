@@ -1,0 +1,4 @@
+No.,Status,Company,Type,Website URL,Form URL,Notes,,CAPTCHA,,Progress
+1,OK,Sample Analytics Co.,Consulting,https://example.com/company-a,https://example.com/company-a/contact,Sample data,,,,
+2,OK,Blue Sky Systems,SIer,https://example.com/company-b,https://example.com/company-b/contact,Sample data,,,,
+3,NG,Test Excluded Inc.,SaaS,https://example.com/company-c,https://example.com/company-c/contact,Excluded sample,,,,

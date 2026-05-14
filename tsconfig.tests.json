@@ -1,0 +1,22 @@
+{
+  // 新規テストは tests/**/*.test.ts で書くと自動的に strict 型チェック対象になる。
+  // 既存 .cjs は checkJs: false のままなので段階移行可能。
+  // 段階的に .cjs → .test.ts へ移行し、最後に checkJs: true を有効化する想定。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "."
+  },
+  "include": [
+    "tests/**/*.ts",
+    "tests/**/*.cjs",
+    "src/**/*.ts",
+    "src/**/*.cjs"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-ts",
+    "out"
+  ]
+}

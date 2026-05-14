@@ -1,0 +1,21 @@
+
+[startup] removed stale dashboard-server.lock (dead pid=8120, startedAt=2026-05-14T06:27:26.213Z)
+[startup] cleaned 2 stale dashboard-runtime file(s): data/dashboard-runtime.json, data/dashboard-runtime.json
+  監視中: action-log.json
+  監視中: contact-history.json
+  監視中: outreach-targets.json
+  監視中: live-monitor.json
+  監視中: screenshots
+  監視中: settings.json
+  監視中: settings.json
+  監視中: target-list.xlsx
+
+===================================
+  Sales Claw ダッシュボード
+  http://127.0.0.1:3456
+===================================
+
+
+データ変更時のみブラウザを更新します（ポーリングなし）
+Ctrl+C で停止
+

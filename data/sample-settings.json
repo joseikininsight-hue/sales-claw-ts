@@ -1,0 +1,313 @@
+{
+  "companyProfile": {
+    "companyName": "サンプル株式会社",
+    "companyNameEn": "Sample Inc.",
+    "companyNameKana": "サンプルカブシキガイシャ",
+    "representative": "サンプル 太郎",
+    "contactName": "担当者名",
+    "contactNameKana": "たんとうしゃめい",
+    "contactTitle": "担当",
+    "department": "管理部",
+    "email": "sample@example.com",
+    "phone": "03-0000-0000",
+    "fax": "03-0000-0001",
+    "mobile": "090-0000-0000",
+    "postalCode": "100-0001",
+    "address": "〒100-0001 東京都千代田区サンプル1-1-1",
+    "addressEn": "1-1-1 Sample, Chiyoda-ku, Tokyo 100-0001, Japan",
+    "website": "https://www.example.com/",
+    "partnerPage": "https://www.example.com/partner/",
+    "corporateProfile": "https://www.example.com/about/",
+    "established": "2010年4月",
+    "employeeCount": "150名",
+    "capital": "5,000万円",
+    "industry": "IT・ソフトウェア",
+    "businessDescription": "Webサイトや業務システムの制作・運用サンプル",
+    "notes": "サンプル用の設定値です"
+  },
+  "valuePropositions": {
+    "companyUrl": "https://www.example.com/",
+    "serviceUrls": [
+      { "label": "サービス紹介ページ", "url": "https://www.example.com/services/" },
+      { "label": "事例ページ", "url": "https://www.example.com/cases/" }
+    ],
+    "documentPaths": [
+      { "name": "紹介資料.pdf", "path": "docs/intro.pdf", "description": "サンプル用の紹介資料" }
+    ],
+    "strengths": [
+      {
+        "key": "web_dev",
+        "label": "Webアプリケーション開発",
+        "detail": "Webサイトや業務システムの要件整理から実装までを一通り扱えるサンプル設定",
+        "keywords": ["webアプリ", "システム開発", "フロントエンド", "バックエンド"]
+      },
+      {
+        "key": "cloud",
+        "label": "クラウドソリューション",
+        "detail": "クラウド環境の基本的な設計・運用に触れるためのサンプル項目",
+        "keywords": ["aws", "azure", "gcp", "クラウド", "インフラ"]
+      },
+      {
+        "key": "ai",
+        "label": "AI・データ活用",
+        "detail": "AI活用の例文生成や分類ロジックに使うためのサンプル項目",
+        "keywords": ["ai", "機械学習", "データ分析", "生成ai"]
+      }
+    ],
+    "successPatterns": [
+      { "partner": "サンプルパートナー", "proof": "Webサイト刷新の検討を技術面で支援した例", "type": "SIer" },
+      { "partner": "サンプルコンサル", "proof": "要件整理後の実装フェーズを支援した例", "type": "コンサル" }
+    ],
+    "protected_groups": [
+      {
+        "name": "サンプル既存取引先A",
+        "match_patterns": ["サンプル既存A", "Sample Existing A"],
+        "reason": "既存協業先・グループ会社含む（実際の社名に置き換えてください）"
+      },
+      {
+        "name": "サンプル既存取引先B",
+        "match_patterns": ["サンプル既存B", "Sample Existing B"],
+        "reason": "既存協業先・グループ会社含む（実際の社名に置き換えてください）"
+      }
+    ],
+    "competitors": [
+      {
+        "category": "自社プロダクト競合",
+        "match_patterns": ["サンプル競合プロダクトA", "サンプル競合プロダクトB"]
+      },
+      {
+        "category": "サービス直接競合",
+        "match_patterns": ["サンプル直接競合", "自社実装完結"]
+      }
+    ],
+    "industryProfiles": {
+      "SIer": {
+        "opener": "貴社の案件対応において、Web領域で補完できることはございますでしょうか。",
+        "point": "Webサイトや業務システムの制作支援を想定したサンプル文面です。",
+        "examples": "案件の一部工程を支援する例",
+        "strength": "Web領域の基本的な対応力"
+      },
+      "コンサル": {
+        "opener": "企画や要件整理の後工程で、実装面の支援が必要になることはございませんでしょうか。",
+        "point": "戦略や計画を実装へつなぐ文面のサンプルです。",
+        "examples": "要件の具体化や実装補助の例",
+        "strength": "計画を形にする補助力"
+      },
+      "default": {
+        "opener": "貴社の取り組みを拝見し、技術面でお役に立てる点があるかと思いご連絡しました。",
+        "point": "汎用的な問い合わせ文面を生成するためのサンプルです。",
+        "examples": "一般的な技術支援の例",
+        "strength": "汎用的な技術支援"
+      }
+    },
+    "idealCustomer": {
+      "comment": "■ 業界非依存の理想顧客像 (ICP) ■ ここに自分の言葉で書けば AI が解釈してフィット度判定します。industryProfiles より優先されます。 IT業界以外 (不動産/人材/士業/製造) でも同じスキーマで動きます。例は下の '_examplesByIndustry' を参照。",
+      "_examplesByIndustry": {
+        "_comment": "この _ で始まるフィールドはサンプル用。実際の運用では削除して構いません。",
+        "real_estate_buyer": {
+          "descriptionFreetext": "築古の区分マンションを保有する個人/法人オーナー。管理コストや相続対策で売却を検討している層。",
+          "mustHave": ["区分所有権 (土地のみ不可)", "首都圏物件", "築15年以上"],
+          "dealBreakers": ["新築物件", "土地のみ", "競合の不動産買取業者", "地方物件 (東京/神奈川/埼玉/千葉以外)"]
+        },
+        "hr_recruiter": {
+          "descriptionFreetext": "IT/SaaS 業界で 20-100 名規模の急成長スタートアップ。エンジニア採用で苦戦している会社。",
+          "mustHave": ["エンジニア募集中", "資金調達済 (シリーズB以上)", "リモート/ハイブリッド可"],
+          "dealBreakers": ["大手 SI", "派遣業 (競合)", "公務員採用"]
+        },
+        "tax_accountant": {
+          "descriptionFreetext": "売上 1〜10 億円規模の中小企業で、現在は税理士契約していないか不満を持っている経営者。",
+          "mustHave": ["年商 1 億円以上", "従業員 10 名以上", "都内/関東圏"],
+          "dealBreakers": ["既に大手会計事務所と契約", "個人事業主 (規模ミスマッチ)"]
+        }
+      },
+      "descriptionFreetext": "サンプル: 自社サービスに予算があり、外部発注の文化があるターゲット像をここに記述します。",
+      "mustHave": [
+        "サービス領域での外部発注の文化がある",
+        "想定発注規模に合致する"
+      ],
+      "dealBreakers": [
+        "自社で完結する体制を持つため外注ニーズが薄い",
+        "本業領域がミスマッチ",
+        "規模ミスマッチで発注額が成立しない",
+        "「営業お断り」を明記している会社",
+        "直接競合する同業他社"
+      ],
+      "exemplars": {
+        "comment": "ポジ/ネガを各3件入れると AI のフィット判定精度が大きく上がります。匿名化して書いてください。実在企業名・取引額は記載しないでください。",
+        "positive": [
+          {
+            "anonymizedProfile": "サンプル: 上場規模の事業会社で、社内に専任リソースが不足しているケース",
+            "whyWon": "サンプル: 専門領域の実装パートナーを探していた",
+            "dealSize": "サンプル: 中規模案件"
+          },
+          {
+            "anonymizedProfile": "サンプル: 中堅制作会社で、上流工程に強いが下流の実装は外注しているケース",
+            "whyWon": "サンプル: 実装下流の安定パートナーが必要だった",
+            "dealSize": "サンプル: 月次ストック案件"
+          },
+          {
+            "anonymizedProfile": "サンプル: 広告代理店のデジタル部門",
+            "whyWon": "サンプル: クライアント向け提案の実装パートナーを探していた",
+            "dealSize": "サンプル: 中規模案件"
+          }
+        ],
+        "negative": [
+          {
+            "anonymizedProfile": "サンプル: 中堅独立系で自社内に開発組織を持つケース",
+            "whyLost": "自社で完結するため外注ニーズが薄い"
+          },
+          {
+            "anonymizedProfile": "サンプル: Web 開発が本業でない事業者",
+            "whyLost": "予算配分が事業の中心ではない"
+          },
+          {
+            "anonymizedProfile": "サンプル: 個人事業規模の制作会社",
+            "whyLost": "規模ミスマッチ。発注額が成立しない"
+          }
+        ]
+      },
+      "exclusionKeywords": {
+        "comment": "サイトテキストに以下のキーワードが含まれていたら自動 skip。dealBreakers の語尾形を入れる。",
+        "patterns": [
+          "営業お断り",
+          "営業のご連絡はご遠慮",
+          "セールス目的",
+          "採用専用",
+          "IR専用",
+          "報道専用",
+          "メディア専用"
+        ]
+      },
+      "competitors": {
+        "comment": "自社サービスと直接競合する企業のキーワード。送信前にマッチしたら skip。",
+        "patterns": [
+          "サンプル競合A",
+          "サンプル競合B",
+          "サンプル競合C"
+        ]
+      },
+      "minSiteTextLength": 800,
+      "_useLLMAnalyzerComment": "■ Phase A-1 ベータ機能 ■ true にすると業態判定を CLI (Claude/Codex/Gemini) に委譲し、業界辞書を使わずに春光社のような OOH 専業を正しく分類します。コスト: 1社あたり CLI 呼び出し 5-30秒 + サブスク枠消費。落ち着いて検証したい場合は false (default)。",
+      "useLLMAnalyzer": false,
+      "_useLLMMessageGeneratorComment": "■ Phase B ベータ機能 ■ true にすると本文生成を CLI に委譲し、テンプレ感のない各社専用文面を生成します。8 項目の品質ゲートで送信前検証。コスト: useLLMAnalyzer に追加で 1社あたり CLI 呼び出し 10-60秒。",
+      "useLLMMessageGenerator": false
+    }
+  },
+  "targetList": {
+    "filePath": "data/sample-targets.csv",
+    "fileType": "csv",
+    "sheetIndex": 0,
+    "columnMapping": {
+      "no": 0,
+      "status": 1,
+      "companyName": 2,
+      "type": 3,
+      "url": 4,
+      "formUrl": 5,
+      "notes": 6,
+      "captcha": 8,
+      "progress": 10
+    }
+  },
+  "exclusionRules": {
+    "competitors": [
+      { "pattern": "サンプル競合", "status": "競合" }
+    ],
+    "existingClients": [
+      { "pattern": "サンプル既存先", "status": "既存契約" }
+    ],
+    "ngList": [
+      { "pattern": "サンプル除外先", "reason": "サンプル用の除外例", "status": "NG" }
+    ],
+    "customRules": [],
+    "excludeStatuses": ["×", "web×", "競合", "規模×", "既存契約", "パイプ有", "提案辞退", "失注", "NG"]
+  },
+  "messageTemplates": {
+    "style": {
+      "tone": "formal",
+      "language": "ja",
+      "maxLength": 2000,
+      "signatureFormat": "full"
+    },
+    "inquiryTypes": ["その他", "お問い合わせ", "協業・パートナーシップ", "サービスについて"],
+    "approachObjective": "今回の営業では、協業前提に寄せすぎず、まずは自社サービスの提供価値と情報交換の打診が伝わる文面にしてください。",
+    "approachGuardrails": "「協業」「パートナー」という言葉を無理に入れない。相手の課題を決めつけない。内部メモを顧客向け本文にそのまま出さない。",
+    "closingLine": "もしご関心をお持ちいただけましたら、短時間でも情報交換の機会をいただけますと幸いです。\n貴社の取り組みについても伺えればと思っております。",
+    "greetingLine": "お世話になります。",
+    "cta": "何卒よろしくお願いいたします。",
+    "referenceUrlText": "詳細はこちらをご覧いただけますと幸いです。",
+    "signatureTemplate": "{companyName}\n{contactName}\nTEL: {phone}\nMAIL: {email}",
+    "letterTemplate": {
+      "enabled": false,
+      "header": "",
+      "footer": "",
+      "format": "A4"
+    }
+  },
+  "preferences": {
+    "dashboardPort": 3765,
+    "dashboardHost": "127.0.0.1",
+    "language": "ja",
+    "timezone": "Asia/Tokyo",
+    "dateFormat": "YYYY-MM-DD HH:mm",
+    "screenshotDir": "screenshots",
+    "dataDir": "data",
+    "emailSearchKeyword": "",
+    "emailProvider": "outlook",
+    "maxRetries": 3,
+    "pageTimeout": 15000,
+    "formFillTimeout": 5000,
+    "headless": true,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "locale": "ja-JP",
+    "aiProvider": "claude",
+    "aiModels": {
+      "claude": "claude-sonnet-4-6",
+      "codex": "",
+      "gemini": ""
+    },
+    "logLevel": "info",
+    "maxLogEntries": 10000,
+    "requireApprovalBeforeSend": true,
+    "autoSendEligibleForms": false,
+    "exportFilenamePrefix": "outreach_progress"
+  },
+  "apiKeys": {
+    "serpApi": "",
+    "houjinBangou": "",
+    "gBizInfo": "",
+    "edinet": "",
+    "capSolver": ""
+  },
+  "listBuilder": {
+    "officialDataFirst": true,
+    "scraplingMcpEnabled": false,
+    "scraplingPythonPath": "python",
+    "concurrency": 3,
+    "perDomainConcurrency": 2,
+    "perDomainMinIntervalMs": 1000,
+    "timeoutMs": 30000,
+    "respectRobotsTxt": true,
+    "stopOnCaptcha": true,
+    "stopOn403": true,
+    "stopOn429": true,
+    "extractPersonalEmails": false,
+    "extractPersonNames": false,
+    "maxResultsPerRun": 500,
+    "maxDepthPerCompanySite": 2,
+    "maxPagesPerDomain": 20,
+    "defaultUnknownFieldPolicy": "standard",
+    "dedupeThreshold": 0.9,
+    "saveEvidence": true,
+    "cacheTtlDays": 30,
+    "scoring": {
+      "industry": 20,
+      "prefecture": 10,
+      "size": 15,
+      "officialVerified": 15,
+      "formAvailable": 15,
+      "noPriorContact": 15,
+      "keywordMatch": 10
+    }
+  }
+}

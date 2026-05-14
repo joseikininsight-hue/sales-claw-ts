@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dashboard:preview"],
+      "port": 3480
+    },
+    {
+      "name": "dashboard-standalone",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dashboard"],
+      "port": 3765
+    },
+    {
+      "name": "electron-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 3765
+    },
+    {
+      "name": "electron-app-fast",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start:fast"],
+      "port": 3765
+    },
+    {
+      "name": "build-watch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsc", "-p", "tsconfig.json", "--watch"],
+      "port": 0
+    }
+  ]
+}

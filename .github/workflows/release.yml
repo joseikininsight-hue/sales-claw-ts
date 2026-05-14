@@ -1,0 +1,168 @@
+name: Release
+
+# main への push で:
+#   1. package.json::version を読み取り、tag v{version} を作成 (まだ無ければ)
+#   2. Win / Mac / Linux のインストーラを electron-builder でビルド
+#   3. GitHub Releases にアップロード (electron-builder の publish 経由)
+#
+# 自動更新の仕組み:
+#   - インストール済みアプリは GitHub Releases の latest.yml を 6 時間ごとに polling
+#   - 新バージョンが publish されると自動で DL → 再起動で更新
+#
+# 二重リリース防止:
+#   - tag が既に存在する場合は skip (= version を上げないと release されない)
+#   - workflow_dispatch でも手動実行可能
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'electron-builder.yml'
+      - 'src/**'
+      - 'electron-main.ts'
+      - 'assets/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release even if tag exists (DANGEROUS)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Read version & ensure tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      tag_exists: ${{ steps.check.outputs.exists }}
+      should_release: ${{ steps.decide.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tag check に必要
+
+      - name: Read package.json version
+        id: read
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: check
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ steps.read.outputs.version }}" | grep -q v; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide whether to release
+        id: decide
+        run: |
+          if [ "${{ steps.check.outputs.exists }}" = "false" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_release }}" = "true" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag if missing
+        if: steps.decide.outputs.should_release == 'true' && steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.read.outputs.version }}" -m "Release v${{ steps.read.outputs.version }}"
+          git push origin "v${{ steps.read.outputs.version }}"
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release readiness
+        run: npm run verify:release
+
+      - name: Build & publish (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+      - name: Build & publish (macOS)
+        if: matrix.os == 'macos-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS notarization (skip if secrets not configured)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac --publish always
+
+      - name: Build & publish (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --publish always
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.yml
+          retention-days: 14
+
+  verify:
+    name: Post-release verify
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: needs.prepare.outputs.should_release == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify GitHub Releases latest.yml is reachable & non-empty
+        run: |
+          # latest.yml の 0KB チェック・CDN 疎通確認まで verify:github が自動でやってくれる
+          node scripts/verify-release-readiness.cjs --github

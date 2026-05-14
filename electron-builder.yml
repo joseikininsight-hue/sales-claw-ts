@@ -1,0 +1,158 @@
+appId: com.sales-claw
+productName: Sales Claw
+copyright: MIT License
+
+# 自動更新: GitHub Releases から配信
+# app-update.yml に実リポジトリを焼き込み、インストール済みアプリが latest.yml を参照できるようにする
+publish:
+  - provider: github
+    owner: joseikininsight-hue
+    repo: sales-claw
+    releaseType: release
+    channel: latest
+    publishAutoUpdate: true
+
+# asar無効でファイルパスをシンプルに
+asar: false
+
+# node-pty は prebuilds/win32-x64/ の N-API バイナリで動かす方針。
+# @electron/rebuild は Python と node-gyp toolchain を要求するうえ、
+# システム Node の ABI で書き戻して Electron で読めなくなる事故が出た
+# ため、自動リビルド系を完全に無効化する。
+nodeGypRebuild: false
+npmRebuild: false
+buildDependenciesFromSource: false
+
+directories:
+  output: dist
+  buildResources: assets
+
+extraResources:
+  - from: assets
+    to: assets
+    filter:
+      - favicon.png
+      - icon.png
+      - icon.ico
+      - tray.png
+      - vendor/**
+
+# パッケージに含めるファイル
+files:
+  - "**/*"
+  - "!dist/**"
+  - "!dist-released/**"
+  - "!.git/**"
+  - "!.github/**"
+  - "!.gemini/**"
+  - "!.next/**"
+  - "!.playwright-mcp/**"
+  - "!.sales-claw-work/**"
+  - "!.electron-userdata/**"
+  - "!.aidesigner/**"
+  - "!.code-review-graph/**"
+  - "!.claude/**"
+  # Next/LP assets are served by the public web build, not by the desktop dashboard.
+  # Keeping them out of the Windows app cuts installer size and avoids long 7z stalls.
+  - "!app/**"
+  - "!components/**"
+  - "!lib/**"
+  - "!public/**"
+  - "!screenshots/**"
+  - "!data/settings.json"
+  - "!data/action-log.json"
+  - "!data/contact-history.json"
+  - "!data/dashboard-runtime.json"
+  - "!data/dashboard-start.*"
+  - "!data/live-monitor.json"
+  - "!data/update-status.json"
+  - "!data/outreach-targets.json"
+  - "!data/claude-prompts/**"
+  - "!data/imports/**"
+  - "!data/*.csv"
+  - "data/sample-targets.csv"
+  - "!**/*.xlsx"
+  - "!*.log"
+  - "!data/ai-run-metrics.jsonl"
+  - "!tmp/**"
+  - "!temp/**"
+  - "!playwright-report/**"
+  - "!test-results/**"
+  - "!tests/**"
+  - "!*.png"
+  - "!sample/**"
+  - "!launch-silent.vbs"
+  - "!launch.sh"
+  - "!.agents/**"
+  - "!.mcp.json"
+  - "!assets/名称未設定のデザイン.png"
+  # node-pty: build/ はシステム Node の ABI でビルドされた .node が紛れ込み
+  # Electron (Node 24 系 / 別 V8) で読むと main プロセスごとネイティブクラッシュ。
+  # prebuilds/win32-x64/ の N-API 版だけを残し、loader にそちらを引かせる。
+  - "!node_modules/node-pty/build/**"
+  - "!node_modules/node-pty/deps/**"
+  - "!node_modules/node-pty/src/**"
+  - "!node_modules/node-pty/scripts/**"
+  - "!node_modules/node-pty/binding.gyp"
+  - "!node_modules/node-pty/third_party/**"
+
+# Windows インストーラー (NSIS)
+# artifactName でハイフン区切りに固定 → latest.yml と GitHub アセット名を一致させる
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: assets/icon.ico
+  artifactName: "Sales-Claw-Setup-${version}.${ext}"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Sales Claw
+  # Disable auto-launch right after install — there is a race where NSIS
+  # finishes the silent install (uninstall old → write new files) but the
+  # auto-launch fires before all files are flushed, producing
+  # "Cannot find module 'electron-updater'" / 'universalify' / etc errors.
+  # User opens the app from the tray / Start menu after install completes.
+  runAfterFinish: false
+  # 差分インストールを無効化し、毎回フルインストーラを転送する。
+  # NSIS の blockmap-based 差分は「既存インストールが CI ビルドと完全一致」
+  # 前提で動くため、ローカルbuild経由で入った v1.2.5 などからの差分更新で
+  # node_modules の transitive 依存 (universalify ほか) が脱落する事故が
+  # v1.2.5→1.2.6 / 1.2.6→1.2.7 / 1.2.7→1.2.8 の3回連続で発生したため。
+  # ダウンロード量は毎回 ~200MB に増えるが、信頼性を優先する。
+  differentialPackage: false
+
+# macOS
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: assets/icon.png
+  category: public.app-category.business
+  artifactName: "Sales-Claw-${version}-${arch}.${ext}"
+
+dmg:
+  title: Sales Claw Installer
+  contents:
+    - x: 410
+      y: 150
+      type: link
+      path: /Applications
+    - x: 130
+      y: 150
+      type: file
+
+# Linux
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: assets/icon.png
+  category: Office
+  artifactName: "Sales-Claw-${version}-${arch}.${ext}"

@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022", "DOM"],
+
+    "rootDir": ".",
+    "outDir": "./dist-ts",
+
+    "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": false,
+    "alwaysStrict": true,
+    "useUnknownInCatchVariables": false,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": false,
+    "skipLibCheck": true,
+    "moduleDetection": "force",
+
+    "allowJs": true,
+    "checkJs": false,
+
+    "declaration": false,
+    "sourceMap": true,
+    "removeComments": false,
+    "preserveConstEnums": true,
+
+    "incremental": true,
+    "tsBuildInfoFile": "./dist-ts/.tsbuildinfo",
+
+    "forceConsistentCasingInFileNames": true,
+
+    "types": ["node", "electron"]
+  },
+  "include": [
+    "electron-main.ts",
+    "src/**/*.ts",
+    "src/**/*.json"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-released",
+    "dist-ts",
+    "out",
+    "tests",
+    "scripts",
+    "assets",
+    "data",
+    "docs",
+    "**/*.test.ts",
+    "**/*.test.cjs"
+  ]
+}
