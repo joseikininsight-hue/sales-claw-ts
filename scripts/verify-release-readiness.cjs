@@ -12,7 +12,7 @@ const CHECK_GITHUB = args.has('--github');
 const EXPECTED = {
   provider: 'github',
   owner: 'joseikininsight-hue',
-  repo: 'sales-claw',
+  repo: 'sales-claw-ts',
   channel: 'latest',
 };
 

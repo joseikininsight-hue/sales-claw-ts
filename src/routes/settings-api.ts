@@ -117,7 +117,11 @@ module.exports = function createSettingsApiRoutes(ctx) {
   // POST /api/settings/excel/import - import Company Profile + Value Propositions workbook
   async function handleSettingsExcelImport(req, res) {
     try {
-      const data: any = await parseJsonBody(req);
+      // 1.2.111+: Excel/CSV を base64 で受けるため、デフォルト 2 MiB だと
+      // 1.5 MB 以上の xlsx で簡単に超過 → 接続切断 → 「ネットワーク不通」誤訳。
+      // 50 MiB まで許容し、超過時は 413 で構造化エラーを返す。
+      const IMPORT_MAX_BYTES = 50 * 1024 * 1024;
+      const data: any = await parseJsonBody(req, IMPORT_MAX_BYTES);
       const { contentBase64 } = data || {};
       if (!contentBase64) {
         jsonResponse(res, 400, { ok: false, error: 'contentBase64 is required.' });
@@ -139,6 +143,14 @@ module.exports = function createSettingsApiRoutes(ctx) {
         valuePropositions: imported.sections.valuePropositions || null,
       });
     } catch (e) {
+      if (e && e.code === 'BODY_TOO_LARGE') {
+        const limitMiB = Math.round((e.maxBytes || 0) / 1024 / 1024);
+        jsonResponse(res, 413, {
+          ok: false,
+          error: `アップロードしたファイルが大きすぎます (上限 ${limitMiB} MiB)。不要な行を削除するか、ファイルを分割してください。`,
+        });
+        return;
+      }
       jsonResponse(res, 400, { ok: false, error: e.message });
     }
   }
@@ -292,7 +304,11 @@ module.exports = function createSettingsApiRoutes(ctx) {
   // POST /api/target-list/import - import Excel/CSV and switch target list
   async function handleTargetListImport(req, res) {
     try {
-      const data: any = await parseJsonBody(req);
+      // 1.2.111+: Excel/CSV を base64 で受けるため、デフォルト 2 MiB だと
+      // 1.5 MB 以上の xlsx で簡単に超過 → 接続切断 → 「ネットワーク不通」誤訳。
+      // 50 MiB まで許容し、超過時は 413 で構造化エラーを返す。
+      const IMPORT_MAX_BYTES = 50 * 1024 * 1024;
+      const data: any = await parseJsonBody(req, IMPORT_MAX_BYTES);
       const { fileName, contentBase64 } = data || {};
       if (!fileName || !contentBase64) {
         jsonResponse(res, 400, { ok: false, error: 'fileName and contentBase64 are required.' });
@@ -320,6 +336,14 @@ module.exports = function createSettingsApiRoutes(ctx) {
       notifyClients({ type: 'target-list-validation-deferred', reason: 'target-list-imported', time: Date.now() });
       jsonResponse(res, 200, { ok: true, validationDeferred: true, ...imported });
     } catch (e) {
+      if (e && e.code === 'BODY_TOO_LARGE') {
+        const limitMiB = Math.round((e.maxBytes || 0) / 1024 / 1024);
+        jsonResponse(res, 413, {
+          ok: false,
+          error: `アップロードしたファイルが大きすぎます (上限 ${limitMiB} MiB)。不要な行を削除するか、ファイルを分割してください。`,
+        });
+        return;
+      }
       jsonResponse(res, 500, { ok: false, error: e.message });
     }
   }

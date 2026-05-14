@@ -6026,9 +6026,29 @@ const PARSE_JSON_BODY_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseJsonBody(req, maxBytes = PARSE_JSON_BODY_MAX_BYTES) {
   return new Promise((resolve, reject) => {
+    // 1.2.111+: 上限超過時に req.destroy() で接続を切ると、クライアント側 fetch()
+    // が "Failed to fetch" を投げ、UI 側 translateError() が「ネットワークに
+    // 接続できません」と誤翻訳する事故が起きる (Excel/CSV 取込時に多発)。
+    // 上限を超えた場合は accumulating を止めて promise を reject するが、
+    // 接続は維持して呼び出し側が 413 を返せるようにする。
+    // 悪意あるクライアント対策として HARD_CAP (上限の 4 倍) を超えたら destroy。
+    const HARD_CAP = Math.max(maxBytes * 4, maxBytes + 16 * 1024 * 1024);
     let body = '';
     let aborted = false;
+    let totalBytes = 0;
     req.on('data', chunk => {
+      totalBytes += chunk.length;
+      if (totalBytes > HARD_CAP) {
+        if (!aborted) {
+          aborted = true;
+          const err: any = new Error('Request body too large');
+          err.code = 'BODY_TOO_LARGE';
+          err.maxBytes = maxBytes;
+          reject(err);
+        }
+        try { req.destroy(); } catch (_) {}
+        return;
+      }
       if (aborted) return;
       body += chunk;
       if (body.length > maxBytes) {
@@ -6036,7 +6056,6 @@ function parseJsonBody(req, maxBytes = PARSE_JSON_BODY_MAX_BYTES) {
         const err: any = new Error('Request body too large');
         err.code = 'BODY_TOO_LARGE';
         err.maxBytes = maxBytes;
-        try { req.destroy(); } catch (_) {}
         reject(err);
       }
     });

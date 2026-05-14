@@ -3,7 +3,7 @@
 AI CLI を活用した企業問い合わせフォーム営業ツールです。
 ターゲット企業のWebサイトを分析し、カスタマイズされたメッセージを生成し、問い合わせフォームへの入力を支援します。
 
-最新バージョンは [GitHub Releases](https://github.com/joseikininsight-hue/sales-claw/releases) を参照してください。
+最新バージョンは [GitHub Releases](https://github.com/joseikininsight-hue/sales-claw-ts/releases) を参照してください。
 
 現在は次の CLI を切り替えて利用できます。
 
@@ -15,7 +15,7 @@ AI CLI を活用した企業問い合わせフォーム営業ツールです。
 
 ### Step 1 — アプリをダウンロード
 
-公開先リポジトリの [Releases](https://github.com/joseikininsight-hue/sales-claw/releases) ページから OS に合ったファイルをダウンロードしてください。
+公開先リポジトリの [Releases](https://github.com/joseikininsight-hue/sales-claw-ts/releases) ページから OS に合ったファイルをダウンロードしてください。
 
 | OS | ダウンロードするファイル |
 |----|----------------------|
@@ -115,7 +115,7 @@ Excel (.xlsx) または CSV にターゲット企業を記載し、Settings タ�
 ### 1. Install
 
 ```bash
-git clone https://github.com/joseikininsight-hue/sales-claw.git
+git clone https://github.com/joseikininsight-hue/sales-claw-ts.git
 cd sales-claw
 npm install
 npx playwright install chromium

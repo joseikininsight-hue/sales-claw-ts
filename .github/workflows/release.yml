@@ -34,6 +34,12 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# GITHUB_TOKEN に書き込み権限を付与:
+#   - git tag を push するため (prepare job)
+#   - electron-builder が GitHub Releases に publish するため (build job)
+permissions:
+  contents: write
+
 jobs:
   prepare:
     name: Read version & ensure tag

@@ -7,7 +7,7 @@ copyright: MIT License
 publish:
   - provider: github
     owner: joseikininsight-hue
-    repo: sales-claw
+    repo: sales-claw-ts
     releaseType: release
     channel: latest
     publishAutoUpdate: true

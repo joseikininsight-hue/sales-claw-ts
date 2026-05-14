@@ -1,5 +1,5 @@
 
-[startup] removed stale dashboard-server.lock (dead pid=8120, startedAt=2026-05-14T06:27:26.213Z)
+[startup] removed stale dashboard-server.lock (dead pid=22032, startedAt=2026-05-14T06:33:04.712Z)
 [startup] cleaned 2 stale dashboard-runtime file(s): data/dashboard-runtime.json, data/dashboard-runtime.json
   監視中: action-log.json
   監視中: contact-history.json

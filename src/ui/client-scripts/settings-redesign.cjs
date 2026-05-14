@@ -285,7 +285,7 @@ const SCRIPT = `(function(){
       +   '<div class="set2-hint-icon"><span class="material-symbols-outlined">tips_and_updates</span></div>'
       +   '<div class="set2-hint-body">'
       +     '<div class="set2-hint-title">設定のヒント</div>'
-      +     '<a href="https://github.com/joseikininsight-hue/sales-claw#readme" target="_blank" rel="noopener" class="set2-hint-link">詳細ガイドを見る <span class="material-symbols-outlined" style="font-size:12px">open_in_new</span></a>'
+      +     '<a href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener" class="set2-hint-link">詳細ガイドを見る <span class="material-symbols-outlined" style="font-size:12px">open_in_new</span></a>'
       +   '</div>'
       + '</div>'
       + '<button type="button" class="set2-save-next" data-set2-save-next="1"><span>保存して次へ</span><span class="material-symbols-outlined">arrow_forward</span></button>'
@@ -396,7 +396,7 @@ const SCRIPT = `(function(){
         +   '<span class="set2-side-hint-title">設定のヒント</span>'
         + '</div>'
         + '<p class="set2-side-hint-desc">各設定はAIがフォームを自動生成・最適化するために使用されます。</p>'
-        + '<a class="set2-side-hint-link" href="https://github.com/joseikininsight-hue/sales-claw#readme" target="_blank" rel="noopener">詳細ガイドを見る <span class="material-symbols-outlined">open_in_new</span></a>';
+        + '<a class="set2-side-hint-link" href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener">詳細ガイドを見る <span class="material-symbols-outlined">open_in_new</span></a>';
       sidebar.appendChild(spacer);
       sidebar.appendChild(hint);
     }
