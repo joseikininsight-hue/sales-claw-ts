@@ -189,6 +189,9 @@ const MANAGED_AI_BATCH_POLL_MS = 5000;
 // その後フォーム入力するため処理時間が長い。stale watchdog で auto-fail されないよう
 // 余裕を持たせる。CLI には 2 分以内に進捗 logAction を残すよう prompt で指示。
 const MANAGED_AI_BATCH_STALL_MS = 20 * 60 * 1000;
+// A4: pending キューが activeBatch なしで放置されている時間の閾値。
+// 過去バグ (47 バッチ滞留) の検知用 — 5 分動かなければ stuck と判定。
+const MANAGED_AI_QUEUE_STUCK_MS = 5 * 60 * 1000;
 const MANAGED_AI_PTY_LOG_MAX_BYTES = 1024 * 1024;
 const MANAGED_AI_RECOVERY_RETRY_MS = 15000;
 const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;
@@ -1456,9 +1459,40 @@ function startManagedAiBatchPoller() {
     if (!activeController.activeBatch) {
       if (activeController.pending.length === 0) {
         clearManagedAiBatchControllerTimer(activeController);
+        return;
+      }
+      // A4 watchdog: pending があるのに activeBatch が無い状態が長く続くと
+      // キュー stuck (claudePty が死んでいる / 復旧失敗 / 自動 dispatch が走らない)。
+      // 5 分以上続いたら診断イベント + UI 通知 + 自動 dispatch を再試行。
+      if (!activeController.pendingSinceMs) {
+        activeController.pendingSinceMs = Date.now();
+      }
+      const pendingIdleMs = Date.now() - activeController.pendingSinceMs;
+      if (pendingIdleMs > MANAGED_AI_QUEUE_STUCK_MS && !activeController.queueStuckNotified) {
+        activeController.queueStuckNotified = true;
+        appendDiagnosticEvent('managed_ai_queue_stuck', {
+          provider: activeController.providerId,
+          pendingBatchCount: activeController.pending.length,
+          idleMs: pendingIdleMs,
+          claudePtyAlive: !!claudePty,
+        });
+        emitClaudeAutomationLog(
+          `[キュー停滞検知] フォーム入力キューに ${activeController.pending.length} バッチ残っていますが ${Math.round(pendingIdleMs / 1000)} 秒間 dispatch されていません。AI セッションを再起動するか、ダッシュボードから一括停止→再投入してください。\n`,
+          'warn',
+          activeController.providerId,
+        );
+        // 自動復旧を試みる (失敗しても明示的な error は出さない — watchdog ログで十分)
+        try { tryRecoverManagedAiSession('queue-stuck'); } catch (_) { /* swallow */ }
+      }
+      // claudePty が生きていれば dispatch を試す (auto-recovery が PTY を蘇生させた直後など)
+      if (claudePty) {
+        dispatchNextManagedAiFormFillBatch();
       }
       return;
     }
+    // activeBatch が走り始めたら pendingSinceMs をリセット
+    activeController.pendingSinceMs = 0;
+    activeController.queueStuckNotified = false;
 
     const snapshot = getManagedAiBatchProgressSnapshot(activeController.activeBatch.companyNos);
     if (snapshot.latestActivityAt && snapshot.latestActivityAt > activeController.activeBatch.lastProgressAt) {
@@ -1589,7 +1623,36 @@ function dispatchNextManagedAiFormFillBatch() {
     'system',
     controller.providerId,
   );
-  const result = queueClaudeFormFillInManagedSession(next.companies, controller.providerId, next.options);
+  // queueClaudeFormFillInManagedSession は claudePty が null だと throw する。
+  // 過去バグ: dispatch 直前に PTY が死んでいた / 自動起動失敗状態だと、
+  // activeBatch だけセット → throw → 永久停止 → 47 バッチ滞留。
+  // try/catch で activeBatch を巻き戻し、pending の先頭に戻して watchdog に
+  // 救済させる (auto-recovery が走るか、ユーザーが手動再起動するまで pending)。
+  let result: any = null;
+  try {
+    result = queueClaudeFormFillInManagedSession(next.companies, controller.providerId, next.options);
+  } catch (dispatchError: any) {
+    const errMessage = String(dispatchError && dispatchError.message || dispatchError);
+    appendDiagnosticEvent('managed_ai_batch_dispatch_failed', {
+      provider: controller.providerId,
+      batchId: next.id,
+      companyCount: next.companies.length,
+      error: errMessage.slice(0, 400),
+      claudePtyAlive: !!claudePty,
+    });
+    emitClaudeAutomationLog(
+      `[分割バッチ失敗] ${next.companies.length}社の投入に失敗しました: ${errMessage}\n→ pending に戻し、managed AI session の自動復旧を待ちます。\n`,
+      'error',
+      controller.providerId,
+    );
+    // pending の先頭に戻す (元の順序を維持)
+    controller.pending.unshift(next);
+    controller.activeBatch = null;
+    // 自動復旧を試みる
+    try { tryRecoverManagedAiSession('dispatch-failed'); } catch (_) { /* swallow */ }
+    startManagedAiBatchPoller();
+    return null;
+  }
   startManagedAiBatchPoller();
   return result;
 }
@@ -2358,14 +2421,15 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
     addArgs = ['--debug', 'mcp', 'add', 'playwright', playwrightMcp.command, ...playwrightMcp.args];
   }
 
+  const { isAlreadyExistsError } = require('./mcp-idempotency');
+
   const add: any = await runProviderCliCommand(normalized, addArgs, { timeout: 30000, env: cliOptions.env });
   if (!add.ok) {
     // "already exists" / "duplicate" 等の冪等性エラーは success として扱う。
     // 過去にユーザーが手動 registration した、または前回の Sales Claw 起動が
     // 不完全に終了して登録だけ残った、というケースで Phase B が完全停止していた。
     const stderrOut = String(add.stderr || add.stdout || '').trim();
-    const isAlreadyExists = /already\s+exists|duplicate|MCP\s+server\s+\w+\s+already/i.test(stderrOut);
-    if (isAlreadyExists) {
+    if (isAlreadyExistsError(stderrOut)) {
       // 念のため list で実在確認 → playwright があれば configured 扱い
       const verifyExisting: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
       const verifyExistingOutput = `${verifyExisting.stdout}\n${verifyExisting.stderr}`;
@@ -4372,6 +4436,7 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
     };
   }
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && !claudePty) {
+    const { withRetry } = require('./retry-helper');
     try {
       appendDiagnosticEvent('managed_ai_form_fill_autostart', {
         provider: selectedProviderId,
@@ -4382,17 +4447,58 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
         'system',
         selectedProviderId,
       );
-      await startManagedAiSession(provider.defaultMode || 'auto', selectedProviderId, {
-        allowReuse: false,
-        requireMcp: true,
-        autoSendSafe: getConfiguredAiAutoSendSafe(),
-      });
+      // A2: 起動失敗時の自動 retry + exponential back-off。
+      // 過去の致命バグ (47 バッチ滞留) は最初の 1 回だけ失敗するパターンが多く、
+      // ユーザーに「もう一度押し直してください」を強いるのは UX として不適切。
+      // CLI_NOT_INSTALLED / CLI_TOO_OLD / 設定不足 のような retry しても無駄な
+      // エラーは shouldRetry で弾く。
+      await withRetry(
+        async () => {
+          await startManagedAiSession(provider.defaultMode || 'auto', selectedProviderId, {
+            allowReuse: false,
+            requireMcp: true,
+            autoSendSafe: getConfiguredAiAutoSendSafe(),
+          });
+        },
+        {
+          attempts: 3,
+          initialDelayMs: 800,
+          maxDelayMs: 4000,
+          shouldRetry: (err: any) => {
+            const code = err && err.code;
+            // ユーザー対応必須のエラーは即座に諦める
+            if (code === 'CLI_NOT_INSTALLED') return false;
+            if (code === 'CLI_TOO_OLD') return false;
+            if (code === 'LAUNCH_CANCELLED') return false;
+            return true;
+          },
+          onAttempt: (attempt: number, error: any) => {
+            if (error) {
+              appendDiagnosticEvent('managed_ai_form_fill_autostart_retry', {
+                provider: selectedProviderId,
+                attempt,
+                error: String(error && error.message || error).slice(0, 400),
+              });
+              emitClaudeAutomationLog(
+                `[AIフォーム入力] ${provider.displayName} 起動失敗 (試行 ${attempt}): ${error && error.message || error}。再試行します。\n`,
+                'system',
+                selectedProviderId,
+              );
+            }
+          },
+        },
+      );
       managedProviderId = getManagedAiProvider();
     } catch (error) {
+      appendDiagnosticEvent('managed_ai_form_fill_autostart_failed', {
+        provider: selectedProviderId,
+        error: String(error && (error as any).message || error).slice(0, 400),
+        errorCode: (error as any)?.code || null,
+      });
       return {
         ok: false,
         statusCode: 409,
-        error: `${provider.displayName} の managed セッションを自動起動できませんでした: ${error.message || error}`,
+        error: `${provider.displayName} の managed セッションを自動起動できませんでした (3 回試行): ${(error as any).message || error}`,
       };
     }
   }
@@ -9379,6 +9485,62 @@ const server = http.createServer(async (req, res) => {
     } catch {
       res.writeHead(404);
       res.end('Not found');
+    }
+    return;
+  }
+
+  // --- Phase B Health Check (A3) ---
+  // GET /api/phase-b-health
+  //   フォーム入力バッチを投入する前に、UI から呼び出して問題を事前検知する。
+  //   auth 画面を起動しないよう軽量 probe のみ (claudePty 存在 / controller 状態 /
+  //   pending バッチ数 / 直近 diagnostic イベントの error 件数)。
+  //   過去バグ (47 バッチ滞留) のような状態を「投入前」に気付かせる。
+  if (pathname === '/api/phase-b-health' && req.method === 'GET') {
+    try {
+      const controller: any = managedAiBatchController;
+      const provider = getSelectedAiProvider();
+      const pendingBatchCount = controller && Array.isArray(controller.pending) ? controller.pending.length : 0;
+      const activeBatch = controller && controller.activeBatch
+        ? {
+            id: controller.activeBatch.id,
+            companyCount: controller.activeBatch.companyNos ? controller.activeBatch.companyNos.length : 0,
+            startedAt: controller.activeBatch.startedAt,
+            lastProgressAt: controller.activeBatch.lastProgressAt,
+            stallNotified: !!controller.activeBatch.stallNotified,
+          }
+        : null;
+      const queueStuck = pendingBatchCount > 0 && !activeBatch && (
+        controller && controller.pendingSinceMs
+          ? (Date.now() - controller.pendingSinceMs) > MANAGED_AI_QUEUE_STUCK_MS
+          : false
+      );
+      const warnings: string[] = [];
+      if (!claudePty && pendingBatchCount > 0) {
+        warnings.push('Managed AI session が起動していないのに pending バッチがあります。/api/launch-ai で再起動するか、停止→再投入してください。');
+      }
+      if (queueStuck) {
+        warnings.push(`pending バッチが ${Math.round((Date.now() - controller.pendingSinceMs) / 1000)} 秒間 dispatch されていません。`);
+      }
+      if (activeBatch && activeBatch.stallNotified) {
+        warnings.push('現在の active バッチが stall watchdog に検知されています。CLI ログを確認してください。');
+      }
+      jsonResponse(res, 200, {
+        ok: true,
+        healthy: warnings.length === 0 && !queueStuck,
+        provider,
+        managedSessionAlive: !!claudePty,
+        pendingBatchCount,
+        activeBatch,
+        queueStuck,
+        warnings,
+        timestamp: Date.now(),
+      });
+    } catch (err: any) {
+      jsonResponse(res, 200, {
+        ok: false,
+        healthy: false,
+        error: String(err && err.message || err),
+      });
     }
     return;
   }

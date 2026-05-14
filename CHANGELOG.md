@@ -1,5 +1,90 @@
 # Changelog
 
+## 2.0.8 - 2026-05-15 — Phase B 停止バグ二度と起こさないための恒久対策
+
+v2.0.7 で「already exists」エラーは握り潰すようにした。本リリースはその一点修正
+だけでは塞ぎきれない、**周辺の単一障害点を全部潰す**ためのハードニング。
+
+### 1. MCP 冪等性ヘルパー切り出し (`src/mcp-idempotency.ts`)
+
+v2.0.7 はインラインの regex で `already\s+exists|duplicate|...` を判定していた。
+これを `isAlreadyExistsError()` / `isNotFoundError()` の独立モジュールに昇格。
+Claude / Codex / Gemini 共通で使え、ユニットテストで全パターンを保証する
+(`tests/mcp-idempotency.test.cjs`)。今後 add/remove 以外の冪等操作にも横展開できる。
+
+### 2. Managed AI session 自動起動の retry + back-off (`src/retry-helper.ts`)
+
+Phase B が始まる直前の `startManagedAiSession()` が 1 回失敗しただけで「409 +
+ダッシュボードで再操作してください」を返していた。CLI の認証ハンドシェイク
+タイムアウト・spawn race など、もう 1 回試せば通る一過性失敗が多い。
+
+汎用 `withRetry()` を追加し、Phase B autostart を **3 回 / exp back-off (800ms →
+1600ms → 3200ms + jitter)** で再試行。`CLI_NOT_INSTALLED` / `CLI_TOO_OLD` /
+`LAUNCH_CANCELLED` のような retry しても無駄なエラーは `shouldRetry` で弾く。
+試行ごとに `managed_ai_form_fill_autostart_retry` diagnostic event + CLI ログを
+出すので、何が起きているか UI から見える。
+
+### 3. dispatch 失敗時の rollback (`dispatchNextManagedAiFormFillBatch`)
+
+v2.0.7 のバグは「`activeBatch` がセット済み・PTY 死亡で `queueClaudeForm...`
+が throw → `activeBatch` が中途半端な状態で残る → poller は active 扱いで
+何もしない」が根本原因。dispatch 内を try/catch で囲み、throw 時は:
+- batch を `controller.pending.unshift()` で先頭に戻す (元順序を維持)
+- `activeBatch = null` に戻す
+- `tryRecoverManagedAiSession('dispatch-failed')` で managed AI 復旧キック
+- `managed_ai_batch_dispatch_failed` 診断イベント
+
+これで「PTY が一瞬死んだだけで永久滞留」が物理的に発生しなくなる。
+
+### 4. キュー stuck watchdog (`startManagedAiBatchPoller`)
+
+「pending あり / activeBatch なし」が **5 分** 以上続いたら stuck と判定:
+- `managed_ai_queue_stuck` 診断イベント
+- CLI 自動化ログにオレンジ警告 (UI から見える)
+- `tryRecoverManagedAiSession('queue-stuck')` で復旧キック
+- claudePty が生き返っていれば自動 dispatch をリトライ
+
+`MANAGED_AI_QUEUE_STUCK_MS = 5 * 60 * 1000` で閾値を一元管理。
+
+### 5. UI 投入前の health check (`GET /api/phase-b-health`)
+
+バッチ投入前に UI から呼べる軽量 probe (auth 画面を出さない):
+```json
+{
+  "ok": true,
+  "healthy": true,
+  "provider": "claude",
+  "managedSessionAlive": true,
+  "pendingBatchCount": 0,
+  "activeBatch": null,
+  "queueStuck": false,
+  "warnings": []
+}
+```
+`healthy: false` のとき warnings に「再起動してください」「stall watchdog 発火中」等の
+人間向けメッセージが入る。次回 UI 改善で「実行」ボタン押下前にこれを呼ぶ。
+
+### 6. ユニットテスト追加 (regression 防止)
+
+- `tests/mcp-idempotency.test.cjs` — claude / codex / gemini の実エラー文言
+  すべてに対する判定、未関連エラーで false 判定、空文字・null・undefined 安全性
+- `tests/retry-helper.test.cjs` — 1 発成功 / N 回目成功 / 全失敗 / shouldRetry / onAttempt
+
+`npm run test:unit` に組み込み済み。
+
+### 7. 診断ログ拡充
+
+新規 diagnostic event:
+- `mcp_playwright_already_exists_accepted` (v2.0.7 から、再掲)
+- `managed_ai_form_fill_autostart_retry` (試行回数 + error)
+- `managed_ai_form_fill_autostart_failed` (3 回失敗時の最終)
+- `managed_ai_batch_dispatch_failed` (PTY 死亡時の throw)
+- `managed_ai_queue_stuck` (5 分以上滞留)
+
+これで `dashboard-diagnostics.jsonl` から Phase B 状態遷移が完全に追跡可能になる。
+
+---
+
 ## 2.0.7 - 2026-05-15 — Phase B 停止バグ修正 (MCP Playwright 「already exists」)
 
 **150 社まとめて投入したら Phase A (分析) は完了するが Phase B (フォーム入力) が永久に動かない致命バグの修正。**
