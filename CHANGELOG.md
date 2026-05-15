@@ -1,5 +1,88 @@
 # Changelog
 
+## 2.0.10 - 2026-05-15 — pending キュー誤判定・undefined.length・リスト管理改善
+
+v2.0.9 直後にユーザーから 3 系統の同時報告:
+1. 「以下の企業は既に処理中です: 第一生命情報システム, コベルコシステム, …」
+   → 再キュー不可
+2. 「Cannot read properties of undefined (reading 'length')」
+3. 「リスト削除できない」
+
+### 1. pending キューが永久滞留する問題
+
+156 社の Phase A が完了し pending に enqueue されたが、Phase B が失敗
+(v2.0.9 以前の MCP "already exists" バグ等) で 1 件も dispatch 完了して
+おらず、`controller.pending` に会社番号が残り続けた。`POST /api/ai-form-fill`
+の重複チェックは `getManagedAiReservedCompanyNos()` で activeBatch +
+pending を見るので「処理中」と判定。PTY は死亡しているのに永久に解放
+されないデッドロック状態。
+
+**修正**:
+- `ai-form-fill-api.ts`: PTY 死亡 + recovery タイマーなしの時に
+  `setManagedAiBatchActive(null)` だけでなく **pending も一緒にドレイン**
+  (`clearManagedAiBatchPending`)。
+- 新規 API `POST /api/managed-ai-batch/reset`: 非常脱出弁。PTY 停止中なら
+  activeBatch + pending を全部クリア → 診断イベント
+  `managed_ai_batch_force_reset` を記録。
+- 診断イベント `managed_ai_pending_drained` (清掃した件数を残す)。
+
+### 2. Cannot read properties of undefined (reading 'length')
+
+`/api/data` レスポンスの一部フィールド (`recentLogs` / `companies` /
+`trendData.*`) が条件付きで undefined になりうる → client `dashboard.ts`
+の SCRIPT 文字列内で `recentLogs.length` / `el.children.length` が
+unguarded で投げていた。
+
+**修正**:
+- `buildDashboardDataFromSources()` で全フィールドを `Array.isArray()`
+  チェックして必ず空配列にフォールバック (companies / recentLogs /
+  trendData.{labels,actionNeeded,sent,error} / issues / stats / liveMonitor)。
+- `dispatchNextManagedAiFormFillBatch()` と `queueAiFormFill()` で
+  `controller.pending` を `Array.isArray()` 確認 → 不一致なら `[]` に再初期化。
+
+### 3. リスト管理の正しい方針 — 会社単位ステータス API
+
+「どの会社が今どの状態にいるか」を 1 つの窓口で見るために新規 API:
+
+**`GET /api/companies/:no/status`** → action-log から組み立てて返す:
+```json
+{
+  "ok": true,
+  "companyNo": 70,
+  "totalLogs": 7,
+  "actionsByType": { "site_analysis": 1, "message_draft": 1, "form_fill": 1, "confirm_reached": 1, "submitted": 1 },
+  "currentStatus": "submitted",
+  "lastUpdated": "2026-05-15T00:00:00Z",
+  "terminalReached": true,
+  "terminalAction": "submitted",
+  "terminalAt": "2026-05-15T00:00:00Z",
+  "timeline": [ { "timestamp": "...", "action": "site_analysis", "detailsPreview": "..." }, ... ]
+}
+```
+これでダッシュボード UI / CLI のどちらからも「この会社で何をしたか」を
+時系列で取り出せる。
+
+### 4. Export は既に 5 シート構成 (確認)
+
+`GET /api/export` は v1.2.102 から:
+1. **企業一覧** (companies)
+2. **行動履歴** (action-log)
+3. **連絡履歴** (contact-history)
+4. **スクリーンショット** (screenshot ファイル一覧)
+5. **集計** (summary)
+
+import 時は **企業一覧シートのみ** 読み取り (action-log/contact-history は
+ローカル DB 側に既に存在するので二重インポートしない設計)。
+
+### ユーザー対応 (No.70 サイバネットシステム手動復旧の続き)
+
+- ダッシュボードを再起動すれば「送信済み」タブに No.70 が表示される
+- ssa の 4 社 (第一生命情報システム / コベルコシステム / 旭情報サービス /
+  コムチュアネットワーク) は v2.0.10 への更新後、自動的に再キュー可能になる
+  - もしすぐ動かしたい場合: `POST /api/managed-ai-batch/reset` で強制解放
+
+---
+
 ## 2.0.9 - 2026-05-15 — ログ消失バグ修正 (ダッシュボード URL の env 注入)
 
 v2.0.8 で Phase B 自体は走るようになった。しかし**実送信したのにダッシュ

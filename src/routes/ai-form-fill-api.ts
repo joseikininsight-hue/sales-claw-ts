@@ -68,6 +68,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
     getActiveHeadlessRun,
     getManagedAiBatchController,
     setManagedAiBatchActive,
+    clearManagedAiBatchPending,
     getManagedAiRecoveryTimer,
   } = ctx;
 
@@ -127,9 +128,17 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const managedAiBatchController = getManagedAiBatchController();
       const ptyActuallyRunning = !!(claudePty || getActiveHeadlessRun());
       if (!ptyActuallyRunning) {
-        // PTYが停止中かつリカバリタイマーもない → activeBatch は確実に古い
+        // PTYが停止中かつリカバリタイマーもない → activeBatch + pending は確実に古い。
+        // v2.0.10: pending も一緒にドレインする。
+        // 過去バグ: Phase B が起動失敗 (MCP playwright already exists 等) でログが
+        // 残らなかった会社が controller.pending に永久滞留し、再キュー時に
+        // 「既に処理中です」エラーで弾かれ続けた。PTY が死んでいる時点で
+        // pending は意味を成さない (誰も処理しない) ので捨てて再投入を許す。
         if (!managedAiRecoveryTimer && managedAiBatchController) {
           setManagedAiBatchActive(null);
+          if (typeof clearManagedAiBatchPending === 'function') {
+            try { clearManagedAiBatchPending(); } catch (_) { /* swallow */ }
+          }
         }
         cleanupStaleManagedAiMonitorEvents(0);
       }

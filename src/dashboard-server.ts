@@ -1591,7 +1591,11 @@ function startManagedAiBatchPoller() {
 
 function dispatchNextManagedAiFormFillBatch() {
   const controller = managedAiBatchController;
-  if (!controller || controller.activeBatch || controller.pending.length === 0) return null;
+  if (!controller) return null;
+  // v2.0.10: controller.pending が undefined に書き換わる経路は塞いだはずだが
+  // 念のため Array.isArray ガード。length アクセスで TypeError を出さない。
+  if (!Array.isArray(controller.pending)) controller.pending = [];
+  if (controller.activeBatch || controller.pending.length === 0) return null;
   const next = controller.pending.shift();
   controller.activeBatch = {
     id: next.id,
@@ -5134,6 +5138,8 @@ async function queueAiFormFill(companies, providerId = getSelectedAiProvider(), 
     }, batchCompanies),
   }));
 
+  // v2.0.10: defensive — controller.pending を Array に揃える
+  if (!Array.isArray(controller.pending)) controller.pending = [];
   controller.pending.push(...batchItems);
   appendDiagnosticEvent('managed_ai_batches_enqueued', {
     provider: normalizedProviderId,
@@ -6129,14 +6135,22 @@ function buildDashboardDataFromSources() {
   const trendError = trendErrorSets.map((set: any) => set.size);
 
   const runtime = dashboardRuntime || readRuntime();
+  // v2.0.10: 全て defensive に Array で保証。client 側 dashboard.ts の
+  // `recentLogs.length` / `companies.length` 等が undefined を叩いて
+  // "Cannot read properties of undefined (reading 'length')" を出すのを防ぐ。
   return {
-    companies,
-    stats,
-    recentLogs: allLogs.slice(-100).reverse(),
-    issues: buildOperationalIssues(targetData, runtime),
-    liveMonitor: buildMonitorPayload(allLogs),
+    companies: Array.isArray(companies) ? companies : [],
+    stats: stats || {},
+    recentLogs: Array.isArray(allLogs) ? allLogs.slice(-100).reverse() : [],
+    issues: buildOperationalIssues(targetData, runtime) || [],
+    liveMonitor: buildMonitorPayload(allLogs) || { events: [], summary: {} },
     runtime,
-    trendData: { labels: trendLabels, actionNeeded: trendActionNeeded, sent: trendSent, error: trendError },
+    trendData: {
+      labels: Array.isArray(trendLabels) ? trendLabels : [],
+      actionNeeded: Array.isArray(trendActionNeeded) ? trendActionNeeded : [],
+      sent: Array.isArray(trendSent) ? trendSent : [],
+      error: Array.isArray(trendError) ? trendError : [],
+    },
   };
 }
 
@@ -9230,6 +9244,22 @@ function getAiFormFillApiDispatch() {
       setManagedAiBatchActive: (value) => {
         if (managedAiBatchController) managedAiBatchController.activeBatch = value;
       },
+      // v2.0.10: PTY 死亡時に pending も自動ドレインできるよう exposure
+      clearManagedAiBatchPending: () => {
+        if (!managedAiBatchController) return 0;
+        const cleared = managedAiBatchController.pending ? managedAiBatchController.pending.length : 0;
+        managedAiBatchController.pending = [];
+        managedAiBatchController.pendingSinceMs = 0;
+        managedAiBatchController.queueStuckNotified = false;
+        if (cleared > 0) {
+          appendDiagnosticEvent('managed_ai_pending_drained', {
+            provider: managedAiBatchController.providerId,
+            clearedCount: cleared,
+            reason: 'pty-dead-stale-queue',
+          });
+        }
+        return cleared;
+      },
       getManagedAiRecoveryTimer: () => managedAiRecoveryTimer,
     });
   }
@@ -9503,6 +9533,89 @@ const server = http.createServer(async (req, res) => {
     } catch {
       res.writeHead(404);
       res.end('Not found');
+    }
+    return;
+  }
+
+  // --- Force-reset managed AI queue (v2.0.10) ---
+  // POST /api/managed-ai-batch/reset
+  //   pending + activeBatch を空にして「処理中」扱いの会社を解放する。
+  //   PTY が生きている場合は拒否 (誤操作で実行中タスクが消えるのを防ぐ)。
+  //   ユーザーが「既に処理中です」エラーから抜け出すための非常脱出弁。
+  if (pathname === '/api/managed-ai-batch/reset' && req.method === 'POST') {
+    try {
+      if (claudePty || getActiveHeadlessRun()) {
+        jsonResponse(res, 409, {
+          ok: false,
+          error: 'AI セッションが現在稼働中のためリセットできません。停止してから再実行してください。',
+        });
+        return;
+      }
+      const controller: any = managedAiBatchController;
+      const clearedPending = controller && Array.isArray(controller.pending) ? controller.pending.length : 0;
+      const clearedActive = controller && controller.activeBatch ? 1 : 0;
+      if (controller) {
+        controller.pending = [];
+        controller.activeBatch = null;
+        controller.pendingSinceMs = 0;
+        controller.queueStuckNotified = false;
+      }
+      try { clearRecoverySnapshot(); } catch (_) { /* swallow */ }
+      cleanupStaleManagedAiMonitorEvents(0);
+      appendDiagnosticEvent('managed_ai_batch_force_reset', {
+        clearedPending,
+        clearedActive,
+        source: 'user-api',
+      });
+      jsonResponse(res, 200, {
+        ok: true,
+        clearedPending,
+        clearedActive,
+        message: `pending=${clearedPending}, active=${clearedActive} をクリアしました。リスト画面から再キューできます。`,
+      });
+    } catch (err: any) {
+      jsonResponse(res, 500, { ok: false, error: String(err && err.message || err) });
+    }
+    return;
+  }
+
+  // --- Per-company status (v2.0.10) ---
+  // GET /api/companies/:no/status
+  //   action-log から最新のステータス遷移を組み立てて返す。
+  //   ダッシュボードでも CLI でもこの API を使うことで「何が起きたか」が単一窓口に。
+  const companyStatusMatch = pathname.match(/^\/api\/companies\/(\d+)\/status$/);
+  if (companyStatusMatch && req.method === 'GET') {
+    try {
+      const { getAllLogs } = require('./action-logger');
+      const no = Number(companyStatusMatch[1]);
+      const allLogs = getAllLogs() || [];
+      const companyLogs = allLogs.filter((log: any) => Number(log.companyNo) === no);
+      const TERMINAL = new Set(['awaiting_approval', 'submitted', 'skipped', 'error']);
+      const terminal = [...companyLogs].reverse().find((log: any) => TERMINAL.has(String(log.action)));
+      const lastNonSystem = [...companyLogs].reverse().find((log: any) => log.action !== 'settings_changed');
+      const actionsByType: Record<string, number> = {};
+      companyLogs.forEach((log: any) => { actionsByType[log.action] = (actionsByType[log.action] || 0) + 1; });
+      jsonResponse(res, 200, {
+        ok: true,
+        companyNo: no,
+        totalLogs: companyLogs.length,
+        actionsByType,
+        currentStatus: terminal ? terminal.action : (lastNonSystem ? lastNonSystem.action : 'untouched'),
+        lastUpdated: lastNonSystem ? lastNonSystem.timestamp : null,
+        terminalReached: !!terminal,
+        terminalAction: terminal ? terminal.action : null,
+        terminalAt: terminal ? terminal.timestamp : null,
+        timeline: companyLogs.map((log: any) => ({
+          timestamp: log.timestamp,
+          action: log.action,
+          // details は長文 (message 本文等) を含むので preview に切る
+          detailsPreview: typeof log.details === 'string'
+            ? log.details.slice(0, 200)
+            : (log.details ? JSON.stringify(log.details).slice(0, 200) : ''),
+        })),
+      });
+    } catch (err: any) {
+      jsonResponse(res, 500, { ok: false, error: String(err && err.message || err) });
     }
     return;
   }
