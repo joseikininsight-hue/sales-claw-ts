@@ -1,5 +1,70 @@
 # Changelog
 
+## 2.0.12 - 2026-05-15 — 「読込失敗」根本原因 (contact-history schema 違反) 修正
+
+v2.0.10 / v2.0.11 でも消えなかった「読込失敗: Cannot read properties of
+undefined (reading 'length')」の **真の根本原因** を dev 再現で特定:
+
+```
+TypeError: Cannot read properties of undefined (reading 'length')
+    at contact-history.js:201:34   ← getAllHistorySummary の h.contacts.length
+    at Array.map
+    at getAllHistorySummary
+    at buildDashboardDataFromSources
+    at loadData
+```
+
+**原因**: 2026-05-15 の No.70 サイバネットシステム手動復旧時に、私が
+`contact-history.json` を **top-level Array** で書き込んでしまった。本来は
+`{companyNo: {contacts: [...]}}` の object map スキーマ。Object.values() で
+取り出した entry に `contacts` が無く `.length` で TypeError → `/api/data`
+が 500 → ダッシュボードが「読込失敗」トーストを出し続けた。
+
+### 修正
+
+1. **データ修復**: `contact-history.json` を正しい schema で書き直し
+   (No.70 の 1 entry を contacts 配列形式に変換)。
+2. **`loadHistory()` で起動時 sanitize**: スキーマ違反 (Array / null /
+   primitive) を検出したら自動的に `{}` に矯正。これで以降の
+   `Object.values()` / `history[key]` が必ず安全。
+3. **defensive guards 追加** in:
+   - `getAllHistorySummary()` — `Array.isArray(h.contacts)` 確認
+   - `getContactCount()` — 同
+   - `getLastMessage()` — 同
+   - `recordContact()` — 既存 entry の contacts が壊れていたら再初期化
+   - `dashboard-server.ts::buildDashboardDataFromSources` — line 6032 の
+     `contactHist.contacts.length` も guard
+4. **`/api/data` の catch に stack trace ログ**: 今後同様の事故が起きたら
+   サーバー stderr に full stack が必ず出る (e.message だけ返して原因不明
+   のままになる事故を防ぐ)。
+
+### 新規ユニットテスト (regression 防止)
+
+- `tests/contact-history-defensive.test.cjs` (20 アサート):
+  - Array history で crash しない
+  - contacts 欠如で crash しない、contactCount=0
+  - contacts が string/object で crash しない
+  - 正常 history は今まで通り
+  - recordContact が壊れた entry を自動再初期化
+
+- `tests/load-data-smoke.test.cjs` (5 シナリオ):
+  - 完全に空のデータ dir
+  - top-level Array contact-history
+  - object だが contacts 欠如
+  - 空ファイル
+  - 壊れた JSON
+
+すべて `loadData()` が throw しないことを保証。`npm run test:unit` に組み込み。
+
+### dev での実証
+
+`SALES_CLAW_USER_DATA_DIR=$APPDATA/sales-claw-ts/runtime` で preview-dashboard を
+起動 → `GET /api/data` が **HTTP 200** で正常 JSON を返すことを確認してから
+push。**今回は「typecheck だけで push」を反省し、実機で `/api/data` 200 を
+取ってからリリース**。
+
+---
+
 ## 2.0.11 - 2026-05-15 — クライアント側 destructure ガード (hotfix)
 
 v2.0.10 はサーバー側の `buildDashboardDataFromSources` で `Array.isArray()`

@@ -6029,7 +6029,7 @@ function buildDashboardDataFromSources() {
       awaitingLog,
       confirmLog,
     });
-    const contactCount = contactHist ? contactHist.contacts.length : 0;
+    const contactCount = (contactHist && Array.isArray(contactHist.contacts)) ? contactHist.contacts.length : 0;
     const targetMeta = outreachTargets.get(String(no)) || null;
     const draftDisplay = getDisplayDraftMessageWithSource(logs, contactHist);
     const displayDraftMessage = draftDisplay ? draftDisplay.message : null;

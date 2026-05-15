@@ -100,10 +100,15 @@ function readJsonCached(filePath: string, fallbackValue: HistoryData): HistoryDa
 
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as HistoryData;
+    // v2.0.12: スキーマ違反 (Array / null / primitive) は空 object に矯正。
+    // これで以降の Object.values(...) / history[key] が必ず安全。
+    const sanitized = (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      ? ({} as HistoryData)
+      : parsed;
     historyCache.filePath = filePath;
     historyCache.signature = signature;
-    historyCache.data = parsed;
-    return parsed;
+    historyCache.data = sanitized;
+    return sanitized;
   } catch {
     historyCache.filePath = filePath;
     historyCache.signature = signature;
@@ -166,6 +171,10 @@ export function recordContact(companyNo: number | string, companyName: string, r
         contacts: [],
       };
     }
+    // v2.0.12: 既存 entry が壊れている (contacts が無い / Array でない) 場合は再初期化
+    if (!Array.isArray(history[key].contacts)) {
+      history[key].contacts = [];
+    }
 
     const contactNo = history[key].contacts.length + 1;
     const recordedAt = record.timestamp ?? record.sentAt ?? new Date().toISOString();
@@ -199,27 +208,38 @@ export function getHistory(companyNo: number | string): CompanyHistory | null {
 
 /** 企業の連絡回数を取得する (0 = 未連絡) */
 export function getContactCount(companyNo: number | string): number {
-  const h = getHistory(companyNo);
-  return h ? h.contacts.length : 0;
+  const h: any = getHistory(companyNo);
+  return (h && Array.isArray(h.contacts)) ? h.contacts.length : 0;
 }
 
 /** 企業の前回送信メッセージを取得する */
 export function getLastMessage(companyNo: number | string): string | null {
-  const h = getHistory(companyNo);
-  if (!h || h.contacts.length === 0) return null;
+  const h: any = getHistory(companyNo);
+  if (!h || !Array.isArray(h.contacts) || h.contacts.length === 0) return null;
   return h.contacts[h.contacts.length - 1].message;
 }
 
-/** 全企業の連絡履歴サマリーを取得する。 */
+/** 全企業の連絡履歴サマリーを取得する。
+ * v2.0.12: 壊れたエントリ (contacts が無い / Array でない) でも crash しないよう
+ * 全フィールドを defensive に扱う。過去事故 (2026-05-15): 手動復旧時に書いた
+ * エントリのスキーマ違反 (top-level Array) で `/api/data` が「読込失敗:
+ * Cannot read properties of undefined (reading 'length')」を返し続けた。
+ */
 export function getAllHistorySummary(): HistorySummaryEntry[] {
   const history = loadHistory();
-  return Object.values(history).map((h: any) => ({
-    companyNo: h.companyNo,
-    companyName: h.companyName,
-    contactCount: h.contacts.length,
-    lastDate: h.contacts.length > 0 ? h.contacts[h.contacts.length - 1].date : null,
-    lastContactNo: h.contacts.length,
-  }));
+  // history が object でない (旧形式の Array 等) なら空扱い
+  if (!history || typeof history !== 'object' || Array.isArray(history)) return [];
+  return Object.values(history).map((h: any) => {
+    if (!h || typeof h !== 'object') return null;
+    const contacts = Array.isArray(h.contacts) ? h.contacts : [];
+    return {
+      companyNo: h.companyNo,
+      companyName: h.companyName,
+      contactCount: contacts.length,
+      lastDate: contacts.length > 0 ? contacts[contacts.length - 1].date : null,
+      lastContactNo: contacts.length,
+    };
+  }).filter((entry: any) => entry !== null) as HistorySummaryEntry[];
 }
 
 /** 連絡に対するレスポンス (返信有無等) を記録する。 */

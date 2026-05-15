@@ -859,8 +859,16 @@ module.exports = function createSimpleApiRoutes(ctx) {
   async function handleData(_req, res) {
     try {
       jsonResponse(res, 200, loadData());
-    } catch (e) {
-      jsonResponse(res, 500, { error: e.message });
+    } catch (e: any) {
+      // v2.0.12: 500 を返す前に stack trace を必ずサーバ標準エラーに出す。
+      // 過去にこの try/catch が e.message だけ返して根本原因が分からないまま
+      // 「読込失敗: Cannot read properties of undefined (reading 'length')」が
+      // 出続けた事故 (2026-05-15)。
+      try {
+        // eslint-disable-next-line no-console
+        console.error('[/api/data] loadData() threw:', e && e.stack ? e.stack : String(e));
+      } catch (_) { /* swallow */ }
+      jsonResponse(res, 500, { error: e.message, stack: process.env.NODE_ENV !== 'production' ? String(e.stack || '').slice(0, 4000) : undefined });
     }
   }
 
