@@ -882,7 +882,105 @@ function deleteCompany(companyNo) {
   };
 }
 
-function importTargetList({ fileName, buffer }) {
+/**
+ * 会社名比較用の正規化キー (大文字小文字・前後空白・全角空白の差異を無視)。
+ * 空文字なら null。
+ */
+function normalizeCompanyNameKey(name: unknown): string | null {
+  const trimmed = String(name ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
+/**
+ * v2.0.15: 既存ターゲットリストと新規インポート分を companyName で merge する。
+ *
+ * - 既存リストの companyName と一致する行 → **既存 no を保持しつつ、新データで上書き**
+ *   (空欄は既存維持)
+ * - 既存にあって新規 import に無い行 → **そのまま残す**
+ * - 新規にしかない行 → 新しい no を割り当てて追加
+ *
+ * 返り値:
+ *   - companies: merge 後の全企業
+ *   - stats: { added, updated, kept } 件数 (UI 通知用)
+ */
+function mergeImportedCompaniesUpsert(
+  existingCompanies: any[],
+  importedCompanies: any[],
+): { companies: any[]; stats: { added: number; updated: number; kept: number } } {
+  const stats = { added: 0, updated: 0, kept: 0 };
+  const usedNos = new Set<string>();
+  existingCompanies.forEach((c: any) => { if (c && c.no !== undefined && c.no !== null) usedNos.add(String(c.no)); });
+  let nextGeneratedNo = 1;
+  function allocateNo(): number {
+    while (usedNos.has(String(nextGeneratedNo))) nextGeneratedNo += 1;
+    const value = nextGeneratedNo;
+    usedNos.add(String(value));
+    nextGeneratedNo += 1;
+    return value;
+  }
+
+  const existingByName = new Map<string, any>();
+  existingCompanies.forEach((c: any) => {
+    const key = normalizeCompanyNameKey(c?.companyName ?? c?.name ?? '');
+    if (key) existingByName.set(key, c);
+  });
+
+  const merged: any[] = [];
+  const visitedNames = new Set<string>();
+
+  importedCompanies.forEach((imp: any) => {
+    const key = normalizeCompanyNameKey(imp?.companyName ?? imp?.name ?? '');
+    if (!key) {
+      // 会社名が空 → 単純追加 (識別不能なので merge できない)
+      const newNo = imp?.no !== undefined && imp?.no !== null && imp?.no !== '' && !usedNos.has(String(imp.no))
+        ? imp.no
+        : allocateNo();
+      usedNos.add(String(newNo));
+      merged.push({ ...imp, no: newNo });
+      stats.added += 1;
+      return;
+    }
+    visitedNames.add(key);
+    const existingRec = existingByName.get(key);
+    if (existingRec) {
+      // 上書き: 既存 no と companyName を保持 (companyName は識別子として使った
+      // ので大文字小文字や空白の差で表記を変えない)、imp の non-empty fields だけ overlay
+      const overlaid: any = { ...existingRec };
+      Object.keys(imp).forEach((k) => {
+        if (k === 'no' || k === 'companyName' || k === 'name') return;
+        const v = imp[k];
+        if (v !== undefined && v !== null && v !== '') {
+          overlaid[k] = v;
+        }
+      });
+      merged.push(overlaid);
+      stats.updated += 1;
+    } else {
+      // 新規追加
+      const newNo = allocateNo();
+      merged.push({ ...imp, no: newNo });
+      stats.added += 1;
+    }
+  });
+
+  // 既存にあって import に無い → keep
+  existingCompanies.forEach((c: any) => {
+    const key = normalizeCompanyNameKey(c?.companyName ?? c?.name ?? '');
+    if (key && !visitedNames.has(key)) {
+      merged.push(c);
+      stats.kept += 1;
+    } else if (!key) {
+      // 会社名なしの既存行は安全側で残す
+      merged.push(c);
+      stats.kept += 1;
+    }
+  });
+
+  return { companies: merged, stats };
+}
+
+function importTargetList({ fileName, buffer, mode = 'upsert' }: { fileName: string; buffer: Buffer; mode?: 'upsert' | 'replace' } | any) {
   const safeName = sanitizeImportFileName(fileName);
   const ext = path.extname(safeName).toLowerCase();
   if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
@@ -970,8 +1068,27 @@ function importTargetList({ fileName, buffer }) {
     };
   }
 
+  // v2.0.15: 既存リストと merge する (mode='upsert' がデフォルト)。
+  // companyName で識別 → 一致は上書き、新規は追加、import 不在の既存は keep。
+  let finalCompanies: any[] = normalizedCompanies as any[];
+  let mergeStats: { added: number; updated: number; kept: number } | null = null;
+  if (mode !== 'replace') {
+    let existingCompanies: any[] = [];
+    try {
+      const existing = readTargetList();
+      if (existing.ok && Array.isArray(existing.companies)) {
+        existingCompanies = existing.companies;
+      }
+    } catch (_) { /* 既存ファイル無しは初回扱い */ }
+    if (existingCompanies.length > 0) {
+      const merged = mergeImportedCompaniesUpsert(existingCompanies, normalizedCompanies as any[]);
+      finalCompanies = merged.companies;
+      mergeStats = merged.stats;
+    }
+  }
+
   const targetPath = getCanonicalImportFile(safeName);
-  const canonicalRows = buildCanonicalWorkbookRows(normalizedCompanies, DEFAULT_COLUMN_MAPPING);
+  const canonicalRows = buildCanonicalWorkbookRows(finalCompanies, DEFAULT_COLUMN_MAPPING);
   const workbookData = createEmptyWorkbookBundle(targetPath, 'xlsx', DEFAULT_COLUMN_MAPPING, 'Targets');
   saveRows(workbookData, canonicalRows);
 
@@ -986,12 +1103,17 @@ function importTargetList({ fileName, buffer }) {
   if (skippedRowCount > 0) {
     warnings.push(`${skippedRowCount} 行を空行または会社名なしとしてスキップしました。`);
   }
+  if (mergeStats) {
+    warnings.push(`既存リストと merge: 追加 ${mergeStats.added} 社 / 更新 ${mergeStats.updated} 社 / 据え置き ${mergeStats.kept} 社`);
+  }
   return {
     ok: !!data.ok,
     filePath: toRelativeProjectPath(targetPath),
     targetPath,
     sourceFilePath: sourcePath,
     fileType: 'xlsx',
+    mode: mode || 'upsert',
+    mergeStats,
     detectedMapping: importMapping,
     headers: selectedSheet.headers,
     sourceSheet: selectedSheet.sheetName,

@@ -1,6 +1,6 @@
 {
   "name": "sales-claw-ts",
-  "version": "2.0.14",
+  "version": "2.0.15",
   "description": "Automated B2B company outreach via web contact forms — TypeScript port (Electron main + dashboard server)",
   "main": "dist-ts/electron-main.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "dashboard:restart": "tsx scripts/restart-dashboard.ts",
     "lint": "eslint src/ scripts/ tests/ electron-main.ts --ext .ts,.cjs,.js",
     "lint:fix": "npm run lint -- --fix",
-    "test:unit": "npm run build && node tests/redact.test.cjs && node tests/settings-cache.test.cjs && node tests/mcp-config-helpers.test.cjs && node tests/spawn-env-sanitizer.test.cjs && node tests/analysis-cache.test.cjs && node tests/playwright-wrapper-syntax.test.cjs && node tests/dashboard-runtime.test.cjs && node tests/mcp-idempotency.test.cjs && node tests/retry-helper.test.cjs && node tests/contact-history-defensive.test.cjs && node tests/load-data-smoke.test.cjs && node tests/transient-update-error.test.cjs && node tests/batch-size-config.test.cjs && node tests/action-logger-debounce.test.cjs",
+    "test:unit": "npm run build && node tests/redact.test.cjs && node tests/settings-cache.test.cjs && node tests/mcp-config-helpers.test.cjs && node tests/spawn-env-sanitizer.test.cjs && node tests/analysis-cache.test.cjs && node tests/playwright-wrapper-syntax.test.cjs && node tests/dashboard-runtime.test.cjs && node tests/mcp-idempotency.test.cjs && node tests/retry-helper.test.cjs && node tests/contact-history-defensive.test.cjs && node tests/load-data-smoke.test.cjs && node tests/transient-update-error.test.cjs && node tests/batch-size-config.test.cjs && node tests/action-logger-debounce.test.cjs && node tests/import-upsert.test.cjs && node tests/bulk-select-pagination.test.cjs",
     "test": "npm run test:unit && playwright test",
     "verify:unit": "npm run test:unit",
     "verify:release": "npm run typecheck && npm run test:unit && tsx scripts/verify-release-readiness.ts",

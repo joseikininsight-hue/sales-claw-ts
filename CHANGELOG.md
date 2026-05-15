@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.0.15 - 2026-05-15 — 一括削除バグ修正 + CSV/Excel 上書き取込
+
+ユーザー報告の 2 件を修正し、関連 UI ロジックを徹底監査。
+
+### C1: 「全選択 → 選択を削除」で全件削除されないバグ
+
+**原因**: pagination.ts が 20 件/ページで `data-pgn-hidden="1" + display:none`
+で hide した行を、`toggleAllCompanies` / `syncCompanySelectionUi` が「visible
+ではない」と判定して**選択対象から外していた**。100 社あれば page1 の 20 件
+しか選ばれず、削除も 20 件しか走らず「全選択した つもり」だった分が消えない。
+
+**修正** (`src/ui/client-scripts/dashboard.ts`):
+- 「全選択」と master checkbox 整合判定で、`row.dataset.pgnHidden === '1'`
+  なら「filter 通過扱い」して選択対象に含める。
+- filter で hidden な行 (display:none かつ pgnHidden 無し) は引き続き除外。
+- 結果: フィルタ条件にマッチする全件 (ページネーション無関係) が「全選択」される。
+
+副次効果: 「営業対象にする」「対象から外す」「AIでフォーム入力」も pagination
+で隠れた行が含まれるようになり、ユーザーが「画面に見えてないけど選択した」と
+思っていた挙動と一致する。
+
+### C2: CSV/Excel 取込を「上書き」モードに
+
+**変更**: `importTargetList` のデフォルトを **upsert** に変更
+(従来は完全 replace)。
+
+- **識別子**: `companyName` (大文字小文字・前後空白・連続空白を正規化して比較)
+- **既存と一致**: 既存 `no` を保持しつつ、新データの non-empty フィールドで
+  overlay (companyName / no は変更しない、それ以外を更新)。
+- **新規**: 採番して追加 (既存の no と衝突しない)。
+- **既存にあって import に無い**: そのまま keep。
+- 戻り値に `mergeStats: { added, updated, kept }` を含む。
+- `mode: 'replace'` を明示すれば従来動作。
+
+これで「リスト更新」用の Excel/CSV を都度作って上書き取込できる。
+ターゲット No.・連絡履歴・送信済みフラグは companyName で照合される限り保持。
+
+### C3: フィルタ・ボタンの動作監査 (issue 無し)
+
+「全て / 対象 / 営業対象 / フォーム有 / フォーム無 / 送信済 / エラー / 除外 /
+種別 / 進捗」フィルタは `rowMatchesCurrentFilter` + dataset 属性で正しく動作。
+C1 修正で pagination 配下も含めて bulk action が正しい数を処理する。
+
+### regression テスト
+
+- `tests/bulk-select-pagination.test.cjs` (7 アサート) — pagination-hidden /
+  filter-hidden / disabled / 100 社シナリオ / mixed
+- `tests/import-upsert.test.cjs` (24 アサート) — 既存空 / 上書き no 保持 /
+  keep / 大文字小文字+空白正規化 / 新規 no 採番 / 空 companyName / 空
+  フィールドで誤上書きしない
+
+dev で実 import → upsert → keep の挙動を確認 (mergeStats 期待通り) してから push。
+
+---
+
 ## 2.0.14 - 2026-05-15 — 100 社規模の耐久性ハードニング (B1-B3)
 
 「100 社同時投入で耐久できる？」の問いに答えるための 3 点改善。
