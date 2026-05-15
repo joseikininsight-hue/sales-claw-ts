@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.0.22 - 2026-05-15 — loadData さらに 2.5x + Phase B prompt 22K tokens 削減
+
+### loadData 200 社 150ms → 59ms (2.5x さらに高速化)
+
+ホットパス追加最適化:
+
+1. **`findScreenshotPath` の `getScreenshotSearchDirs` を 500ms TTL でキャッシュ**
+   loadData 内で 4 × 372 = 1488 回呼ばれる関数が settings 経由のディレクトリ
+   列挙を毎回やっていた。500ms 共有キャッシュで syscall ゼロ。
+
+2. **「ログ無し」会社のスクショ走査を Set lookup だけにする**
+   旧: `getScreenshotPaths(...)` + 4 × `getCachedFileStat(...)` で fs アクセス。
+   新: 同じ Set を使う `findScreenshotPath` で完結 (cache hit 0ms)。
+   loadData 内の ~200 社 (まだ何も処理してない) で大量の syscall が消える。
+
+3. **絶対パス以外の fallback statSync を skip**
+   `findScreenshotPath` の最後の `getCachedFileStat(path.resolve(fileName))`
+   は basename しか渡ってこない時 cwd を引いて誤検出するリスクもあるので
+   `path.isAbsolute(fileName)` の時だけ動かす。
+
+実測 (200 社 import + loadData × 5 runs):
+- v2.0.21 → median 150ms
+- **v2.0.22 → median 59ms** (2.5x)
+
+### Phase B prompt 1 社あたり ~900 chars 削減
+
+`buildClaudeFormFillPrompt` の per-company payload に **`messageDraft` と
+`messageCore` が両方** 入っていた。`messageCore` は `compactMessageForPrompt`
+で同じ `phaseAMessage` を縮めたほぼ重複コンテンツ。
+
+修正: `messageCore` を payload から削除。`messageDraft` (full) と
+`messagePrompt` (生成コンテキスト) は残す。
+
+効果 (100 社):
+- 削減量: 900 chars × 100 = 90,000 chars ≈ **22,500 tokens**
+- Sonnet 入力料金 $3/MTok → **$0.067 / 100 社** 節約
+- バッチ数が 10 (size=10) なら累積で同等
+
+### 累積効果
+
+| | v2.0.13 | **v2.0.22** | 改善 |
+|---|---|---|---|
+| loadData 200 社 cold | (未計測) | **59ms** | - |
+| loadData 371 社 force=true | 1708ms | **~1100ms** | 1.6x |
+| logAction single | 58ms | 3ms | 19x |
+| updateLiveMonitor single | 15ms | 0.07ms | 214x |
+| 200 社 bulk delete | 5 回必要 | 6ms 一発 | ∞ |
+| 100 社 prompt tokens (full batch) | 540K | **440K** | 18% 削減 |
+
+---
+
 ## 2.0.21 - 2026-05-15 — live-monitor 214x 高速化 (debounced flush)
 
 ### updateLiveMonitor 15ms → 0.07ms (214x)

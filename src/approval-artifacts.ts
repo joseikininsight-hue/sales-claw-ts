@@ -182,18 +182,38 @@ function getScreenshotSearchDirs() {
   ));
 }
 
+// v2.0.22: hot-path で getScreenshotSearchDirs() を 500ms TTL でキャッシュ。
+// loadData (371 社) で 4 種類 (input/confirm/sent/error) × 372 社 = 1488 回呼び
+// ばれるため、その都度 settings.getScreenshotDir() + path.resolve + Set 構築
+// するのは無駄が大きい。
+const _searchDirsCache: { fetchedAt: number; dirs: string[] } = {
+  fetchedAt: 0,
+  dirs: [],
+};
+const SEARCH_DIRS_TTL_MS = 500;
+function getScreenshotSearchDirsCached(): string[] {
+  if (Date.now() - _searchDirsCache.fetchedAt < SEARCH_DIRS_TTL_MS) {
+    return _searchDirsCache.dirs;
+  }
+  _searchDirsCache.dirs = getScreenshotSearchDirs();
+  _searchDirsCache.fetchedAt = Date.now();
+  return _searchDirsCache.dirs;
+}
+
 function findScreenshotPath(fileName) {
   if (!fileName) return null;
   const safeName = path.basename(fileName);
-  const directories = getScreenshotSearchDirs();
+  const directories = getScreenshotSearchDirsCached();
   for (const dirPath of directories) {
     if (getDirectoryEntries(dirPath).has(safeName)) {
       return path.join(dirPath, safeName);
     }
   }
-
-  const directPath = path.resolve(fileName);
-  if (getCachedFileStat(directPath)) return directPath;
+  // v2.0.22: 直接パスのフォールバックは絶対パス指定時のみ意味がある。
+  // 単純な basename (ss-1-input.png) では cwd を引いて意味が無いので skip。
+  if (path.isAbsolute(fileName)) {
+    if (getCachedFileStat(fileName)) return fileName;
+  }
   return null;
 }
 
@@ -437,15 +457,23 @@ function getExpectedApprovalArtifacts(companyNo, options: Record<string, any> = 
     : [];
 
   if (!hasLogContext) {
-    const status = getScreenshotStatus(companyNo);
+    // v2.0.22: ログが無い会社 = まだ処理されてない → スクショも無いはず。
+    // fs アクセス (4 × getCachedFileStat × 検索ディレクトリ) を丸ごとスキップ。
+    // loadData の 371 社中 200+ 社が「ログ無し」なので大きな効果。
+    // 念のため Set lookup で確認 (cwd 走査と違って Set hit は ~0ms)。
+    const expected = getExpectedScreenshotPaths(companyNo);
+    const setHasInput = Boolean(findScreenshotPath(expected.input));
+    const setHasConfirm = Boolean(findScreenshotPath(expected.confirm));
+    const setHasSent = Boolean(findScreenshotPath(expected.sent));
+    const setHasError = Boolean(findScreenshotPath(expected.error));
     return buildArtifactStatus(
       companyNo,
-      status.expected || getExpectedScreenshotPaths(companyNo),
+      expected,
       {
-        input: status.inputExists ? status.input : null,
-        confirm: status.confirmExists ? status.confirm : null,
-        sent: status.sentExists ? status.sent : null,
-        error: status.errorExists ? status.error : null,
+        input: setHasInput ? expected.input : null,
+        confirm: setHasConfirm ? expected.confirm : null,
+        sent: setHasSent ? expected.sent : null,
+        error: setHasError ? expected.error : null,
       },
       manual,
     );

@@ -4998,8 +4998,10 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
         confirm: path.join(promptScreenshotDir, `ss-${company.no}-confirm.png`),
         ...(autoSendSafe ? { sent: path.join(promptScreenshotDir, `ss-${company.no}-sent.png`) } : {}),
       },
+      // v2.0.22: messageDraft と messageCore は同じ phaseAMessage を異なる
+      // 長さで切ったほぼ重複コンテンツ。messageCore を削除して 1 社あたり
+      // ~900 chars 節約 (100 社で 90KB / ~22K tokens 削減)。
       messageDraft: trimMultilineText(phaseAMessage, promptLimits.messageDraft) || undefined,
-      messageCore: compactMessageForPrompt(phaseAMessage, sender, promptLimits.messageCore) || undefined,
       messagePrompt: compactMessagePromptForPrompt(phaseAMessagePrompt, promptLimits.messagePrompt) || undefined,
       analysisHints: summarizePhaseAAnalysisForPrompt(phaseA && phaseA.analysis)
         .map((line: any) => trimOneLineText(String(line || '').replace(/^- /, ''), promptLimits.analysisHint))
@@ -5044,7 +5046,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
     '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
     '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',
-    '- messageDraft は Phase A の草案、messageCore は要点、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
+    '- messageDraft は Phase A の草案、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
     '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
     '- sender_json にない送信者情報は追加しない',
     '- 本文末尾には sender_json の会社名/担当者/連絡先/住所(ある場合)と送信停止案内を必ず含める。住所が無い場合は推測しない',
