@@ -71,7 +71,13 @@ function createRecoveryRoutes(ctx: RecoveryRouteContext): RecoveryDispatcher {
     try {
       const snap = loadRecoverySnapshot();
       if (!snap || !Array.isArray(snap.batches) || snap.batches.length === 0) {
-        jsonResponse(res, 404, { ok: false, error: 'リカバリ対象のスナップショットがありません' });
+        // 409 (state conflict) を返す。404 だと UI 側が「API endpoint 不在」=「バージョン古い」と誤訳してしまう。
+        // snapshot は起動時には存在したが resume 中に discard / 別タブ操作で消えるレースが現実に起きる。
+        jsonResponse(res, 409, {
+          ok: false,
+          code: 'no_snapshot',
+          error: 'リカバリ対象のスナップショットがありません (既に再開済 / 破棄済の可能性)',
+        });
         return;
       }
       const providerId = snap.providerId || 'claude';
