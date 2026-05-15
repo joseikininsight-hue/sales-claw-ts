@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.11 - 2026-05-15 — クライアント側 destructure ガード (hotfix)
+
+v2.0.10 はサーバー側の `buildDashboardDataFromSources` で `Array.isArray()`
+フォールバックを入れたが、**現在インストール済みのクライアントが古い
+バージョン (≤ v2.0.9) のまま、新しいサーバーが配るデータを destructure
+する**過渡期に `render(data)` の以下が直撃していた:
+
+```js
+const {companies, stats, recentLogs, liveMonitor} = data;
+// data.companies が undefined → companies = undefined
+// 直後の companies.filter(...) で TypeError
+```
+
+これがダッシュボードの「読込失敗: Cannot read properties of undefined
+(reading 'length')」トーストの直接の原因。
+
+### 修正
+`src/ui/client-scripts/dashboard.ts` の destructuring を defensive に置換:
+```js
+const companies = Array.isArray(data && data.companies) ? data.companies : [];
+const stats = (data && data.stats) || {};
+const recentLogs = Array.isArray(data && data.recentLogs) ? data.recentLogs : [];
+const liveMonitor = (data && data.liveMonitor) || {};
+```
+
+サーバ側 (v2.0.10) との二重防御。古い API を呼ぶ環境 (デモモード /
+ダウングレード後の起動) でも UI が壊れない。
+
+---
+
 ## 2.0.10 - 2026-05-15 — pending キュー誤判定・undefined.length・リスト管理改善
 
 v2.0.9 直後にユーザーから 3 系統の同時報告:
