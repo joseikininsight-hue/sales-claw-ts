@@ -70,6 +70,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
     setManagedAiBatchActive,
     clearManagedAiBatchPending,
     getManagedAiRecoveryTimer,
+    getManagedAiFormBatchSize,
   } = ctx;
 
   /**
@@ -196,7 +197,76 @@ module.exports = function createAiFormFillRoutes(ctx) {
         return;
       }
 
-      const phaseA: any = await executeBackendPhaseABatch(companiesWithContactNo, providerId);
+      // v2.0.16 パイプライン: Phase A が 1 件 success するたびに即 Phase B に enqueue。
+      // バッファ管理: getManagedAiFormBatchSize 件溜まるか Phase A 完走したら flush。
+      // 旧: Phase A 全件完了を待ってから queueAiFormFill → 200 社で 5-10 分の待ち時間。
+      // 新: 最初の 1-2 社が分析完了した瞬間に Playwright が動き出す。
+      const pipelineEnabled = process.env.SALES_CLAW_PIPELINE !== 'off';
+      const batchSize = (typeof getManagedAiFormBatchSize === 'function' ? getManagedAiFormBatchSize() : 3);
+      const pipelineBuffer: any[] = [];
+      const pipelinePhaseAByCompany = new Map<string, any>();
+      let pipelineQueuedCount = 0;
+      let pipelineQueueError: any = null;
+
+      function pipelineEnqueueBuffer(reason: string) {
+        if (pipelineBuffer.length === 0) return;
+        const batch = pipelineBuffer.splice(0);
+        const localMap = new Map(batch.map((c: any) => [String(c.no), pipelinePhaseAByCompany.get(String(c.no))]));
+        pipelineQueuedCount += batch.length;
+        appendDiagnosticEvent('phase_a_pipeline_flush', {
+          provider: providerId,
+          reason,
+          companyCount: batch.length,
+          companyNos: batch.map((c: any) => c.no),
+        });
+        // queueAiFormFill は async だが await しない (Phase A の続きを止めない)
+        Promise.resolve().then(() => queueAiFormFill(batch, providerId, {
+          autoSendSafe: getManagedAiAutoSendSafe(),
+          phaseAByCompany: localMap,
+          phaseASuccesses: batch.map((c: any) => c.phaseA),
+          phaseAFailures: [],
+        })).catch((err: any) => {
+          pipelineQueueError = err;
+          appendDiagnosticEvent('phase_a_pipeline_enqueue_failed', {
+            provider: providerId,
+            error: String(err && err.message || err).slice(0, 400),
+            companyCount: batch.length,
+          });
+        });
+      }
+
+      const phaseAOptions: any = pipelineEnabled ? {
+        onSuccess: (phaseAResult: any, originalCompany: any) => {
+          const enriched = {
+            ...originalCompany,
+            formUrl: (phaseAResult && phaseAResult.formUrl) || originalCompany.formUrl || '',
+            phaseA: {
+              analysis: phaseAResult.analysis || null,
+              message: phaseAResult.message || '',
+              messagePrompt: phaseAResult.messagePrompt || '',
+              analysisElapsedMs: phaseAResult.elapsedMs,
+              formUrl: phaseAResult.formUrl || originalCompany.formUrl || '',
+              formResolutionMethod: phaseAResult.formResolutionMethod || null,
+            },
+          };
+          pipelinePhaseAByCompany.set(String(originalCompany.no), {
+            analysis: phaseAResult.analysis || null,
+            message: phaseAResult.message || '',
+            messagePrompt: phaseAResult.messagePrompt || '',
+            elapsedMs: phaseAResult.elapsedMs,
+            formUrl: phaseAResult.formUrl || '',
+            formResolutionMethod: phaseAResult.formResolutionMethod || null,
+          });
+          pipelineBuffer.push(enriched);
+          if (pipelineBuffer.length >= batchSize) {
+            pipelineEnqueueBuffer('buffer-full');
+          }
+        },
+      } : {};
+
+      const phaseA: any = await executeBackendPhaseABatch(companiesWithContactNo, providerId, phaseAOptions);
+      // Phase A 完了 → buffer に残ったものを最後の batch として flush
+      if (pipelineEnabled) pipelineEnqueueBuffer('phase-a-done');
       const phaseASkipped = Array.isArray(phaseA.skipped) ? phaseA.skipped : [];
       if (phaseA.successes.length === 0) {
         // 区別: 全件 skipped (URL未設定 / dealBreakers / 営業お断り 等) なのか、
@@ -270,12 +340,23 @@ module.exports = function createAiFormFillRoutes(ctx) {
         ])
       );
 
-      const result: any = await queueAiFormFill(successfulCompanies, providerId, {
-        autoSendSafe: getManagedAiAutoSendSafe(),
-        phaseAByCompany,
-        phaseASuccesses: phaseA.successes,
-        phaseAFailures: phaseA.failures,
-      });
+      // pipeline mode では既に enqueue 済みなので、bulk 再 enqueue を skip。
+      // pipeline OFF の旧パスでは従来通り bulk enqueue。
+      const result: any = pipelineEnabled
+        ? {
+            ok: !pipelineQueueError,
+            count: pipelineQueuedCount,
+            provider: providerId,
+            mode: `${providerId}-cli-managed`,
+            pipeline: true,
+            error: pipelineQueueError ? String(pipelineQueueError.message || pipelineQueueError) : undefined,
+          }
+        : await queueAiFormFill(successfulCompanies, providerId, {
+            autoSendSafe: getManagedAiAutoSendSafe(),
+            phaseAByCompany,
+            phaseASuccesses: phaseA.successes,
+            phaseAFailures: phaseA.failures,
+          });
       jsonResponse(res, 200, {
         ...result,
         phaseA: {

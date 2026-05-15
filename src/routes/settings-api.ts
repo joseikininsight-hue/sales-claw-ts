@@ -30,6 +30,7 @@ const settings = require('../settings-manager');
 const {
   appendCompany,
   deleteCompany,
+  deleteCompaniesBatch,
   findCompaniesByNos,
   getTargetPreview,
   importTargetList,
@@ -374,6 +375,10 @@ module.exports = function createSettingsApiRoutes(ctx) {
   }
 
   // POST /api/companies/bulk-delete
+  // v2.0.16: 旧実装は deleteCompany を 1 件ずつループしていたため
+  // workbook 全文 read+write が N 回繰り返され O(N²) → 370 件で
+  // タイムアウト → ユーザーが 5 回試して全部消す事故が起きていた。
+  // 新: deleteCompaniesBatch で 1 回 read → 全 splice → 1 回 write (O(N))。
   async function handleCompanyBulkDelete(req, res) {
     try {
       const data: any = await parseJsonBody(req);
@@ -387,9 +392,26 @@ module.exports = function createSettingsApiRoutes(ctx) {
       const deletedCompanies: unknown[] = [];
       const skippedCompanies: unknown[] = [];
       const runtimeCompanyMap: Map<string, any> = new Map(loadData().companies.map((company: any) => [String(company.no), company]));
-      for (const companyNo of uniqueCompanyNos) {
-        let removed = deleteCompany(companyNo);
-        if (!removed.ok) removed = purgeHistoryOnlyCompany(companyNo);
+
+      // 1) target list から batch 削除 (1 回の workbook I/O で完結)
+      const batchResult: any = deleteCompaniesBatch(uniqueCompanyNos);
+      if (batchResult.ok && Array.isArray(batchResult.deleted)) {
+        for (const removed of batchResult.deleted) {
+          const runtimeCompany = runtimeCompanyMap.get(String(removed.no));
+          deletedCompanies.push({
+            ...removed,
+            no: removed.no !== undefined ? removed.no : '',
+            companyName: removed.companyName || (runtimeCompany && runtimeCompany.name) || String(removed.no || ''),
+          });
+        }
+      }
+
+      // 2) target list に居なかった分は history-only として個別に purge
+      const stillMissing: string[] = batchResult.ok && Array.isArray(batchResult.notFound)
+        ? batchResult.notFound
+        : uniqueCompanyNos;
+      for (const companyNo of stillMissing) {
+        const removed = purgeHistoryOnlyCompany(companyNo);
         if (!removed.ok) {
           skippedCompanies.push({ companyNo, error: removed.error || `Failed to delete company ${companyNo}.` });
           continue;

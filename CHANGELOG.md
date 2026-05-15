@@ -1,5 +1,66 @@
 # Changelog
 
+## 2.0.16 - 2026-05-15 — 削除復活バグ・Phase A→B パイプライン化
+
+ユーザー報告:
+1. 「370 件削除しても 5 回繰り返さないと全部消えない」
+2. 「100-200 社入れたとき毎回最初に分析してる、Playwright を早く動かしたい」
+
+### D1 (本命): bulk-delete + auto-repair root cause
+
+`readTargetList` が呼ばれるたびに `repairImportedTargetListIfNeeded()` が
+走り、以下の heuristic で **削除した行を勝手に元 CSV から復元**していた:
+
+```ts
+const shouldRepair = bestCandidate.companyCount > Math.max(currentCount + 50, ...);
+```
+
+「現在 0 件、元 CSV 200 件」だと閾値突破 → auto-repair で 200 件が復活 →
+ユーザーが何度削除しても戻ってくる。これが「5 回繰り返し」の正体。
+
+**修正**: count-based auto-repair を **無効化**。「ファイル破損 (parse 失敗)」
+の場合のみ early-return で repair するパスは温存 (実際には parse 成功時には
+ここに到達しない)。ユーザーの意図的な削除を尊重する仕様に。
+
+### D1 (補助): deleteCompaniesBatch を O(N) 化
+
+加えて、bulk-delete API が `deleteCompany(no)` を 1 件ずつループ呼び出し
+していたため **N 件削除 = N 回の workbook 全文 read+write** で遅い。
+新 `deleteCompaniesBatch(nos[])` で 1 回 read → 全 splice → 1 回 write。
+**200 件削除が 6ms** で完了 (旧: 数十秒〜タイムアウト)。
+
+### D2: Phase A → Phase B パイプライン化
+
+旧: 200 社の Phase A (分析+メッセージ生成) を全件完走してから Phase B
+(Playwright フォーム入力) を開始 → 「ユーザーから見ると最初の数分間ずっと
+分析だけしている、Playwright が動かない」状態。
+
+新: `executeBackendPhaseABatch` に `onSuccess` callback を追加し、各社が
+Phase A 成功するたびに即 Phase B キューにバッファに追加。バッファが
+batchSize (default 3、env / settings で可変) に達したら即 enqueue → Phase A
+完走を待たずに Playwright が動き始める。
+
+`SALES_CLAW_PIPELINE=off` でオプトアウト可。診断イベント
+`phase_a_pipeline_flush` で flush 履歴が見える。
+
+### regression テスト
+
+- `tests/bulk-delete-batch.test.cjs` (14 アサート) — 200 件 6ms 削除 / 部分一致 /
+  空配列の挙動を保証
+- 既存 `bulk-select-pagination` / `import-upsert` も pass
+
+dev で 200 社 import → batch delete → readTargetList=0 を実証してから push。
+
+### ユーザー影響
+
+- 「全選択 → 削除」が **1 回で全件** 消える (5 回繰り返し不要)
+- 100/200 社投入 → **最初の 1-3 社が分析完了した瞬間 Playwright が動き出す** (体感
+  待ち時間が大幅短縮)
+- 旧バージョンで bulk-delete が中途半端に終わってリストが汚れた場合は、
+  v2.0.16 で再度「全選択→削除」すれば 1 回で完全消去できる
+
+---
+
 ## 2.0.15 - 2026-05-15 — 一括削除バグ修正 + CSV/Excel 上書き取込
 
 ユーザー報告の 2 件を修正し、関連 UI ロジックを徹底監査。

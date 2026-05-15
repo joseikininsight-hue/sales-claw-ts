@@ -664,17 +664,27 @@ function repairImportedTargetListIfNeeded() {
     return importRepairCache.result;
   }
 
-  const shouldRepair = bestCandidate.companyCount > Math.max(currentCount + 50, Math.ceil(currentCount * 1.5));
-  if (!shouldRepair) {
-    importRepairCache.result = {
-      ok: true,
-      repaired: false,
-      reason: 'current-target-count-looks-reasonable',
-      currentCount,
-      candidateCount: bestCandidate.companyCount,
-    };
-    return importRepairCache.result;
-  }
+  // v2.0.16: count-based auto-repair を **無効化** (root cause of「370 件削除に
+  // 5 回必要」「200 社一括削除しても残る」事故)。
+  //
+  // 旧仕様: 現在のターゲットリストの行数 < 元 CSV/XLSX の行数 × 1.5 + 50 だと
+  // 「ファイル破損で行が消えた」と判断して **元 import ファイルから自動復元**
+  // していた。
+  //
+  // 問題: ユーザーが意図的に bulk-delete した直後に readTargetList() が呼ばれ
+  // ると、count threshold を超えて auto-repair が走り、削除した行が即復活する。
+  //
+  // 新仕様: parse 失敗 (currentData.ok === false) のときだけ repair (上で既に
+  // 早期 return しているので、ここに来た時点で current file は読めている)。
+  // count 比較による自動復元は廃止。ユーザーが復元したい場合は再度 import すれば良い。
+  importRepairCache.result = {
+    ok: true,
+    repaired: false,
+    reason: 'auto-repair-by-count-disabled-v2.0.16',
+    currentCount,
+    candidateCount: bestCandidate.companyCount,
+  };
+  return importRepairCache.result;
 
   const repairedTargetPath = getCanonicalImportFile(path.basename(bestCandidate.sourceFilePath));
   const canonicalRows = buildCanonicalWorkbookRows(bestCandidate.normalizedCompanies, DEFAULT_COLUMN_MAPPING);
@@ -878,6 +888,57 @@ function deleteCompany(companyNo) {
   return {
     ok: true,
     company: deleted,
+    targetPath: workbookData.targetPath,
+  };
+}
+
+/**
+ * v2.0.16: 複数行を 1 回の workbook I/O で削除する。
+ *
+ * 旧実装は API 側で `deleteCompany(no)` をループ呼び出ししていたため
+ * **N 件削除 = N 回の workbook 全文 read+write**。370 件で数十秒〜数分かかり
+ * ブラウザ/プロキシのタイムアウトで途中失敗、ユーザーが 5 回繰り返さないと
+ * 全件消えない事故が起きていた。
+ *
+ * 新実装は 1 回の read → 全行 filter → 1 回の write で O(N)。
+ */
+function deleteCompaniesBatch(companyNos: any[]) {
+  const targetPath = settings.getTargetListPath();
+  const workbookData = readWorkbookBundle(targetPath);
+  if (!workbookData.ok) {
+    return {
+      ok: false,
+      deleted: [] as any[],
+      notFound: (companyNos || []).map((no: any) => String(no)),
+      error: workbookData.error,
+    };
+  }
+
+  const wantedSet = new Set((companyNos || []).map((no: any) => String(normalizeCompanyNo(no))));
+  const deleted: any[] = [];
+  const remainingRows: any[] = workbookData.rows.length > 0 ? [workbookData.rows[0]] : [];
+
+  for (let i = 1; i < workbookData.rows.length; i += 1) {
+    const row = workbookData.rows[i];
+    const mapped = mapRow(row, workbookData.columnMapping, i);
+    if (wantedSet.has(String(mapped.no))) {
+      deleted.push(mapped);
+    } else {
+      remainingRows.push(row);
+    }
+  }
+
+  if (deleted.length > 0) {
+    saveRows(workbookData, remainingRows);
+  }
+
+  const deletedNoSet = new Set(deleted.map((d: any) => String(d.no)));
+  const notFound = (companyNos || []).filter((no: any) => !deletedNoSet.has(String(normalizeCompanyNo(no))));
+
+  return {
+    ok: true,
+    deleted,
+    notFound,
     targetPath: workbookData.targetPath,
   };
 }
@@ -1132,6 +1193,7 @@ module.exports = {
   EXTENDED_TARGET_FIELDS,
   appendCompany,
   deleteCompany,
+  deleteCompaniesBatch,
   detectColumnMapping,
   findCompaniesByNos,
   findCompanyByNo,

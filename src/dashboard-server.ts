@@ -4768,8 +4768,12 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
   });
 }
 
-async function executeBackendPhaseABatch(companies, providerId = getSelectedAiProvider()) {
+async function executeBackendPhaseABatch(companies, providerId = getSelectedAiProvider(), options: Record<string, any> = {}) {
   const normalizedProviderId = normalizeProviderId(providerId);
+  // v2.0.16: pipeline mode — per-company onSuccess callback で Phase B に
+  // 即時 enqueue できるようにする。callback throw は Phase A を巻き込まない。
+  const onSuccess: ((result: any, original: any) => void) | null =
+    typeof options.onSuccess === 'function' ? options.onSuccess : null;
   // resolveNodeExecutable may return null on machines without system Node.
   // runParallelAnalysisWorker now falls back to Electron's embedded Node
   // via ELECTRON_RUN_AS_NODE, so we no longer hard-fail here.
@@ -4801,7 +4805,13 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
     while (true) {
       const idx = nextIdx++;
       if (idx >= companies.length) break;
-      results[idx] = await runParallelAnalysisWorker(companies[idx], nodeExecutable);
+      const result = await runParallelAnalysisWorker(companies[idx], nodeExecutable);
+      results[idx] = result;
+      // v2.0.16: per-company 成功で即 onSuccess を呼ぶ。Phase B が pipeline で
+      // 早期に走り出せる (Phase A 完走を待たない)。callback throw は無視。
+      if (onSuccess && result && result.ok) {
+        try { onSuccess(result, companies[idx]); } catch (_) { /* swallow */ }
+      }
     }
   }
   const workers: any[] = [];
@@ -9306,6 +9316,8 @@ function getAiFormFillApiDispatch() {
       setManagedAiBatchActive: (value) => {
         if (managedAiBatchController) managedAiBatchController.activeBatch = value;
       },
+      // v2.0.16: pipeline 用に batch size を expose
+      getManagedAiFormBatchSize,
       // v2.0.10: PTY 死亡時に pending も自動ドレインできるよう exposure
       clearManagedAiBatchPending: () => {
         if (!managedAiBatchController) return 0;
