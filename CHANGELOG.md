@@ -1,5 +1,58 @@
 # Changelog
 
+## 2.0.23 - 2026-05-15 — stall 7 社で止まる事故修正 + /api/data 60% 削減
+
+### 緊急修正: 「200 社入れたら 7 社で止まる」
+
+ユーザー報告: AI バッチサイズ 9 で 200 社投入 → 7 社処理した後 batch 4 が
+20+ 分動かず、watchdog が auto-error しないため次バッチも dispatch
+されない。
+
+**根本原因** (`src/batch-watchdog.ts`):
+`detectStalledCompanies` が **action 空 (CLI が一度もログを書いていない)** を
+stall 候補から除外していた。Claude CLI がクラッシュ / hang したケースでは
+companyNo は monitor 上で `action:'', terminal:false` のままになるが、
+これが永遠に救済されない。
+
+**修正**:
+- 空 action も stall 候補に含める
+- 空 action 用の短い閾値 `emptyActionStallMs` を追加 (デフォルト
+  `stallMs / 3` = ~7 分)
+- dashboard-server 側 poller も「全社空 action」検知時は 7 分閾値で stall 判定
+- 既存テスト pass を維持
+
+これで CLI hang を 7 分以内に検知して auto-error + 次 batch dispatch が走る。
+
+### /api/data payload 2046KB → 783KB (60% 削減)
+
+profiling で UI から参照されていないフィールドを大量に発見:
+- `analysis`: site_analysis log の details JSON (1 社あたり 5-15KB)。
+  grep で UI 参照 0 件 → 削除
+- `lastLog`: 6KB / 社、UI で `c.lastLog` の grep が 0 件 → 削除
+- `logs` (直近 3 件): 6KB / 社、UI で `c.logs` 参照 0 件 → 削除
+- `analysisInsight`: awaiting-card-redesign で使用 → 残す (~2KB/社)
+
+372 社 × 平均 5.4KB → **2.0MB → 0.78MB** (60% 削減)
+1 SSE event の転送量が大幅減少。Electron WebContents → renderer 経路の
+JSON parse コストも比例して下がる。
+
+履歴詳細が必要な場合は `GET /api/companies/:no/status` (v2.0.10 追加) で
+個別取得可能。
+
+### 累積指標 (一週間の改善)
+
+| | v2.0.13 | **v2.0.23** | 改善 |
+|---|---|---|---|
+| loadData (371 社) cold | 1708ms | ~750ms | 2.3x |
+| /api/data payload (371 社) | 2046KB | **783KB** | 2.6x |
+| logAction single | 58ms | 3ms | 19x |
+| updateLiveMonitor single | 15ms | 0.07ms | 214x |
+| stall recovery (空 action) | 20+ 分 | **7 分** | 3x |
+| pending stuck | 永久 | **AI 停止で完全クリア** | OK |
+| 200 社 bulk delete | 5 回必要 | 6ms 一発 | ∞ |
+
+---
+
 ## 2.0.22 - 2026-05-15 — loadData さらに 2.5x + Phase B prompt 22K tokens 削減
 
 ### loadData 200 社 150ms → 59ms (2.5x さらに高速化)

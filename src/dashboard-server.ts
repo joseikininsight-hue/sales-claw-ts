@@ -1586,8 +1586,15 @@ function startManagedAiBatchPoller() {
       return;
     }
 
+    // v2.0.23: バッチ stall の早期判定。
+    // 通常 (CLI が少なくとも 1 社の log を残した) は 20 分待つが、
+    // 「全社 action 空」 (CLI が一度も触っていない) 場合は CLI 失敗の可能性が
+    // 高いので 7 分で stall 判定する。
+    const allEmptyAction = Array.isArray(snapshot.statuses) && snapshot.statuses.length > 0 &&
+      snapshot.statuses.every((s: any) => !s || (!s.action && !s.latestAction && !s.terminal));
+    const effectiveStallMs = allEmptyAction ? Math.floor(MANAGED_AI_BATCH_STALL_MS / 3) : MANAGED_AI_BATCH_STALL_MS;
     if (!activeController.activeBatch.stallNotified
-      && (Date.now() - activeController.activeBatch.lastProgressAt) > MANAGED_AI_BATCH_STALL_MS) {
+      && (Date.now() - activeController.activeBatch.lastProgressAt) > effectiveStallMs) {
       activeController.activeBatch.stallNotified = true;
       appendDiagnosticEvent('managed_ai_batch_stalled', {
         provider: activeController.providerId,
@@ -1604,10 +1611,14 @@ function startManagedAiBatchPoller() {
       );
 
       // stallNotified が立った直後、message_draft/site_analysis/form_fill で停滞中の企業を自動 error 化
+      // v2.0.23: emptyActionStallMs を渡して action 空の社も救う
       const stalledNos = detectStalledCompanies(
         activeController.activeBatch,
         snapshot.statuses,
-        { stallMs: MANAGED_AI_BATCH_STALL_MS }
+        {
+          stallMs: MANAGED_AI_BATCH_STALL_MS,
+          emptyActionStallMs: Math.floor(MANAGED_AI_BATCH_STALL_MS / 3),
+        }
       );
       if (stalledNos.length > 0) {
         stalledNos.forEach((companyNo: any) => {
@@ -6215,11 +6226,9 @@ function buildDashboardDataFromSources() {
       outreachUpdatedAt: null,
       lastAction: effectiveLastAction,
       lastActionAt: lastLog ? lastLog.timestamp : null,
-      lastLog,
-      logs: logs.slice(-3).map(l => ({
-        time: l.timestamp, action: l.action,
-        details: typeof l.details === 'object' ? JSON.stringify(l.details) : l.details || '',
-      })),
+      // v2.0.23: lastLog と logs(直近 3 件) は UI から参照されてなかった (grep 0 件)。
+      // 1 社あたり 12KB → payload からカット。
+      // 履歴詳細は GET /api/companies/:no/status で取得可能。
       hasInputScreenshot: screenshot.hasInput,
       hasConfirmScreenshot: screenshot.hasConfirm,
       hasSentScreenshot: screenshot.hasSent,
@@ -6238,10 +6247,8 @@ function buildDashboardDataFromSources() {
       sentMessageSource: displayDraftSource,
       hasDraftMessage: !!displayDraftMessage,
       sentAt: effectiveSubmittedAt || null,
-      analysis: siteAnalysis ? siteAnalysis.details : null,
-      // Phase Obs: site_analysis.details に Phase A の LLM 解析結果が JSON で
-      // 入っているので parse して構造化フィールドとして UI に渡す。
-      // 失敗・型不一致時は null。
+      // v2.0.23: analysis (raw site_analysis log) は UI 未使用 (grep 0 件) なので削除。
+      // analysisInsight は awaiting-card-redesign で使用 → 残す (~2KB/社、構造化済み)。
       analysisInsight: extractAnalysisInsight(siteAnalysis, errorLog, lastLog),
       awaitingAt: awaitingLog ? awaitingLog.timestamp : (confirmLog ? confirmLog.timestamp : null),
       lastActionDetail,

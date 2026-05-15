@@ -13,6 +13,8 @@ const ACTION_LABELS: Record<string, string> = {
   message_draft: 'メッセージ生成後',
   site_analysis: 'サイト分析後',
   form_fill: 'フォーム入力後',
+  '': 'バッチ投入後（CLI 反応なし）',
+  unknown: '不明なステップ',
 };
 
 export interface BatchStatus {
@@ -35,6 +37,8 @@ export interface ActiveBatch {
 export interface DetectStalledOptions {
   /** 停滞とみなす idle ms */
   stallMs: number;
+  /** action=空 (CLI が一度もログを書いてない) の idle ms。既定: stallMs / 3 */
+  emptyActionStallMs?: number;
   /** 現在時刻 (テスト用。既定: Date.now()) */
   now?: number;
 }
@@ -62,6 +66,12 @@ export function detectStalledCompanies(
   if (!activeBatch || !Array.isArray(statuses)) return [];
   const stallMs = Number(options.stallMs) || 0;
   if (stallMs <= 0) return [];
+  // v2.0.23: 空 action 用の短い閾値 (デフォルト stallMs / 3)。
+  // CLI が一度も触ってない社は LLM 失敗 / Claude タイムアウトの可能性が高いので
+  // 早めに諦めて次バッチへ進める。
+  const emptyActionStallMs = Number.isFinite(options.emptyActionStallMs as number)
+    ? (options.emptyActionStallMs as number)
+    : Math.max(60000, Math.floor(stallMs / 3));
   const now = Number.isFinite(options.now) ? (options.now as number) : Date.now();
 
   const stalled: number[] = [];
@@ -69,23 +79,28 @@ export function detectStalledCompanies(
     if (!status) continue;
     if (status.terminal) continue;
     const action = extractAction(status);
-    if (!STALL_CANDIDATE_ACTIONS.has(action as StallableAction)) continue;
+
+    // v2.0.23: action 空 (CLI が一度もログを書いていない) も stall 候補に含める。
+    const isCandidate = STALL_CANDIDATE_ACTIONS.has(action as StallableAction) || action === '';
+    if (!isCandidate) continue;
+
+    // 空 action は短い閾値で判定
+    const effectiveStallMs = action === '' ? emptyActionStallMs : stallMs;
 
     // 優先: status.latestTimestamp ベースでの idle 判定
     const tsRaw = extractTimestamp(status);
     if (tsRaw) {
       const tsMs = Date.parse(tsRaw);
-      if (Number.isFinite(tsMs) && (now - tsMs) > stallMs) {
+      if (Number.isFinite(tsMs) && (now - tsMs) > effectiveStallMs) {
         stalled.push(Number(status.companyNo));
         continue;
       }
-      // latestTimestamp が存在するなら、それが stall 未満ならスキップ
       if (Number.isFinite(tsMs)) continue;
     }
 
     // フォールバック: activeBatch.lastProgressAt を使った idle 判定
     const lastProgressAt = Number(activeBatch.lastProgressAt) || 0;
-    if (lastProgressAt > 0 && (now - lastProgressAt) > stallMs) {
+    if (lastProgressAt > 0 && (now - lastProgressAt) > effectiveStallMs) {
       stalled.push(Number(status.companyNo));
     }
   }
