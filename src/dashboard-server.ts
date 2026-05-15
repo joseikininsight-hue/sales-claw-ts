@@ -4568,7 +4568,15 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
   const selectedProviderId = normalizeProviderId(providerId);
   let managedProviderId = getManagedAiProvider();
   const provider = getProvider(selectedProviderId);
-  const auth: any = await probeClaudeAuthStatus(selectedProviderId);
+  // v2.0.29: managed PTY が既に走っている = ログイン済 として扱う。
+  // 旧バグ: AI 起動済の状態で /api/ai-form-fill を呼ぶと
+  // probeClaudeAuthStatus が別 spawn で `claude auth status --json` を実行 →
+  // 既存 PTY が credentials.json を握っているケース等で失敗 → 「未ログイン」エラー。
+  // managed AI が動いてる時点で claude.ai 認証は成立してるので probe スキップ。
+  const managedAlreadyRunning = !!claudePty && managedProviderId === selectedProviderId;
+  const auth: any = managedAlreadyRunning
+    ? { provider: selectedProviderId, installed: true, loggedIn: true, authMethod: 'managed-session' }
+    : await probeClaudeAuthStatus(selectedProviderId);
   if (!auth.installed) {
     return {
       ok: false,

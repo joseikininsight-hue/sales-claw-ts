@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.0.29 - 2026-05-15 — 「AI 起動済なのに『未ログイン』エラー」バグ修正 (致命)
+
+### 発覚経緯
+
+実 Electron + Playwright で実 AI 動作テスト中に発見:
+- `/api/ai/status` → `loggedIn: true / authMethod: claude.ai` ✓
+- `/api/ai/setup-diagnostics` → `cliLoggedIn: true` ✓
+- `/api/launch-ai` → PTY 起動成功 ✓
+- でも `/api/ai-form-fill` → **「Claude Code CLI が未ログインです」エラー** ❌
+
+つまり AI を起動した直後にフォーム入力を投入すると **必ず失敗する**。
+ユーザーには「AI を起動して」と言われるが、起動してから投入してもエラーが出る
+ダブルバインド状態だった。
+
+### 原因
+
+`ensureClaudeAutomationReady` (Phase B 投入時の認証チェック) が **PTY が走ってる
+最中に `claude auth status --json` を別 spawn する** 設計だった。これが失敗する
+原因は仮説段階だが、`credentials.json` の lock 競合 / env (HOME 切替) / spawn
+タイミングなどが疑われる。
+
+### 修正
+
+`managed PTY が既に走っている && 同じ provider` なら **そのまま「ログイン済」と
+扱う**。PTY が立ち上がっている = OAuth は成立している前提。
+
+```ts
+const managedAlreadyRunning = !!claudePty && managedProviderId === selectedProviderId;
+const auth = managedAlreadyRunning
+  ? { provider: selectedProviderId, installed: true, loggedIn: true, authMethod: 'managed-session' }
+  : await probeClaudeAuthStatus(selectedProviderId);
+```
+
+これで「AI 起動 → Form Fill」の正常フローが通る。AI 未起動の場合は従来通り
+probeClaudeAuthStatus を走らせる (= 起動時に必要な auth 検証は維持)。
+
+### 影響
+
+ユーザーが報告してきた「100/200 社入れても 7 社で止まる」「キューに残る」等の
+事故の **直前の段階**でもこのバグが効いていた可能性が高い。AI 起動直後の
+Phase B 投入が全部 409 で弾かれていたら、ユーザーは何度もリトライしていた。
+
+### 検証
+
+`/api/ai-form-fill` を Playwright 経由で 2 つのダミーフォームに投入 → 修正前は
+「未ログイン」エラーで block、修正後はキュー投入成功 (次の段階に進む) を確認。
+
+実 Phase B 完走時間の計測は v2.0.29 reinstall 後にもう一度実行する。
+
+---
+
 ## 2.0.28 - 2026-05-15 — タブ並列の実時間ベンチマーク (1.9-2.8x スピードアップ実証)
 
 ユーザー要求: 「Playwright で実際に AI 役として動かして本当に速くなるか確認」
