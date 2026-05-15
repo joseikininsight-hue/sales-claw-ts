@@ -207,6 +207,11 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const pipelinePhaseAByCompany = new Map<string, any>();
       let pipelineQueuedCount = 0;
       let pipelineQueueError: any = null;
+      // v2.0.19: queueAiFormFill の呼び出しを Promise chain で **順次** 実行する。
+      // 旧実装は Promise.resolve().then(...) で投げ放しだったため、Phase A の
+      // onSuccess が連続発火すると enqueue 順序が逆転して controller.pending
+      // 内のバッチ順が乱れる可能性があった。
+      let pipelineChain: Promise<any> = Promise.resolve();
 
       function pipelineEnqueueBuffer(reason: string) {
         if (pipelineBuffer.length === 0) return;
@@ -219,8 +224,9 @@ module.exports = function createAiFormFillRoutes(ctx) {
           companyCount: batch.length,
           companyNos: batch.map((c: any) => c.no),
         });
-        // queueAiFormFill は async だが await しない (Phase A の続きを止めない)
-        Promise.resolve().then(() => queueAiFormFill(batch, providerId, {
+        // 順次 await でバッチ順序を保証する。Phase A 自体は止まらない (この chain は
+        // 別 Promise で連結されるだけ)。
+        pipelineChain = pipelineChain.then(() => queueAiFormFill(batch, providerId, {
           autoSendSafe: getManagedAiAutoSendSafe(),
           phaseAByCompany: localMap,
           phaseASuccesses: batch.map((c: any) => c.phaseA),
@@ -266,7 +272,11 @@ module.exports = function createAiFormFillRoutes(ctx) {
 
       const phaseA: any = await executeBackendPhaseABatch(companiesWithContactNo, providerId, phaseAOptions);
       // Phase A 完了 → buffer に残ったものを最後の batch として flush
-      if (pipelineEnabled) pipelineEnqueueBuffer('phase-a-done');
+      if (pipelineEnabled) {
+        pipelineEnqueueBuffer('phase-a-done');
+        // pipeline chain が完走するまで待って batch 順序を確定させてから response を返す
+        try { await pipelineChain; } catch (_) { /* error は pipelineQueueError に格納済み */ }
+      }
       const phaseASkipped = Array.isArray(phaseA.skipped) ? phaseA.skipped : [];
       if (phaseA.successes.length === 0) {
         // 区別: 全件 skipped (URL未設定 / dealBreakers / 営業お断り 等) なのか、

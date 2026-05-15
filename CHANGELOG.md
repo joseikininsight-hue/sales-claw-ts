@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.20 - 2026-05-15 — pipeline enqueue 順序保証 + 設定 form field 整合性
+
+### Phase B pipeline の enqueue 順序を Promise chain で保証
+
+v2.0.16 で pipeline mode を実装したが、各 batch を `Promise.resolve().then(...)`
+で投げ放しにしていたため Phase A の onSuccess が連続発火すると
+`controller.pending` 内のバッチ順序が逆転する可能性があった。
+
+修正: `pipelineChain` で順次 await し、Phase A 自体は止めずに batch enqueue
+だけ直列化。Phase A 完走後に chain 完走を待ってから response を返す。
+
+### 設定タブの `managedAiFormBatchSize` 完全実装
+
+v2.0.18 で UI 入力欄を追加したが、`populatePreferences` のメタフィールド辞書
+からも漏れていた疑念を再確認 → 確実に load/save 両方に紐づいていることを
+監査済み。i18n も ja/en 両方完備。
+
+### 累積効果
+
+| v2.0.13 (一週間前) → v2.0.20 (本リリース) |
+|---|
+| loadData (371 社) | 1708ms → **783ms** (2.2x) |
+| logAction single | 58ms → **3ms** (19x) |
+| 200 社 bulk delete | 5 回必要 → **6ms 一発** |
+| 100 社投入時の Phase B 起動 | 5-10 分待ち → **1-3 社分析直後に起動** |
+| Phase B prompt cost (100 社) | 21K × 34 batch → 21K + 7K × 9 batch |
+| pending stuck | 「既に処理中」エラー → **停止 = キュー完全クリア** |
+
+100 社/200 社/371 社規模を投入する実運用に必要な耐久性とスピード感を確保。
+
+---
+
 ## 2.0.19 - 2026-05-15 — logAction 5x 高速化 + Phase B prompt 軽量化
 
 100/200 社規模で連発される logAction と Phase B prompt のコスト/レイテンシ
