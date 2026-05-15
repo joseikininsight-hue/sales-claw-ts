@@ -3133,6 +3133,26 @@ function getLatestLog(logs, action) {
   return null;
 }
 
+/**
+ * v2.0.18: 1 度の reverse scan で複数 action の latest を一括取得する。
+ * 旧コード: getLatestLog を 6 回呼ぶ → 6 × logs.length 回スキャン。
+ * 新: 1 × logs.length で全部揃う (6 倍速)。
+ * 100-371 社規模で loadData のホットパスを大幅短縮する。
+ */
+function getLatestActionLogs(logs: any[], actions: string[]): Record<string, any> {
+  const result: Record<string, any> = {};
+  const wanted = new Set(actions);
+  let remaining = actions.length;
+  for (let i = logs.length - 1; i >= 0 && remaining > 0; i -= 1) {
+    const a = logs[i].action;
+    if (wanted.has(a) && !result[a]) {
+      result[a] = logs[i];
+      remaining -= 1;
+    }
+  }
+  return result;
+}
+
 function stringifyLogDetails(details) {
   if (details === undefined || details === null) return '';
   if (typeof details === 'string') return details.trim();
@@ -6136,12 +6156,16 @@ function buildDashboardDataFromSources() {
       if (effectiveLastAction === 'error') stats.error++;
     }
 
-    const formFillLog = getLatestLog(logs, 'form_fill');
+    // v2.0.18: 6 アクションを 1 度のスキャンで取得 (旧: 6 回スキャン)
+    const latestLogs = getLatestActionLogs(logs, [
+      'form_fill', 'site_analysis', 'awaiting_approval', 'confirm_reached', 'error',
+    ]);
+    const formFillLog = latestLogs.form_fill || null;
     const submittedLog = effectiveSubmittedLog;
-    const siteAnalysis = getLatestLog(logs, 'site_analysis');
-    const awaitingLog = getLatestLog(logs, 'awaiting_approval');
-    const confirmLog = getLatestLog(logs, 'confirm_reached');
-    const errorLog = getLatestLog(logs, 'error');
+    const siteAnalysis = latestLogs.site_analysis || null;
+    const awaitingLog = latestLogs.awaiting_approval || null;
+    const confirmLog = latestLogs.confirm_reached || null;
+    const errorLog = latestLogs.error || null;
     const screenshot = getScreenshotArtifacts(no, {
       logs,
       formFillLog,
@@ -8189,6 +8213,11 @@ ${renderStyles()}
             <div class="settings-group">
               <label>${_t['field.exportPrefix']}</label>
               <input type="text" id="pf-exportFilenamePrefix" placeholder="${_t['ph.exportPrefix']}">
+            </div>
+            <div class="settings-group">
+              <label>${_t['field.managedAiFormBatchSize']}</label>
+              <input type="number" id="pf-managedAiFormBatchSize" min="1" max="10" placeholder="3">
+              <div class="help-text">${_t['help.managedAiFormBatchSize']}</div>
             </div>
           </div>
 

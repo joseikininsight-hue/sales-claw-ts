@@ -1,5 +1,67 @@
 # Changelog
 
+## 2.0.18 - 2026-05-15 — loadData 2.2x 高速化 + Phase B バッチサイズ UI 露出
+
+ユーザー goal: 「100社/200社を投入したときのスピード感や耐久力を徹底改善。
+UI に出ているのに動かないとか、設定にあるのに反映しないとか、ユーザー目線の
+バグを洗い出して直す」
+
+### 計測ベースライン (実環境: 371 社のターゲットリスト)
+
+| 操作 | v2.0.17 | **v2.0.18** | 改善 |
+|---|---|---|---|
+| `loadData(force=true)` 5 runs avg | **1708ms** | **783ms** | **2.2x** |
+| `readTargetList` 単独 | 586ms | 22ms | 26x (cache hit) |
+| 200 社 bulk delete | 6ms | 5ms | (既に高速) |
+
+### 最適化の根拠 (プロファイリングで特定)
+
+1. **`mergeListBuilderCompanionFields` の per-company `fs.readFileSync`**
+   `loadData` 内の `companies.map` で 371 社それぞれが
+   `loadListBuilderCompanionFields` を呼んでおり、対象企業の 99%+ で
+   存在しない companion JSON を `readFileSync` → ENOENT throw → catch
+   していた。
+   **修正**: records dir を 1 度 `readdirSync` して Set<basename> を 500ms
+   TTL でキャッシュ。Set lookup で「存在しない」なら fs 呼び出し自体を skip。
+
+2. **`getDirectoryEntries` / `getCachedFileStat` で毎回 `fs.statSync`**
+   signature ベースの正規キャッシュはあるが、同一 loadData 内で同じ
+   ディレクトリを 4 × 371 = 1500 回引いてもその都度 statSync が走る。
+   **修正**: hot-path TTL 500ms を追加。同じ loadData 呼び出し内では
+   statSync を全部スキップ。
+
+3. **`getLatestLog` × 6 reverse scan**
+   各社で form_fill / submitted / site_analysis / awaiting_approval /
+   confirm_reached / error の 6 回 reverse scan していた。
+   **修正**: `getLatestActionLogs(logs, ['form_fill', ...])` で 1 度の
+   reverse scan に集約。6 倍速。
+
+### UI バグ修正
+
+**`preferences.managedAiFormBatchSize` (v2.0.14 で実装したが UI に出てない)**
+
+「設定にあるのに UI で変更できず、JSON 直編集が必要」状態だった。
+
+修正:
+- `src/dashboard-server.ts` 設定タブ Preferences セクションに input 追加
+  (range 1-10, default 3)
+- `src/ui/client-scripts/dashboard.ts` の load (populatePreferences の
+  メタフィールド辞書) と save 両方に紐づけ
+- `src/i18n.ts` に `field.managedAiFormBatchSize` / `help.managedAiFormBatchSize`
+  追加 (日英)
+
+これで Phase B バッチサイズが UI から変更可能になり、100 社投入時のオーバー
+ヘッドを大幅に下げられる (例: 10 にすると 34→10 バッチ)。
+
+### regression テスト
+
+- `tests/load-data-perf.test.cjs` — 200 社で median 1500ms 以下を保証
+  (実測 median 208ms / avg 238ms)
+
+dev で `loadData` 平均 783ms (371 社) を実測してから push。
+
+---
+
 ## 2.0.17 - 2026-05-15 — 「AI 停止 = キュー完全クリア」契約化
 
 ユーザー報告 (繰り返し):

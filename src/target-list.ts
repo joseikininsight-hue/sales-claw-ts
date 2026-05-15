@@ -263,8 +263,42 @@ function saveListBuilderCompanionRecord(companyNo, companyData) {
   return filePath;
 }
 
+// v2.0.18: 「ディレクトリ内の存在ファイル」を 500ms TTL でキャッシュ。
+// 旧実装は 371 社それぞれで fs.readFileSync を呼んでおり、存在しないファイルでも
+// ENOENT → catch のオーバーヘッドが発生していた (loadData 1 回で 1.7 秒のうち
+// 大部分)。今は records dir を 1 度 readdir して Set<basename> をキャッシュ、
+// Set に無いファイルは fs アクセス自体をスキップ。
+const _listBuilderRecordsCache: { dir: string; fetchedAt: number; entries: Set<string> } = {
+  dir: '',
+  fetchedAt: 0,
+  entries: new Set<string>(),
+};
+const LIST_BUILDER_RECORDS_TTL_MS = 500;
+
+function getListBuilderRecordsSet(): Set<string> {
+  const dir = getListBuilderRecordsDir();
+  const now = Date.now();
+  if (_listBuilderRecordsCache.dir === dir && (now - _listBuilderRecordsCache.fetchedAt) < LIST_BUILDER_RECORDS_TTL_MS) {
+    return _listBuilderRecordsCache.entries;
+  }
+  let entries: Set<string>;
+  try {
+    entries = new Set(fs.readdirSync(dir));
+  } catch (_) {
+    entries = new Set<string>();
+  }
+  _listBuilderRecordsCache.dir = dir;
+  _listBuilderRecordsCache.fetchedAt = now;
+  _listBuilderRecordsCache.entries = entries;
+  return entries;
+}
+
 function loadListBuilderCompanionFields(companyNo) {
-  const filePath = path.join(getListBuilderRecordsDir(), makeCompanionFileName(companyNo) + '.json');
+  const fileName = makeCompanionFileName(companyNo) + '.json';
+  // v2.0.18: Set lookup で skip 判定 → 存在しない 99%+ の会社で 1 syscall を節約
+  const entries = getListBuilderRecordsSet();
+  if (!entries.has(fileName)) return {};
+  const filePath = path.join(getListBuilderRecordsDir(), fileName);
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     return parsed && parsed.fields && typeof parsed.fields === 'object' ? parsed.fields : {};

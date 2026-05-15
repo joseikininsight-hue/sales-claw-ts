@@ -76,48 +76,65 @@ function getFileSignature(filePath) {
   }
 }
 
+// v2.0.18: hot-path TTL を導入。loadData (371 社規模) では同じディレクトリを
+// 各社で 4 回引く → 1500 回の fs.statSync が発生していた。
+// 500ms 以内の連続アクセスは statSync を省略して cache を返す。
+// 実 mutation が起きたら signature ベースの正規 cache invalidation はそのまま動く
+// (TTL 切れ時に signature を取り直して整合性を取る)。
+const SCREENSHOT_CACHE_HOT_TTL_MS = 500;
+
 function getDirectoryEntries(dirPath) {
   const resolved = path.resolve(dirPath);
+  const cached: any = screenshotDirCache.get(resolved);
+  // hot-path: TTL 内なら statSync 省略
+  if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < SCREENSHOT_CACHE_HOT_TTL_MS) {
+    return cached.entries;
+  }
   const signature = getFileSignature(resolved);
-  const cached = screenshotDirCache.get(resolved);
   if (cached && cached.signature === signature) {
+    cached.fetchedAt = Date.now();
     return cached.entries;
   }
 
   if (signature === null) {
     const entries = new Set<any>();
-    screenshotDirCache.set(resolved, { signature: null, entries });
+    screenshotDirCache.set(resolved, { signature: null, entries, fetchedAt: Date.now() });
     return entries;
   }
 
   try {
     const entries = new Set(fs.readdirSync(resolved));
-    screenshotDirCache.set(resolved, { signature, entries });
+    screenshotDirCache.set(resolved, { signature, entries, fetchedAt: Date.now() });
     return entries;
   } catch {
     const entries = new Set<any>();
-    screenshotDirCache.set(resolved, { signature: null, entries });
+    screenshotDirCache.set(resolved, { signature: null, entries, fetchedAt: Date.now() });
     return entries;
   }
 }
 
 function getCachedFileStat(filePath) {
   const resolved = path.resolve(filePath);
-  const cached = fileStatCache.get(resolved);
+  const cached: any = fileStatCache.get(resolved);
+  // v2.0.18: hot-path TTL — 500ms 内なら statSync 省略
+  if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < SCREENSHOT_CACHE_HOT_TTL_MS) {
+    return cached.stat;
+  }
   let stat;
   try {
     stat = fs.statSync(resolved);
   } catch {
-    fileStatCache.set(resolved, { signature: null, stat: null });
+    fileStatCache.set(resolved, { signature: null, stat: null, fetchedAt: Date.now() });
     return null;
   }
 
   const signature = `${stat.mtimeMs}:${stat.size}`;
   if (cached && cached.signature === signature) {
+    cached.fetchedAt = Date.now();
     return cached.stat;
   }
 
-  fileStatCache.set(resolved, { signature, stat });
+  fileStatCache.set(resolved, { signature, stat, fetchedAt: Date.now() });
   return stat;
 }
 
