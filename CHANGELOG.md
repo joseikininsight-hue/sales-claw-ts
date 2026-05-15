@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.0.13 - 2026-05-15 — 自動更新の transient エラーを silent retry に
+
+ユーザー報告: ダッシュボードに「自動更新エラー: 504 Gateway Time-out」の
+赤バナーが頻発。
+
+### 原因
+
+`autoUpdater.on('error')` が GitHub Releases の **一過性エラー**
+(504 / 502 / 503 / ETIMEDOUT / ECONNRESET / ENOTFOUND / socket hang up 等)
+を全部 `state: 'error'` で書き、UI が赤バナーで強調表示していた。GitHub の
+一時障害でユーザーが対処できない状況なのに、繰り返し不安にさせる UX。
+
+### 修正 (electron-main.ts)
+
+1. **transient 判定**: 9 個のパターンで「ネットワーク・サーバー一時障害」を検知
+   - `\b50[234]\b` / `Gateway Time-out` / `ETIMEDOUT` / `ECONNRESET` /
+     `ENOTFOUND` / `EAI_AGAIN` / `network (error|timeout|unreachable)` /
+     `socket hang up` / `Could not get code signature`
+2. **transient なら専用 state**: `state: 'transient-error'` を `update-status.json`
+   に書く (`state: 'error'` ではなく)
+3. **5 分後に自動 retry**: `setTimeout(autoUpdater.checkForUpdates, 5min)` を
+   スケジュール。既存タイマーがあれば尊重。
+4. **UI 側 (dashboard.ts)**: `state === 'transient-error'` ならバナーを出さない
+   (silent)。真の `state === 'error'` (404/401/Invalid signature 等) だけ赤バナー。
+
+### regression テスト
+
+`tests/transient-update-error.test.cjs` (22 アサート):
+- transient → true: 504 / 502 / 503 / Gateway Time-out / ETIMEDOUT /
+  ECONNRESET / ENOTFOUND / EAI_AGAIN / network errors / socket hang up /
+  code signature
+- non-transient → false: 404 / 401 / Invalid signature / latest.yml validation /
+  No update available / null / undefined / empty
+
+dev で `update-status.json` に `state:transient-error` を書いて UI ロジックが
+`banner display: HIDDEN` を返すことを実証してから push。
+
+---
+
 ## 2.0.12 - 2026-05-15 — 「読込失敗」根本原因 (contact-history schema 違反) 修正
 
 v2.0.10 / v2.0.11 でも消えなかった「読込失敗: Cannot read properties of

@@ -83,6 +83,7 @@ interface UpdateStatusPayload {
   remoteVersion?: string | null;
   percent?: number;
   message?: string;
+  transient?: boolean;
   checkReason?: string;
   lastCheckStartedAt?: number | null;
   lastCheckedAt?: number;
@@ -715,15 +716,64 @@ autoUpdater.on('update-downloaded', (info) => {
     });
 });
 
+// v2.0.13: 自動更新の transient エラー (GitHub 一時障害・ネットワーク瞬断 等) は
+// 「自動更新エラー: 504」と赤バナーで表示するのは UX として過剰。
+//   - 504 / 502 / 503 / Gateway Time-out / ECONNRESET / ENOTFOUND / timeout
+//   - 「GitHub Releases didn't get a response in time」のような文言
+// これらは silent retry に切り替え、UI バナーは出さない。
+// 真に対処が必要な error (404 / 401 / Invalid signature 等) だけ state='error'。
+const TRANSIENT_UPDATE_PATTERNS: RegExp[] = [
+  /\b50[234]\b/,                     // 502/503/504
+  /Gateway\s+Time-?out/i,
+  /ETIMEDOUT/i,
+  /ECONNRESET/i,
+  /ENOTFOUND/i,
+  /EAI_AGAIN/i,
+  /network\s+(error|timeout|unreachable)/i,
+  /socket hang up/i,
+  /Could\s+not\s+get\s+code\s+signature/i, // ローカル開発時の transient
+];
+
+function isTransientUpdateError(message: string): boolean {
+  if (!message) return false;
+  return TRANSIENT_UPDATE_PATTERNS.some((re) => re.test(message));
+}
+
+const UPDATE_RETRY_DELAY_MS = 5 * 60 * 1000; // 5 分後に再試行
+let _updateRetryTimer: NodeJS.Timeout | null = null;
+
+function scheduleTransientUpdateRetry(reason: string): void {
+  if (_updateRetryTimer) return; // 既存タイマーを尊重
+  _updateRetryTimer = setTimeout(() => {
+    _updateRetryTimer = null;
+    console.log('[AutoUpdater] retrying after transient error:', reason);
+    try {
+      autoUpdater.checkForUpdates().catch((err: unknown) => {
+        console.error('[AutoUpdater] retry checkForUpdates rejected:', err);
+      });
+    } catch (err) {
+      console.error('[AutoUpdater] retry threw synchronously:', err);
+    }
+  }, UPDATE_RETRY_DELAY_MS);
+  if (typeof _updateRetryTimer.unref === 'function') _updateRetryTimer.unref();
+}
+
 autoUpdater.on('error', (err: Error | null) => {
   const msg = err?.message ?? String(err);
   console.error('[AutoUpdater] error:', msg);
+  const transient = isTransientUpdateError(msg);
   writeUpdateStatus({
-    state: 'error',
+    // transient なら UI が「エラー」バナーを出さないよう専用 state にする。
+    // sleep state からの復帰時に自動 retry が再評価する。
+    state: transient ? 'transient-error' : 'error',
     message: msg,
+    transient,
     checkReason: currentUpdateCheckReason ?? 'auto',
     lastCheckedAt: Date.now(),
   });
+  if (transient) {
+    scheduleTransientUpdateRetry(msg.slice(0, 120));
+  }
 });
 
 app.on('window-all-closed', () => { /* tray に常駐 */ });
