@@ -38,6 +38,55 @@ const monitorCache: { filePath: string | null; signature: string | null; data: a
   data: null,
 };
 
+// v2.0.21: updateLiveMonitor の disk write を debounced 化。
+// 100 社 Phase A で各社 3-5 update → 500 回の lock + writeState を
+// 直列処理すると Windows で 7-10 秒の純粋 I/O コスト。
+// 同じ思想: in-memory に push、500ms TTL で書き出し。
+// 終了状態 (final status) は即 flush で永続化する。
+const LIVE_MONITOR_FLUSH_DEBOUNCE_MS = 500;
+let _liveMonitorFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let _liveMonitorDirty = false;
+
+function scheduleLiveMonitorFlush(): void {
+  _liveMonitorDirty = true;
+  if (_liveMonitorFlushTimer) return;
+  _liveMonitorFlushTimer = setTimeout(() => {
+    _liveMonitorFlushTimer = null;
+    if (!_liveMonitorDirty) return;
+    _liveMonitorDirty = false;
+    flushLiveMonitorNow();
+  }, LIVE_MONITOR_FLUSH_DEBOUNCE_MS);
+  if (typeof _liveMonitorFlushTimer.unref === 'function') _liveMonitorFlushTimer.unref();
+}
+
+function flushLiveMonitorNow(): void {
+  if (_liveMonitorFlushTimer) {
+    clearTimeout(_liveMonitorFlushTimer);
+    _liveMonitorFlushTimer = null;
+  }
+  _liveMonitorDirty = false;
+  if (!monitorCache.data) return;
+  const filePath = getLiveMonitorFile();
+  const lockFile = acquireFileLock(filePath);
+  try {
+    writeState(monitorCache.data);
+  } catch (e: any) {
+    console.warn('[live-monitor] flush failed:', e && e.message || e);
+  } finally {
+    releaseFileLock(lockFile);
+  }
+}
+
+let _liveMonitorExitHooksInstalled = false;
+function installLiveMonitorExitHooks(): void {
+  if (_liveMonitorExitHooksInstalled) return;
+  _liveMonitorExitHooksInstalled = true;
+  const onExit = () => { try { flushLiveMonitorNow(); } catch (_) { /* swallow */ } };
+  process.once('beforeExit', onExit);
+  process.once('SIGINT', () => { onExit(); process.exit(130); });
+  process.once('SIGTERM', () => { onExit(); process.exit(143); });
+}
+
 function isFinalStatus(entry) {
   const status = entry && typeof entry.status === 'string' ? entry.status.trim() : '';
   return FINAL_STATUSES.has(status);
@@ -230,15 +279,19 @@ function appendEvent(state, previous, next, kind) {
  * @returns {LiveMonitorEntry|null} 更新後のエントリ（serialize 済み）
  */
 function updateLiveMonitor(companyNo, patch: Record<string, unknown> = {}) {
+  installLiveMonitorExitHooks();
   const key = String(companyNo);
-  const filePath = getLiveMonitorFile();
-  const lockFile = acquireFileLock(filePath);
-  let next;
-  try {
-  monitorCache.signature = null;
-  const state = readState();
+  // v2.0.21: lock を取らずに in-memory cache に更新。disk write は debounce。
+  // 最終ステータス (final status) の場合だけ即 flush して永続化。
+  if (!monitorCache.data) {
+    const filePath = getLiveMonitorFile();
+    const lockFile = acquireFileLock(filePath);
+    try { monitorCache.data = readState(); }
+    finally { releaseFileLock(lockFile); }
+  }
+  const state = monitorCache.data;
   const previous = state.sessions[key] || null;
-  next = {
+  const next: any = {
     ...(previous || {}),
     ...normalizeEntry(companyNo, patch),
     active: patch.active !== undefined ? patch.active : true,
@@ -254,9 +307,11 @@ function updateLiveMonitor(companyNo, patch: Record<string, unknown> = {}) {
   }
   state.updatedAt = next.updatedAt;
   appendEvent(state, previous, next, patch.kind || (shouldCloseSession ? 'finish' : 'update'));
-  writeState(state);
-  } finally {
-    releaseFileLock(lockFile);
+  if (shouldCloseSession) {
+    // 最終状態は即 flush でクラッシュ時にも残す
+    flushLiveMonitorNow();
+  } else {
+    scheduleLiveMonitorFlush();
   }
   return serializeEntry(next);
 }

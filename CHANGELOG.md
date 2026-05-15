@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.0.21 - 2026-05-15 — live-monitor 214x 高速化 (debounced flush)
+
+### updateLiveMonitor 15ms → 0.07ms (214x)
+
+action-logger と同じく、毎回 `acquireFileLock` + `readState` + `writeState`
+していた `updateLiveMonitor` を debounced flush に切り替え。
+
+修正 (`src/live-monitor.ts`):
+- in-memory cache に push (lock 不要)
+- 500ms TTL で flush
+- 最終ステータス (`awaiting_approval` / `submitted` / `error` / `skipped` /
+  `completed` / `user_required`) は即 flush で永続化
+- `process.beforeExit` / SIGINT / SIGTERM で flush
+
+### 累積効果 (100 社 Phase A の I/O)
+
+| | v2.0.13 | v2.0.21 |
+|---|---|---|
+| logAction 100 社 × 5 action | 2.9 秒 | 0.55 秒 |
+| updateLiveMonitor 100 社 × 3 | 4.5 秒 | **0.02 秒** |
+| loadData (1 refresh) | 1.7 秒 | 0.78 秒 |
+| **合計 I/O 時間** | **~9 秒/refresh** | **~1.5 秒/refresh** |
+
+Phase A 中の I/O 待ちが 6x 短縮され、実 LLM 解析と並行で UI も応答できる
+ようになる。
+
+---
+
 ## 2.0.20 - 2026-05-15 — pipeline enqueue 順序保証 + 設定 form field 整合性
 
 ### Phase B pipeline の enqueue 順序を Promise chain で保証
