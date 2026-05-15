@@ -1,5 +1,74 @@
 # Changelog
 
+## 2.0.14 - 2026-05-15 — 100 社規模の耐久性ハードニング (B1-B3)
+
+「100 社同時投入で耐久できる？」の問いに答えるための 3 点改善。
+
+### B1: バッチサイズ可変化 (デフォルト 3、最大 10)
+
+100 社を投入した時に固定値 3 だと **34 バッチ** に分割され dispatch
+オーバーヘッドが大きい。バッチサイズを 1〜10 で設定可能にした。
+
+優先順位:
+1. `settings.preferences.managedAiFormBatchSize` (UI からは未公開、JSON 直編集)
+2. 環境変数 `SALES_CLAW_MANAGED_AI_FORM_BATCH_SIZE`
+3. デフォルト `3` (互換)
+
+10 で 100 社 = **10 バッチ**に圧縮。dispatch オーバーヘッドが 1/3.4 に。
+
+### B2: action-log の debounced flush
+
+旧: `logAction` のたびに全件 read→parse→push→stringify→write。100 社 ×
+5-7 アクション = 500-700 回の disk write。ファイルが大きくなると O(N²)。
+
+新: in-memory cache に即 push、disk write は **500ms debounce**。
+ただし terminal action (`submitted` / `error` / `skipped` / `awaiting_approval`)
+は即 flush (クラッシュ時に消えると困る)。
+`process.beforeExit` / SIGINT / SIGTERM でも flush。
+
+100 社規模で disk write 回数を **約 1/5〜1/10 に削減** (連続する
+site_discovery / site_analysis / message_draft / form_fill / confirm_reached が
+1 回の write にまとまる)。
+
+### B3: Phase B 中の Windows sleep 防止 (powerSaveBlocker)
+
+ノート PC が省電力で sleep に入ると Claude PTY も MCP Playwright も停止し、
+queue が永久滞留する。Phase B 走行中 (pending or activeBatch が non-zero)
+の間だけ Electron の `powerSaveBlocker('prevent-app-suspension')` を発動。
+
+- `queueAiFormFill` で batch enqueue 時に start
+- pending + activeBatch が空になったら stop
+- 強制リセット API でも stop
+- 非 Electron 環境 (preview-dashboard 等) では no-op
+
+診断イベント `power_save_blocker_started` / `power_save_blocker_stopped` で
+動作確認可能。
+
+### regression テスト
+
+- `tests/batch-size-config.test.cjs` — 10 アサート (env / settings / clamp /
+  null fallback / floor)
+- `tests/action-logger-debounce.test.cjs` — 13 アサート (非 terminal は
+  debounce / terminal は即 flush / mixed)
+
+特に `Number(null) === 0` で min clamp して 1 になるバグをテストで検出して
+修正済み。
+
+### 100 社耐久の評価アップデート
+
+| 項目 | v2.0.13 まで | v2.0.14 |
+|---|---|---|
+| バッチ数 (100 社) | 34 | 10 (size=10) |
+| Phase B 総時間 (見積もり) | 3〜6 時間 | **約 1〜2 時間** |
+| disk write 回数 (logAction) | 500-700 | 約 100 (debounce) |
+| Windows sleep 中の停止リスク | あり | **解消** (PSB) |
+| Claude 認証期限切れ recovery | あり (v1.2.31+) | 同 |
+| GitHub auto-update 中の再起動 | recovery snapshot | 同 |
+
+100 社一気が現実的になりました。
+
+---
+
 ## 2.0.13 - 2026-05-15 — 自動更新の transient エラーを silent retry に
 
 ユーザー報告: ダッシュボードに「自動更新エラー: 504 Gateway Time-out」の

@@ -177,7 +177,64 @@ let managedAiRecoveryState: any = null;
 let managedAiRecoveryTimer: any = null;
 let managedAiSuppressAutoRecovery = false;
 
-const MANAGED_AI_FORM_BATCH_SIZE = 3;
+// v2.0.14: Phase B が走っている間 Windows を sleep させない。
+// 100 社規模で 3-6 時間連続実行が必要なので、ノート PC が省電力で
+// sleep に入ると Claude PTY も MCP Playwright も停止し、queue が
+// 永久滞留する。
+//   - Electron の powerSaveBlocker('prevent-app-suspension') で抑止
+//   - dashboard-server プロセスが Electron なしで動く場合 (preview-dashboard
+//     等) は no-op
+//   - controller.pending + activeBatch が空になったら stop
+let _powerSaveBlockerId: number | null = null;
+function startPowerSaveBlockerIfPossible(): void {
+  if (_powerSaveBlockerId !== null) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require('electron');
+    if (!electron || !electron.powerSaveBlocker) return;
+    _powerSaveBlockerId = electron.powerSaveBlocker.start('prevent-app-suspension');
+    appendDiagnosticEvent('power_save_blocker_started', { id: _powerSaveBlockerId });
+  } catch (_) { /* not running under Electron, no-op */ }
+}
+function stopPowerSaveBlockerIfActive(): void {
+  if (_powerSaveBlockerId === null) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electron = require('electron');
+    if (electron && electron.powerSaveBlocker && electron.powerSaveBlocker.isStarted(_powerSaveBlockerId)) {
+      electron.powerSaveBlocker.stop(_powerSaveBlockerId);
+      appendDiagnosticEvent('power_save_blocker_stopped', { id: _powerSaveBlockerId });
+    }
+  } catch (_) { /* swallow */ }
+  _powerSaveBlockerId = null;
+}
+
+// v2.0.14: バッチサイズを可変化。100 社規模を投入する時に 3 のままだと
+// 34 バッチに分割されてオーバーヘッドが大きい。10 まで拡張可能。
+//   優先順位: settings.preferences.managedAiFormBatchSize
+//             > env SALES_CLAW_MANAGED_AI_FORM_BATCH_SIZE
+//             > デフォルト 3
+const DEFAULT_MANAGED_AI_FORM_BATCH_SIZE = 3;
+const MIN_MANAGED_AI_FORM_BATCH_SIZE = 1;
+const MAX_MANAGED_AI_FORM_BATCH_SIZE = 10;
+function getManagedAiFormBatchSize(): number {
+  let raw: any = null;
+  try {
+    const prefs = settings.getSection('preferences') || {};
+    if (prefs.managedAiFormBatchSize !== undefined && prefs.managedAiFormBatchSize !== null) {
+      raw = prefs.managedAiFormBatchSize;
+    }
+  } catch (_) { /* settings 未初期化 */ }
+  if (raw === null && process.env.SALES_CLAW_MANAGED_AI_FORM_BATCH_SIZE) {
+    raw = process.env.SALES_CLAW_MANAGED_AI_FORM_BATCH_SIZE;
+  }
+  // raw が null のまま (env も settings も未設定) ならデフォルトに直行。
+  // Number(null) === 0 → min clamp で 1 になる事故を回避。
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_MANAGED_AI_FORM_BATCH_SIZE;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_MANAGED_AI_FORM_BATCH_SIZE;
+  return Math.max(MIN_MANAGED_AI_FORM_BATCH_SIZE, Math.min(MAX_MANAGED_AI_FORM_BATCH_SIZE, Math.floor(n)));
+}
 const MANAGED_AI_BATCH_POLL_MS = 5000;
 // Claude が大きなペースト (5000+ chars / 49+ lines) を受け取ると、UI 側で
 // "[Pasted text] paste again to expand" バナーを出して 2nd Enter 待ちになる。
@@ -974,7 +1031,7 @@ function restoreManagedAiBatchesFromRecovery(snapshot) {
 // chunkManagedAiCompanies / buildManagedAiBatchOptionsSubset / parseEventTimestampMs は
 // ./ai-runtime/batch-utils.cjs に分離済み (batchUtils.* として参照)
 // getManagedAiPtyLogFile / appendManagedAiPtyLog は ./ai-runtime/pty-log.cjs に分離済み
-function chunkManagedAiCompanies(companies, chunkSize = MANAGED_AI_FORM_BATCH_SIZE) {
+function chunkManagedAiCompanies(companies, chunkSize = getManagedAiFormBatchSize()) {
   return batchUtils.chunkManagedAiCompanies(companies, chunkSize);
 }
 function buildManagedAiBatchOptionsSubset(baseOptions, companies) {
@@ -1459,6 +1516,8 @@ function startManagedAiBatchPoller() {
     if (!activeController.activeBatch) {
       if (activeController.pending.length === 0) {
         clearManagedAiBatchControllerTimer(activeController);
+        // v2.0.14: pending + activeBatch がともに空 → 全バッチ完走 → sleep 抑止解除
+        stopPowerSaveBlockerIfActive();
         return;
       }
       // A4 watchdog: pending があるのに activeBatch が無い状態が長く続くと
@@ -5128,7 +5187,8 @@ async function queueAiFormFill(companies, providerId = getSelectedAiProvider(), 
     : getManagedAiAutoSendSafe();
   const provider = getProvider(normalizedProviderId);
   const controller = ensureManagedAiBatchController(normalizedProviderId, autoSendSafe);
-  const batches = chunkManagedAiCompanies(companies, MANAGED_AI_FORM_BATCH_SIZE);
+  const batchSize = getManagedAiFormBatchSize();
+  const batches = chunkManagedAiCompanies(companies, batchSize);
   const batchItems = batches.map((batchCompanies: any) => ({
     id: `${Date.now()}-${++controller.batchCounter}`,
     companies: batchCompanies,
@@ -5141,11 +5201,13 @@ async function queueAiFormFill(companies, providerId = getSelectedAiProvider(), 
   // v2.0.10: defensive — controller.pending を Array に揃える
   if (!Array.isArray(controller.pending)) controller.pending = [];
   controller.pending.push(...batchItems);
+  // v2.0.14: バッチ enqueue 時に sleep 防止を発動
+  startPowerSaveBlockerIfPossible();
   appendDiagnosticEvent('managed_ai_batches_enqueued', {
     provider: normalizedProviderId,
     companyCount: companies.length,
     batchCount: batchItems.length,
-    batchSize: MANAGED_AI_FORM_BATCH_SIZE,
+    batchSize,
     activeBatchId: controller.activeBatch ? controller.activeBatch.id : null,
     pendingBatchCount: controller.pending.length,
   });
@@ -5153,7 +5215,7 @@ async function queueAiFormFill(companies, providerId = getSelectedAiProvider(), 
     provider: normalizedProviderId,
     companyCount: companies.length,
     batchCount: batchItems.length,
-    batchSize: MANAGED_AI_FORM_BATCH_SIZE,
+    batchSize,
     pendingBatchCount: controller.pending.length,
   });
 
@@ -5172,7 +5234,7 @@ async function queueAiFormFill(companies, providerId = getSelectedAiProvider(), 
     mode: `${provider.id}-cli-managed`,
     autoSendSafe,
     batchCount: batchItems.length,
-    batchSize: MANAGED_AI_FORM_BATCH_SIZE,
+    batchSize,
     activeBatchId: controller.activeBatch ? controller.activeBatch.id : null,
     pendingBatchCount: controller.pending.length + (controller.activeBatch ? 1 : 0),
     ...(dispatchResult || {}),
@@ -9562,6 +9624,8 @@ const server = http.createServer(async (req, res) => {
       }
       try { clearRecoverySnapshot(); } catch (_) { /* swallow */ }
       cleanupStaleManagedAiMonitorEvents(0);
+      // v2.0.14: 強制リセット時は sleep 抑止も解除する (誰も処理しないなら不要)
+      stopPowerSaveBlockerIfActive();
       appendDiagnosticEvent('managed_ai_batch_force_reset', {
         clearedPending,
         clearedActive,

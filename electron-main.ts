@@ -1,5 +1,5 @@
 // Sales Claw — Electron メインプロセス (TypeScript port)
-import { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell, type NativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell, powerSaveBlocker, type NativeImage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';

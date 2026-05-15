@@ -32,6 +32,58 @@ const logCache: LogCache = {
   data: [],
 };
 
+// v2.0.14: 100 社規模で logAction が連打されるとき、全件 parse+stringify+write
+// で I/O コストが O(N²) に近づく。一連の logAction の disk write を 500ms
+// 単位に間引いて、UI 表示用の in-memory cache を即時更新する設計に変更。
+//
+// 不変条件:
+//   - logAction は in-memory cache に即 push (UI の getAllLogs は最新値が見える)
+//   - 500ms 以内に来た複数 logAction は 1 回の write にまとまる
+//   - terminal action (submitted/error/skipped/awaiting_approval) は即 flush
+//     (クラッシュで失うと痛い)
+//   - process.on('beforeExit') / SIGTERM で flush
+const FLUSH_DEBOUNCE_MS = 500;
+const TERMINAL_ACTIONS = new Set(['submitted', 'error', 'skipped', 'awaiting_approval']);
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingFlush = false;
+
+function scheduleDebouncedFlush(): void {
+  _pendingFlush = true;
+  if (_flushTimer) return;
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null;
+    if (!_pendingFlush) return;
+    _pendingFlush = false;
+    flushNow();
+  }, FLUSH_DEBOUNCE_MS);
+  if (typeof _flushTimer.unref === 'function') _flushTimer.unref();
+}
+
+function flushNow(): void {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  _pendingFlush = false;
+  try {
+    saveLog(logCache.data);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[action-logger] flushNow failed:', msg);
+  }
+}
+
+// プロセス終了時に必ず flush (クラッシュ時の log 消失を最小化)
+let _exitHooksInstalled = false;
+function installExitHooks(): void {
+  if (_exitHooksInstalled) return;
+  _exitHooksInstalled = true;
+  const onExit = () => { try { flushNow(); } catch (_) { /* swallow */ } };
+  process.once('beforeExit', onExit);
+  process.once('SIGINT', () => { onExit(); process.exit(130); });
+  process.once('SIGTERM', () => { onExit(); process.exit(143); });
+}
+
 function getLogFile(): string {
   return resolveDataPath('action-log.json');
 }
@@ -154,18 +206,24 @@ function notifyCliLog(companyNo: number | string, companyName: string, action: s
   } catch { /* ignore */ }
 }
 
-/** 操作ログを 1 件追加し、追加後のエントリー総数を返す。 */
+/** 操作ログを 1 件追加し、追加後のエントリー総数を返す。
+ *
+ * v2.0.14: in-memory cache に即 push、disk write は debounce (500ms)。
+ * Terminal action (submitted / error / skipped / awaiting_approval) は即 flush。
+ * これで 100 社 × 5-7 アクション = 500-700 logAction の I/O コストを大幅削減。
+ */
 export function logAction(
   companyNo: number | string,
   companyName: string,
   action: ActionType | string,
   details: ActionDetails
 ): number {
+  installExitHooks();
   const filePath = getLogFile();
+  // disk から最新を読み込んで cache を warm up (他プロセスからの書き込みも反映)
   const lockFile = acquireFileLock(filePath);
   let entryCount = 0;
   try {
-    logCache.signature = null;
     const entries = loadLog();
     entries.push({
       timestamp: new Date().toISOString(),
@@ -174,10 +232,16 @@ export function logAction(
       action: action as ActionType,
       details,
     });
-    saveLog(entries);
+    logCache.data = entries;
     entryCount = entries.length;
   } finally {
     releaseFileLock(lockFile);
+  }
+  // Terminal action なら即 flush (クラッシュ時にも残す)、それ以外は debounce
+  if (TERMINAL_ACTIONS.has(String(action))) {
+    flushNow();
+  } else {
+    scheduleDebouncedFlush();
   }
   notifyCliLog(companyNo, companyName, action);
   return entryCount;
