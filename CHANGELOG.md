@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.0.9 - 2026-05-15 — ログ消失バグ修正 (ダッシュボード URL の env 注入)
+
+v2.0.8 で Phase B 自体は走るようになった。しかし**実送信したのにダッシュ
+ボードに submitted ログが残らない**事故が発生。原因はもっと根が深かった。
+
+### 発覚事象 (ユーザー報告 2026-05-15 09:00)
+- 「No.70 サイバネットシステム — STEP3 送信完了確認」と CLI が報告
+- でもダッシュボードの「送信済み」タブに No.70 が無い
+- CLI 出力:「ログAPI（ポート3765）は全社で接続拒否（Connection refused）」
+
+### 原因
+- ダッシュボード実ポート: **3456** (preferredPort で起動)
+- CLI が curl で叩いていたのは **127.0.0.1:3765** (CLAUDE.md と prompt にハードコード)
+- 結果、`/api/log-action` が全て connection refused → ログ消失
+- 実送信は確かに完了 (`ss-70-sent.png` STEP3 画面で確証)
+- スクショは `.cli-workspace/ss-70-input.png` `.cli-workspace/ss-70-sent.png`
+  に保存されたが、ダッシュボードが見る `screenshots/` ディレクトリには存在せず、
+  プレビュー画像も表示できなかった
+
+### 修正
+
+1. **`buildManagedProviderEnv` で `SALES_CLAW_DASHBOARD_URL` を必ず注入**
+   (`src/dashboard-server.ts`):
+   - `dashboardRuntime` または `server.address()` から実 URL を取得
+   - managed PTY の env に `SALES_CLAW_DASHBOARD_URL=http://127.0.0.1:<実ポート>`
+   - 既存の `SALES_CLAW_SESSION` と同じ仕組みで provider 横断 (claude/codex/gemini)
+
+2. **prompt 内の curl 例を env ベースに**
+   (`buildClaudeFormFillPrompt` の messageLines):
+   - 旧: `http://127.0.0.1:3765/api/log-action`
+   - 新: `"${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"`
+   - fallback の 3765 は env 未設定時のみ使われる
+   - 注意書きを追記: 「ハードコードの 3765 は使わない、env が必ず注入される」
+
+3. **CLAUDE.md の例を全部 env 化**:
+   - log-action curl 全パターン (awaiting_approval / submitted / skipped / error)
+   - 「ダッシュボード URL」表記を `$SALES_CLAW_DASHBOARD_URL` に変更
+   - 過去事故の説明を残して再発防止 (なぜハードコードしてはいけないかを言語化)
+
+4. **スクショ自動回収** (`src/approval-artifacts.ts::getScreenshotSearchDirs`):
+   - 検索パスに `.cli-workspace/` と `.cli-workspace/screenshots/` を追加
+   - CLI が cwd 直下に保存した `ss-{No}-{input,sent,confirm}.png` を
+     ダッシュボードが自動的に見つけられるようになる
+   - 既存の `screenshots/` 配下も従来通り検索
+
+### ユーザー影響
+
+- v2.0.9 で起動した CLI セッションは、ダッシュボードがどのポートで動いていても
+  自動的に正しい URL に curl する。ログ消失は再発しない。
+- 過去に CLI が `.cli-workspace/` に残したスクショも、再起動後はダッシュボード
+  から閲覧可能になる (ファイルを動かさなくてもよい)。
+- **既に発生した No.70 サイバネットシステムは手動で submitted 復旧済み**
+  (action-log.json に form_fill / confirm_reached / submitted を直接挿入、
+  スクショを `screenshots/` にコピー、contact-history.json に記録)。
+
+---
+
 ## 2.0.8 - 2026-05-15 — Phase B 停止バグ二度と起こさないための恒久対策
 
 v2.0.7 で「already exists」エラーは握り潰すようにした。本リリースはその一点修正

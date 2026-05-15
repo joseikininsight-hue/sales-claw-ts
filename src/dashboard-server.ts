@@ -2137,11 +2137,29 @@ function buildManagedProviderEnv(providerId) {
     delete sanitizedProcessEnv[k];
   }
 
+  // v2.0.9: ダッシュボードの実ポートを env で CLI に渡す。
+  // 過去バグ (2026-05-15): ユーザーが「No.70 を送信したのにダッシュボードに残らない」
+  // と報告 → 実ポートは 3456 だったが CLAUDE.md と prompt 例は 3765 をハードコード →
+  // 全 curl /api/log-action が "Connection refused" でログ消失。
+  let dashboardBaseUrl = '';
+  try {
+    const runtime = dashboardRuntime || readRuntime();
+    if (runtime && runtime.url) dashboardBaseUrl = runtime.url;
+    else if (server && server.listening) {
+      const address: any = server.address();
+      if (address && typeof address === 'object') {
+        const host = !address.address || address.address === '::' || address.address === '0.0.0.0' ? '127.0.0.1' : address.address;
+        dashboardBaseUrl = `http://${host}:${address.port}`;
+      }
+    }
+  } catch (_) { /* swallow — env injection is best-effort */ }
+
   const baseEnv = localToolchain.buildToolEnv({
     ...sanitizedProcessEnv,
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     SALES_CLAW_SESSION: sessionToken,
+    SALES_CLAW_DASHBOARD_URL: dashboardBaseUrl,
   });
   if (normalizedProviderId === 'claude') {
     const managedHome = prepareClaudeManagedHome(PROJECT_ROOT);
@@ -5010,21 +5028,21 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '※ 1.2.91 セキュリティ強化: 旧 node -e shell 経路は廃止 (会社名のシェル注入を許容したため)。必ず /api/log-action 経由で送信してください。',
     'awaiting_approval (CAPTCHA で人間に送信を委ねる / autoSendSafe=false):',
     '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由(CAPTCHA等)>","sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-input.png","tabKept":true}}' http://127.0.0.1:3765/api/log-action`,
+    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由(CAPTCHA等)>","sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-input.png","tabKept":true}}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
     '```',
     'submitted (autoSendSafe=true で送信完了):',
     '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-sent.png"}}' http://127.0.0.1:3765/api/log-action`,
+    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-sent.png"}}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
     '```',
     'skipped (営業NG / dealBreaker 等):',
     '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}' http://127.0.0.1:3765/api/log-action`,
+    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
     '```',
     'error (フォーム無し / 取得失敗等):',
     '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}' http://127.0.0.1:3765/api/log-action`,
+    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
     '```',
-    '<No> は companies_jsonl の no を直接、<会社名> は companies_jsonl の name を **JSON エスケープして** 入れてください (ダブルクォート/バックスラッシュ等)。SALES_CLAW_SESSION 環境変数は managed PTY 起動時に注入済み。',
+    '<No> は companies_jsonl の no を直接、<会社名> は companies_jsonl の name を **JSON エスケープして** 入れてください (ダブルクォート/バックスラッシュ等)。SALES_CLAW_SESSION + SALES_CLAW_DASHBOARD_URL 環境変数は managed PTY 起動時に注入済み (v2.0.9+)。SALES_CLAW_DASHBOARD_URL が未設定の場合のみ 127.0.0.1:3765 を fallback として使ってください。',
     'API 経由なのでシェル/SQL 注入リスクはありません。サーバー側で会社名・details は最大長 + 制御文字除去で安全に処理されます。',
     '',
     '--- BEGIN SALES CLAW BATCH ---',

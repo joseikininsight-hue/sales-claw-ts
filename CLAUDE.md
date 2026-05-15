@@ -317,13 +317,15 @@ Step 0: MCP Playwright の利用前提
   → Electron Form Session API の疎通確認は不要。/api/form-session/* には切り替えない
   → MCP Playwright が見えない場合は、接続不備として error ログを残し、Sales Claw 側の MCP 再登録/再起動を促す
 
-**重要**: 1.2.91 から **logAction は curl POST /api/log-action 経由が必須** (旧 `node -e` shell 経路はシェル/プロンプトインジェクション RCE を許容したため廃止)。SALES_CLAW_SESSION env は managed PTY 起動時に注入済み。
+**重要**: 1.2.91 から **logAction は curl POST /api/log-action 経由が必須** (旧 `node -e` shell 経路はシェル/プロンプトインジェクション RCE を許容したため廃止)。
+
+**v2.0.9 から: ダッシュボード URL は env で渡される**。`$SALES_CLAW_SESSION` (token) と `$SALES_CLAW_DASHBOARD_URL` (例: `http://127.0.0.1:3456`) はどちらも managed PTY 起動時に必ず注入済み。**ハードコードの 127.0.0.1:3765 はもう使わないこと** (過去にダッシュボードが別ポート 3456 で起動した時、curl が全て Connection refused になりログが消えた事故あり)。
 
 ```
 curl -s -X POST -H "Content-Type: application/json" \
   -H "x-sales-claw-session: $SALES_CLAW_SESSION" \
   -d '{"no":<No>,"name":"<会社名>","action":"<action>","details":"<詳細>"}' \
-  http://127.0.0.1:3765/api/log-action
+  "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
 ```
 
 許可 action: `awaiting_approval` `submitted` `skipped` `error` `confirm_reached` `form_fill`
@@ -344,7 +346,7 @@ curl -s -X POST -H "Content-Type: application/json" \
       "finalFormTab":"https://contact.example.com/..."
     }
   }' \
-  http://127.0.0.1:3765/api/log-action
+  "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
 ```
 
 ガード:
@@ -637,7 +639,7 @@ npm run clean:workspace
 
 | 項目 | 値 |
 |------|-----|
-| ダッシュボード URL | `http://127.0.0.1:3765` |
+| ダッシュボード URL | `$SALES_CLAW_DASHBOARD_URL` (managed PTY) / 既定 `http://127.0.0.1:3765` (空きが無ければ自動で 3766 / 3767 / ... ) |
 | セッショントークン | `%APPDATA%\sales-claw\runtime\data\dashboard-session.json` |
 | ランタイム情報 | `%APPDATA%\sales-claw\runtime\data\dashboard-runtime.json` |
 | インストール済みアプリ | `%LOCALAPPDATA%\Programs\Sales Claw\` (per-user。`Program Files` ではない) |

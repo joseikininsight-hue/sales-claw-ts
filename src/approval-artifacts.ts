@@ -128,6 +128,20 @@ function getScreenshotSearchDirs() {
     path.join(PROJECT_ROOT, 'screenshots'),
   ];
 
+  // v2.0.9: CLI が cwd 直下に保存した ss-{No}-{input,sent,confirm}.png を回収する。
+  // CLI の cwd は %APPDATA%/sales-claw-ts/runtime/data/.cli-workspace (packaged)
+  // または PROJECT_ROOT (dev) なので、両方を探索対象に含める。
+  // 過去バグ (2026-05-15): No.70 サイバネットシステムへ送信完了したが、
+  // スクショは .cli-workspace/ に残ったまま、ダッシュボードからは見えなかった。
+  try {
+    const { resolveDataPath } = require('./data-paths');
+    const cliWorkspace = resolveDataPath('.cli-workspace');
+    if (cliWorkspace) {
+      dirs.push(cliWorkspace);
+      dirs.push(path.join(cliWorkspace, 'screenshots'));
+    }
+  } catch (_) { /* best-effort */ }
+
   if (process.resourcesPath) {
     dirs.push(
       path.join(process.resourcesPath, 'app', 'screenshots'),
