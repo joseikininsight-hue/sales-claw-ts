@@ -125,11 +125,16 @@ function readJsonCached(filePath: string, fallbackValue: ActionLogEntry[]): Acti
   }
 
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ActionLogEntry[];
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    // v2.0.25: Array 以外 (null / number / object) でも安全に空配列フォールバック
+    const sanitized: ActionLogEntry[] = Array.isArray(parsed) ? (parsed as ActionLogEntry[]) : [];
+    if (!Array.isArray(parsed)) {
+      console.warn(`[action-logger] expected Array but got ${parsed === null ? 'null' : typeof parsed}; using empty fallback. file: ${filePath}`);
+    }
     logCache.filePath = filePath;
     logCache.signature = signature;
-    logCache.data = parsed;
-    return parsed;
+    logCache.data = sanitized;
+    return sanitized;
   } catch (parseErr: unknown) {
     // 1.2.92: JSON 破損検知 → corrupt として隔離 + 警告ログ
     try {

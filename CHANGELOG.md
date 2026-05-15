@@ -1,5 +1,72 @@
 # Changelog
 
+## 2.0.25 - 2026-05-15 — corruption resilience + 大規模負荷耐性検証
+
+ユーザー要望: E2E / data corruption / API key 漏洩 / 1000 社負荷を全部検査。
+
+### Data corruption resilience (42 シナリオ pass)
+
+6 つのデータファイル (`action-log.json` / `contact-history.json` /
+`live-monitor.json` / `outreach-targets.json` / `dashboard-runtime.json` /
+`settings.json`) × 7 パターン (空 / 壊れた JSON / array が来るべきに object /
+逆 / 1MB garbage / `null` / `42` 数値) = **42 シナリオ** で `loadData()` が
+crash しないことを保証。
+
+修正: `action-log.json` が Array 以外 (object / null / number) の場合に
+`forEach` で TypeError → 空配列フォールバックに矯正。
+
+regression テスト `tests/corruption-resilience.test.cjs` を追加。
+
+### E2E UI 動作確認 (Playwright)
+
+`scripts/preview-dashboard.ts` で立ち上げて MCP Playwright で実 DOM 操作:
+- v2.0.24 で追加した「QUEUE / キュー」紫ボタン: `exists / visible /
+  onclick=resetAiQueue / window.resetAiQueue=function` 全部 ✓
+- v2.0.18 で追加した `managedAiFormBatchSize` input: `type=number / min=1 /
+  max=10 / visible` ✓
+- 7 タブ (ダッシュボード / 企業一覧 / リスト作成 / 確認待ち / 送信済み /
+  CLI Activity / 設定) 全部存在 + 切替動作 ✓
+- console error 0 件 ✓
+
+### ANTHROPIC_API_KEY 漏洩経路 (canary test)
+
+`ANTHROPIC_API_KEY=sk-ant-test-LEAK-CANARY-12345` を環境変数にセットして
+`loadData` を呼び、`/api/data` レスポンスに canary 文字列が含まれないことを確認:
+- `/api/data` 内: ✓ 漏洩なし
+- Sales Claw 制御下のデータディレクトリ全ファイル grep: ✓ 漏洩なし
+- (Claude CLI 自身が `provider-homes/claude/.claude/credentials.json` に
+  OAuth トークンを書くのは正常動作・Sales Claw のスコープ外)
+- `spawn-env-sanitizer.ts` の `BILLING_LEAK_ENV_KEYS` (22 キー) が全 spawn
+  経路で適用済み ✓
+
+### 1000 社負荷プロファイル
+
+1000 社の CSV を生成して全 hot path を計測:
+| 操作 | 1000 社 | 1 社あたり |
+|---|---|---|
+| import (replace) | 156ms | 0.16ms |
+| `loadData(force=true)` cold | 528ms | 0.53ms |
+| `loadData(force=true)` 5 runs avg | 505ms | 0.5ms |
+| `deleteCompaniesBatch(200)` | 34ms | 0.17ms |
+| メモリ | RSS 113MB / heap 42MB | - |
+
+**1000 社まで余裕**。RSS は Electron 込みで考えても十分軽量。
+Promise.all 並列性も問題なく動作。
+
+### 累積指標 (1 週間の改善)
+
+| | v2.0.13 | **v2.0.25** | 改善 |
+|---|---|---|---|
+| 1000 社 loadData | (未計測) | **505ms** | - |
+| 371 社 /api/data payload | 2046KB | **~780KB** | 2.6x |
+| 371 社 loadData cold | 1708ms | ~750ms | 2.3x |
+| logAction single | 58ms | 3ms | 19x |
+| updateLiveMonitor single | 15ms | 0.07ms | 214x |
+| corruption crash 耐性 | 部分的 | **42 シナリオ 0 crash** | OK |
+| API key 漏洩 | 監査未 | **canary 0 件確認** | OK |
+
+---
+
 ## 2.0.24 - 2026-05-15 — 公式サイト判定の EC 漏れ修正 + キュー強制リセット UI
 
 ### 公式サイト resolver の EC 漏れバグ修正
