@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.0.17 - 2026-05-15 — 「AI 停止 = キュー完全クリア」契約化
+
+ユーザー報告 (繰り返し):
+
+> 200 社キューに入れて停止 → 再起動して再度キューに入れようとすると
+> 「以下の企業は既に処理中です: 株式会社○○」エラー。二度と起こらない
+> 仕様にしてほしい。
+
+### 原因
+
+`stopManagedClaudePty({ suppressAutoRecovery: true })` (ユーザー明示停止) は
+PTY をkill するだけで、`managedAiBatchController.pending` と `activeBatch`
+はそのまま残っていた。次回 `/api/ai-form-fill` 投入時に
+`getManagedAiReservedCompanyNos` が pending 内の no を「処理中」と判定 →
+重複ガードで弾く。
+
+### 修正 (`src/dashboard-server.ts::stopManagedClaudePty`)
+
+ユーザー明示停止 (`suppressAutoRecovery: true`) の **最初のステップ** で:
+
+1. `controller.pending = []` (全 pending wipe)
+2. `controller.activeBatch = null`
+3. `controller.pendingSinceMs = 0` / `queueStuckNotified = false`
+4. `clearRecoverySnapshot()` (再起動時の recovery snapshot も削除)
+5. `cleanupStaleManagedAiMonitorEvents(0)` (live-monitor 上の active も消す)
+6. `stopPowerSaveBlockerIfActive()`
+7. `appendDiagnosticEvent('managed_ai_stop_cleared_queue', { ... })`
+8. CLI ログに「キューもクリアしました (pending=N, active=M)」を emit
+
+**自動 recovery / 内部再起動** (`suppressAutoRecovery: false`) では従来通り
+キューを保持 (復旧後に再開するため)。明示停止のときだけ wipe する。
+
+### UI 通知 (`src/ui/client-scripts/dashboard.ts`)
+
+`/api/stop-ai` のレスポンス `queueCleared: { pendingCleared, activeCleared }` を
+読んで、ユーザーに toast で「キューもクリアしました (N 件)。再投入できます。」を
+表示。これで停止 = リセットが UI 上も明示される。
+
+### regression テスト
+
+`tests/stop-clears-queue.test.cjs` (17 アサート):
+- user-initiated stop でキュー完全クリア
+- internal restart (autoRecovery) ではキュー保持
+- 空キューでも idempotent
+- controller=null / pending=undefined でも crash しない
+
+### 二度と起こさないための不変条件
+
+| state | 操作 | 結果 |
+|---|---|---|
+| pending あり | 「AI 停止」ボタン | **pending 全部消える** |
+| pending あり | 再起動 → recovery | pending 保持 (復旧後再開) |
+| pending あり | PTY 死亡 + recovery 失敗 | watchdog で 5 分後 stuck 検知 |
+
+---
+
 ## 2.0.16 - 2026-05-15 — 削除復活バグ・Phase A→B パイプライン化
 
 ユーザー報告:

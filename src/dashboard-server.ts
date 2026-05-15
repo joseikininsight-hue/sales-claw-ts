@@ -3325,10 +3325,50 @@ async function forceKillManagedPty(targetPty) {
 
 async function stopManagedClaudePty(options: Record<string, any> = {}) {
   const targetPty = claudePty;
-  if (!targetPty) {
-    return { ok: true, stopped: false, method: 'noop' };
+  const userInitiated = !!options.suppressAutoRecovery;
+  // v2.0.17: ユーザー明示停止 = キュー完全クリア を契約として固定。
+  // 過去事故 (繰り返し報告): 200 社キュー投入 → AI 停止 → 再起動 → 「既に処理中
+  // です: 株式会社○○」エラーで再キュー不可。原因は controller.pending が
+  // 停止後も残っていたこと。停止 = リセット に統一して二度と起こさない。
+  //
+  // 注意: suppressAutoRecovery=false (内部的な再起動 / 自動 recovery) では
+  // キューを保持する (復旧後に再開するため)。明示停止のときだけ wipe する。
+  let queueClearStats: { activeCleared: boolean; pendingCleared: number } | null = null;
+  if (userInitiated) {
+    const controller: any = managedAiBatchController;
+    const pendingCount = controller && Array.isArray(controller.pending) ? controller.pending.length : 0;
+    const hadActive = !!(controller && controller.activeBatch);
+    if (controller) {
+      controller.pending = [];
+      controller.activeBatch = null;
+      controller.pendingSinceMs = 0;
+      controller.queueStuckNotified = false;
+    }
+    try { clearRecoverySnapshot(); } catch (_) { /* swallow */ }
+    cleanupStaleManagedAiMonitorEvents(0);
+    stopPowerSaveBlockerIfActive();
+    queueClearStats = { activeCleared: hadActive, pendingCleared: pendingCount };
+    if (pendingCount > 0 || hadActive) {
+      appendDiagnosticEvent('managed_ai_stop_cleared_queue', {
+        pendingCleared: pendingCount,
+        activeCleared: hadActive,
+      });
+      emitClaudeAutomationLog(
+        `[AI停止] キューもクリアしました (pending=${pendingCount}, active=${hadActive ? 1 : 0})。新しい実行は通常通り投入できます。\n`,
+        'system',
+        getManagedAiProvider() || 'claude',
+      );
+    }
   }
-  managedAiSuppressAutoRecovery = !!options.suppressAutoRecovery;
+  if (!targetPty) {
+    return {
+      ok: true,
+      stopped: false,
+      method: 'noop',
+      ...(queueClearStats ? { queueCleared: queueClearStats } : {}),
+    };
+  }
+  managedAiSuppressAutoRecovery = userInitiated;
 
   const providerId = getManagedAiProvider();
   const gracefulInput = providerId === 'claude' ? 'exit\r' : '\u0003';
@@ -3344,12 +3384,19 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
       ok: true,
       stopped: true,
       method: providerId === 'claude' ? 'exit' : 'interrupt',
+      ...(queueClearStats ? { queueCleared: queueClearStats } : {}),
     };
   }
 
   const forced: any = await forceKillManagedPty(targetPty);
   if (await waitForManagedPtyExit(targetPty, forcedTimeoutMs)) {
-    return { ok: true, stopped: true, method: process.platform === 'win32' ? 'taskkill' : 'kill', forced };
+    return {
+      ok: true,
+      stopped: true,
+      method: process.platform === 'win32' ? 'taskkill' : 'kill',
+      forced,
+      ...(queueClearStats ? { queueCleared: queueClearStats } : {}),
+    };
   }
 
   return {
@@ -3358,6 +3405,7 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
     method: process.platform === 'win32' ? 'taskkill' : 'kill',
     forced,
     error: 'Managed AI process did not exit in time.',
+    ...(queueClearStats ? { queueCleared: queueClearStats } : {}),
   };
 }
 
