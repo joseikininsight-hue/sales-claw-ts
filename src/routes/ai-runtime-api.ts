@@ -178,11 +178,12 @@ module.exports = function createAiRuntimeRoutes(ctx) {
       const rows = Math.max(1, Math.min(120, Math.floor(Number(body.rows) || 30)));
       const autoSendSafe = body.autoSendSafe === true;
       const providerId = normalizeProviderId(body.provider || getSelectedAiProvider());
-      // 1.2.99: 75秒のサーバー側タイムアウト。MCP setup や CLI version probe が
-      // ハングするとレスポンスが返らず、クライアント overlay が永遠に表示される
-      // (ユーザー報告 2026-05-11)。タイムアウト時は launch を cancel して 200 で
-      // 構造化エラー (reason='launch_timeout') を返し、UI 側で actionable な案内を出す。
-      const LAUNCH_TIMEOUT_MS = 75000;
+      // v2.0.31: 120秒に拡張。MCP playwright re-add (stale entry 検知 →
+      // remove + add + verify) のワーストケースは ensureProviderPlaywrightMcp
+      // 内のサブタイムアウト合計で最大 90s。旧 75s だとここに先にぶつかって
+      // 「AI が永久に起動しない」状態になっていた (インストール版 ↔ dev mode を
+      // 切り替えると毎回 stale 判定で再 add ループが発生する)。
+      const LAUNCH_TIMEOUT_MS = 120000;
       let timedOut = false;
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {

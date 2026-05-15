@@ -126,9 +126,12 @@ const AI_STATUS_CACHE_TTL_MS = 15000;
 const AI_DIAGNOSTICS_CACHE_TTL_MS = 30000;
 // MCP playwright add は最大 30s + version probe 5s + その他で 50s 近く
 // かかる場合がある (CLI 側の git fetch / npm 解決待ちで遅延)。
-// stale lock 判定は client 側 LAUNCH_REQUEST_TIMEOUT_MS と揃えて、
-// 「client がタイムアウトする前に stale 判定が走る」状態を避ける。
-const MANAGED_AI_LAUNCH_LOCK_STALE_MS = 90000;
+// さらに stale entry 検知時は remove(20s) + add(30s) + verify(20s) = 70s
+// が ensureProviderPlaywrightMcp 内で連続する。
+// stale lock 判定 (130s) > server LAUNCH_TIMEOUT_MS (120s) > mcp setup 最大 90s
+// の順で大小を維持し、「client がタイムアウトする前に stale 判定が走る」
+// 状態を避ける。
+const MANAGED_AI_LAUNCH_LOCK_STALE_MS = 130000;
 const PTY_MAX_COLS = 300;
 const PTY_MAX_ROWS = 120;
 
@@ -2479,6 +2482,20 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
     } else {
       const lower = playwrightLine.toLowerCase();
       const exeOk = Boolean(expectedExe) && lower.includes(expectedExe);
+      // v2.0.31: dev mode (electron.exe) と installed Sales Claw.exe を
+      // 切り替えるたびに registration が stale 判定されて remove+add ループに
+      // 入り、launch が 75-90s タイムアウトしていた。
+      // playwrightLine 内に有効な electron/sales-claw 実行体パスが含まれ、
+      // 引数として渡されている playwright-mcp-wrapper.cjs が実在するなら
+      // 動作するので「許容 stale」と判定して再登録しない。
+      const looksLikeValidElectron = /sales[\s_-]*claw\.exe|electron\.exe/i.test(playwrightLine);
+      const argPaths = (playwrightMcp.args || [])
+        .filter((entry: any) => {
+          try { return path.isAbsolute(String(entry || '')); } catch (_) { return false; }
+        });
+      const argsExist = argPaths.length > 0 && argPaths.every((entry: any) => {
+        try { return fs.existsSync(entry); } catch (_) { return false; }
+      });
       const specPaths = [playwrightMcp.command, ...(playwrightMcp.args || [])]
         .filter((entry: any) => {
           try { return path.isAbsolute(String(entry || '')); } catch (_) { return false; }
@@ -2486,7 +2503,10 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
       const allPathsExist = specPaths.every((entry: any) => {
         try { return fs.existsSync(entry); } catch (_) { return false; }
       });
-      registeredButValid = exeOk && allPathsExist;
+      // exe が完全一致 → 確実に OK。
+      // exe 不一致でも、registered line が electron/sales-claw を指していて
+      // wrapper args が実在するなら "別経路だが動く" として OK 判定。
+      registeredButValid = (exeOk && allPathsExist) || (looksLikeValidElectron && argsExist);
       if (!registeredButValid) {
         appendDiagnosticEvent('mcp_playwright_stale_entry', {
           provider: normalized,

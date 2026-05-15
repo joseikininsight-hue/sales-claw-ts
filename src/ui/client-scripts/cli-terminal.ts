@@ -106,10 +106,11 @@ const SCRIPT = `(function(){
   var launchAbortController = null;
   var launchAbortReason = null;
   var launchTimeoutTimer = null;
-  // server 側 MANAGED_AI_LAUNCH_LOCK_STALE_MS と揃える。
-  // MCP playwright add (最大 30s) + version probe (5s) + 他処理で 50s 超
-  // かかる場合があるので、45s では client がタイムアウトしてしまう。
-  var LAUNCH_REQUEST_TIMEOUT_MS = 90000;
+  // server 側 MANAGED_AI_LAUNCH_LOCK_STALE_MS (130s) と揃える。
+  // server LAUNCH_TIMEOUT_MS (120s) より長くして、サーバが先に timeout を
+  // 検出して 200 + 構造化エラーを返すのを許す (client がタイムアウトすると
+  // overlay が「ローディング中」のまま固まる)。
+  var LAUNCH_REQUEST_TIMEOUT_MS = 130000;
 
   var PROVIDER_LABELS = {
     claude: 'Claude',

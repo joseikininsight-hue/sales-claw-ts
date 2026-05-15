@@ -1,5 +1,43 @@
 # Changelog
 
+## 2.0.31 - 2026-05-16 — AI 起動 75 秒タイムアウトバグ修正 (致命)
+
+### バグ
+
+「AI を起動」ボタンを押しても **75 秒待たされた末に必ず失敗** する。
+`managed_ai_launch_cancel_requested reason=timeout ageMs=74977` が連続発生。
+v2.0.29 から AI 起動自体は走るようになったが、起動完了する前にタイムアウトで
+強制 cancel されるため、ユーザー視点では **AI が永久に起動しない**。
+
+### 原因 (2 層)
+
+**1. タイムアウト 3 つの値が不整合**:
+- `ai-runtime-api.ts:185` LAUNCH_TIMEOUT_MS = **75000** (server 内部 cancel)
+- `dashboard-server.ts:131` MANAGED_AI_LAUNCH_LOCK_STALE_MS = 90000 (stale-lock)
+- `cli-terminal.ts:112` LAUNCH_REQUEST_TIMEOUT_MS = 90000 (UI overlay)
+
+`ensureProviderPlaywrightMcp` 内のサブ予算 (mcp list 20s + remove 20s + add 30s
++ verify 20s = 90s) が server の 75s タイムアウトより大きい。
+
+**2. `mcp_playwright_stale_entry` が頻発する判定ロジック**:
+インストール版 (`Sales Claw.exe`) ⇔ dev mode (`electron.exe`) を切り替えると、
+expectedExe が違うため毎回 stale 判定 → remove + add ループに突入。
+
+### 修正
+
+1. **タイムアウト整合**: server LAUNCH_TIMEOUT_MS 75s → **120s**、
+   LOCK_STALE_MS と client REQUEST_TIMEOUT_MS を 90s → **130s** に統一。
+   大小関係: client (130) > server stale-lock (130) > server cancel (120) >
+   mcp setup 最大 (90) でレースを防止。
+2. **stale 判定の緩和**: registered line に `sales claw.exe` か `electron.exe`
+   が含まれ、wrapper args が実在するなら「別経路だが動く」として許容。
+   dev/installed 切替で再 add ループに入らない。
+
+### 検証
+
+- `npm run build` ✓
+- v2.0.30 → 2.0.31 で再 build OK
+
 ## 2.0.30 - 2026-05-16 — Recovery resume の 404 誤誘導修正
 
 ### バグ
