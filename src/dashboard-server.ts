@@ -1589,6 +1589,7 @@ function startManagedAiBatchPoller() {
         companyCount: snapshot.totalCount,
         durationMs: Date.now() - activeController.activeBatch.startedAt,
         statuses: snapshot.statuses,
+        parallelTabs: getPhaseBParallelTabs(),
       });
       appendAiRunMetric('managed_ai_batch_completed', {
         provider: activeController.providerId,
@@ -1596,6 +1597,7 @@ function startManagedAiBatchPoller() {
         companyCount: snapshot.totalCount,
         durationMs: Date.now() - activeController.activeBatch.startedAt,
         statuses: snapshot.statuses,
+        parallelTabs: getPhaseBParallelTabs(),
       });
       activeController.activeBatch = null;
       if (activeController.pending.length === 0) {
@@ -10143,6 +10145,11 @@ if (require.main === module) {
 
 module.exports = {
   loadData,
+  // v2.0.26: テストから prompt の中身を verify できるよう export。
+  // 本番経路では非公開関数として使われ続けるが、export 自体は副作用なし。
+  buildClaudeFormFillPrompt,
+  getPhaseBParallelTabs,
+  getManagedAiFormBatchSize,
   server,
   startDashboardServer,
   // electron-main.js が before-quit / will-quit でこれを await することで、

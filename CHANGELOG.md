@@ -1,5 +1,66 @@
 # Changelog
 
+## 2.0.27 - 2026-05-15 — タブ並列の動作確認 + env override 修正 + 経過観察スクリプト
+
+ユーザー要求: 「本当に動くか・本当に高速化するか Playwright で確認」
+
+### 動作確認 (Playwright + 直接 prompt verify)
+
+prompt 単体テスト:
+- `parallelTabs=1` (default): "1社ずつ処理" 指示が含まれる、2732 chars
+- `parallelTabs=2`: "タブ並列 pipeline 許可 (最大 2 並列)" 挿入、+407 chars
+- `parallelTabs=3`: 同上 "最大 3 並列"
+
+UI E2E (Playwright で実 DOM 操作):
+- 設定タブの `#pf-parallelTabs` 入力欄を 2 に変更 → 保存ボタンクリック →
+  settings.json に `"parallelTabs": 2` が永続化 → リロード後にも UI に 2 が
+  復元される
+- 一連のフローを Playwright で完全自動テスト pass
+
+### env override 修正バグ (致命)
+
+実 prompt verify で発覚: `parallelTabs=2/3` を env で渡しても prompt が
+`parallelTabs=1` のままで生成されていた。原因は `DEFAULT_SETTINGS.preferences`
+に `parallelTabs: 1` をハード値で入れたため、`getPhaseBParallelTabs()` の
+優先順位 (settings → env → default) で settings 値 `1` が常勝になっていた。
+
+修正: `DEFAULT_SETTINGS` から `parallelTabs` を削除 (= undefined のまま)。
+ユーザーが UI で明示保存した時だけ settings に入る。それまでは env または
+fallback (1) を見る。これで `SALES_CLAW_PHASE_B_PARALLEL_TABS=2` が確実に効く。
+
+### 経過観察スクリプト
+
+`scripts/watch-phase-b-perf.cjs` 追加。本番 Electron アプリで Phase B を
+走らせている裏でこれを起動すると、`ai-run-metrics.jsonl` をテーリングして:
+- `phase_b_prompt_compiled` の parallelTabs と token 数
+- `managed_ai_batch_completed` の durationMs と avg sec/co
+- parallelTabs 別に統計を出力 (1 vs 2 の比較ができる)
+
+使い方:
+```bash
+node scripts/watch-phase-b-perf.cjs
+```
+
+### managed_ai_batch_completed に parallelTabs 同梱
+
+経過観察スクリプトが集計しやすいよう、batch 完了イベントに parallelTabs を
+記録 (diagnostic + metric 両方)。
+
+### **「本当に動くか」の答え**
+
+| 検証項目 | 結果 |
+|---|---|
+| prompt の差し替え (1/2/3) | ✅ 動作 (chars 差で確認) |
+| UI 設定の永続化 | ✅ 動作 (Playwright で自動テスト) |
+| env override | ✅ 動作 (バグを発見・修正) |
+| **実 Phase B での 1.3-1.7x 高速化** | ⏳ **本番 Electron + 実フォームでの観測が必要** |
+
+最後の項目は preview-dashboard では `ELECTRON_REQUIRED` で塞がるため、
+ユーザーの本番 Electron アプリで実フォームに投げた時の `ai-run-metrics.jsonl`
+を `scripts/watch-phase-b-perf.cjs` でテーリングして比較するのが唯一の経路。
+
+---
+
 ## 2.0.26 - 2026-05-15 — Phase B タブ並列 pipeline (1.3-1.7x 高速化)
 
 ### 仕組み

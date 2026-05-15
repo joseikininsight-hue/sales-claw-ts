@@ -199,11 +199,10 @@ const DEFAULT_SETTINGS = {
     autoSendEligibleForms: false,     // CAPTCHA等がない安全なフォームは自動送信
     // エクスポート
     exportFilenamePrefix: 'outreach_progress',
-    // v2.0.26: タブ並列度 (Phase B 内で 1 Playwright + 1 Claude PTY が
-    // 何タブを pipeline で進めるか)。1 = 直列 (現状互換)、2-3 でナビゲーション
-    // 待ちをオーバーラップして 1.3-1.7x 程度の高速化を狙う。
-    // 上限 3 (それ以上は Claude の状態管理が混乱しやすく失敗率増)。
-    parallelTabs: 1,
+    // v2.0.26: parallelTabs は **default を未設定 (undefined)** にする。
+    //   - undefined: getPhaseBParallelTabs() が env / fallback (1) を見る
+    //   - ユーザーが UI から保存した値だけ settings に入る
+    // (default を 1 で書き込むと env override が効かなくなるため)
   },
 
   // === 外部 API キー（list-builder などで利用） ===
