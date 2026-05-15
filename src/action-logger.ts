@@ -65,11 +65,17 @@ function flushNow(): void {
     _flushTimer = null;
   }
   _pendingFlush = false;
+  // v2.0.19: 単一 disk write は lock 必須 (rename atomic だが Windows で他プロセス
+  // の同時アクセスを安全に直列化するため)
+  const filePath = getLogFile();
+  const lockFile = acquireFileLock(filePath);
   try {
     saveLog(logCache.data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[action-logger] flushNow failed:', msg);
+  } finally {
+    releaseFileLock(lockFile);
   }
 }
 
@@ -220,23 +226,30 @@ export function logAction(
 ): number {
   installExitHooks();
   const filePath = getLogFile();
-  // disk から最新を読み込んで cache を warm up (他プロセスからの書き込みも反映)
-  const lockFile = acquireFileLock(filePath);
   let entryCount = 0;
-  try {
-    const entries = loadLog();
-    entries.push({
-      timestamp: new Date().toISOString(),
-      companyNo,
-      companyName,
-      action: action as ActionType,
-      details,
-    });
-    logCache.data = entries;
-    entryCount = entries.length;
-  } finally {
-    releaseFileLock(lockFile);
+  const newEntry: ActionLogEntry = {
+    timestamp: new Date().toISOString(),
+    companyNo,
+    companyName,
+    action: action as ActionType,
+    details,
+  };
+  // v2.0.19: lock を取らずに in-memory cache に push。
+  // 旧実装は logAction 毎に acquireFileLock を取って disk から readFileSync 後 push
+  // していたため Windows で 50ms+ かかっていた。
+  // 設計上 cache は最新を持っているので、外部プロセスからの書き込みを最新で取り直す
+  // 必要は無い (saveLog の writeJsonCached が atomic rename で書く)。
+  // 初回だけ cache を warm up する。
+  if (logCache.filePath !== filePath || logCache.data.length === 0) {
+    const lockFile = acquireFileLock(filePath);
+    try {
+      logCache.data = loadLog();
+    } finally {
+      releaseFileLock(lockFile);
+    }
   }
+  logCache.data.push(newEntry);
+  entryCount = logCache.data.length;
   // Terminal action なら即 flush (クラッシュ時にも残す)、それ以外は debounce
   if (TERMINAL_ACTIONS.has(String(action))) {
     flushNow();

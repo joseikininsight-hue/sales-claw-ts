@@ -5148,7 +5148,12 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   const promptFile = writeClaudeFormFillPromptFile(companies, promptText, normalizedProviderId);
   const workspacePromptFile = writeWorkspaceClaudeFormFillPromptFile(companies, promptText, normalizedProviderId);
   const model = getClaudeAutomationModel(normalizedProviderId);
-  const messageLines = [
+  // v2.0.19: 2 回目以降のバッチでは provider preamble + curl 例を省略する。
+  // 100 社をバッチサイズ 10 で投入すると 10 バッチ送るが、curl 例 4 種だけで
+  // 約 1500 chars (~375 tokens) × 10 = 3750 tokens 節約 / 100 社あたり。
+  // session contract と同じ思想で「最初の 1 バッチに instructions、以降は payload のみ」。
+  const isFirstBatchInSession = needsSessionContract;
+  const messageLines = isFirstBatchInSession ? [
     `Sales Claw の batch payload を送ります。必ず ${provider.cliLabel} と MCP Playwright で実行してください。前回までの会話や未完了タスクは引き継がず、この batch だけを正として扱ってください。`,
     'Phase A は backend 完了済みです。再分析・再生成・settings 更新はしないでください。',
     'urlMissing=true の会社は WebSearch で「会社名 公式サイト」を検索し、公式ドメインを特定してからサイト確認→本文生成→フォーム入力を実行してください。公式サイトが見つからなければ error にしてください。',
@@ -5189,8 +5194,16 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '--- BEGIN SALES CLAW BATCH ---',
     promptText,
     '--- END SALES CLAW BATCH ---',
+  ] : [
+    // v2.0.19: 2 回目以降のバッチは payload のみ。instructions は既に文脈にある。
+    `Sales Claw batch #${(state.batchCount || 0) + 1} (${companies.length}社)。前バッチと同じルールで処理してください。`,
+    '',
+    '--- BEGIN SALES CLAW BATCH ---',
+    promptText,
+    '--- END SALES CLAW BATCH ---',
   ];
-  if (model && normalizedProviderId === 'claude') {
+  state.batchCount = (state.batchCount || 0) + 1;
+  if (model && normalizedProviderId === 'claude' && isFirstBatchInSession) {
     messageLines.splice(1, 0, `優先モデル: ${model}`);
   }
 
