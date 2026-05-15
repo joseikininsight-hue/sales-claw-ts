@@ -6478,6 +6478,7 @@ ${renderStyles()}
     </div>
     <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
     <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
+    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_lang === 'ja' ? 'AI 停止中にキューに残っている会社をクリア (再投入可能にする)' : 'Clear stuck queue while AI is stopped (lets you re-queue)'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_lang === 'ja' ? 'キュー' : 'QUEUE'}</button>
   </div>
   <!-- Icon-only action buttons -->
   <div style="display:flex;align-items:center;gap:2px">

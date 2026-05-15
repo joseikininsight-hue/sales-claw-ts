@@ -1,5 +1,65 @@
 # Changelog
 
+## 2.0.24 - 2026-05-15 — 公式サイト判定の EC 漏れ修正 + キュー強制リセット UI
+
+### 公式サイト resolver の EC 漏れバグ修正
+
+ユーザーの 371 社データを監査中、マカフィー株式会社 (no.303) の formUrl が
+**Amazon の商品検索結果 URL** になっていた:
+```
+https://www.amazon.co.jp/【公式】マカフィー-リブセーフ-セキュリティ対策...
+```
+
+原因: `src/official-site-resolver.ts` の `BLOCKED_HOST_PATTERNS` に求人・SNS・
+法人 DB は登録済みだったが **EC プラットフォーム** が漏れていた。会社名で
+検索エンジンに投げた結果の最上位が Amazon 商品ページだったケースで誤認識。
+
+修正: `amazon.co.jp / amazon.com / rakuten / mercari / ebay / yodobashi /
+kakaku / alibaba / apps.apple.com / play.google.com / note.com / medium /
+hatena / ameblo / youtube / tiktok` を BLOCKED に追加。
+
+### 「キュー強制リセット」ボタンを UI に追加
+
+v2.0.17 で実装した `POST /api/managed-ai-batch/reset` が UI ボタンと
+結びついていなかった (作ったが使えない状態)。
+
+修正: ヘッダ右上の AI ステータス chip の STOP の隣に紫色の「キュー / QUEUE」
+ボタンを追加。AI 停止中に押すと pending + activeBatch をクリアして再投入
+できる状態に戻す。confirmation dialog で誤操作も防ぐ。
+
+これで `AI を停止 → キューを押す → 再投入` が UI 1 アクションで完結する。
+
+### 未実装の preferences フィールド 5 件を特定
+
+UI に入力欄があるが **どこも参照していない** preferences:
+- `maxRetries` (旧 Playwright worker 用、現在は Claude CLI 経由なので無関係)
+- `formFillTimeout` (同上)
+- `dateFormat` (日時表示は別場所で固定フォーマット)
+- `listSourceMetadata` (個情法 27 条のメモ用だが UI 上だけ)
+- `requireApprovalBeforeSend` (`autoSendEligibleForms` と意味が重複)
+
+長期 TODO: 次のメジャー版で UI から削除 or 実装する判断を行う。本リリース
+では既存 UI を壊さないため触らない。
+
+### 全 API endpoint inventory
+
+監査結果として全 45 endpoint を確認。以下のみ UI 統合済み。
+未統合 endpoint は CLI 内部呼び出し / レガシー alias / 別ページ (list-builder /
+onboarding) で実利用されており dead code 無し。
+
+### 累積指標 (一週間)
+
+| | v2.0.13 | **v2.0.24** | 改善 |
+|---|---|---|---|
+| /api/data payload (371 社) | 2046KB | **~750KB** | 2.7x |
+| loadData (371 社) cold | 1708ms | ~750ms | 2.3x |
+| logAction single | 58ms | 3ms | 19x |
+| updateLiveMonitor single | 15ms | 0.07ms | 214x |
+| 公式サイト誤検出率 | ~1% (EC) | ほぼ 0 | OK |
+| キュー stuck 救済 | 永久 | UI 1 click | OK |
+
+---
+
 ## 2.0.23 - 2026-05-15 — stall 7 社で止まる事故修正 + /api/data 60% 削減
 
 ### 緊急修正: 「200 社入れたら 7 社で止まる」

@@ -51,6 +51,24 @@ const BLOCKED_HOST_PATTERNS = [
   /(^|\.)bizreach\.jp$/i,
   /(^|\.)careerconnection\.jp$/i,
   /(^|\.)jobcatalog\.yahoo\.co\.jp$/i,
+  // v2.0.24: EC・プラットフォーム経由の検索結果を「公式サイト」と誤認しない
+  // (実例: マカフィー検索 → amazon.co.jp/...マカフィー... が trace の最上位に来た)
+  /(^|\.)amazon\.(co\.jp|com|co\.uk|de|fr)$/i,
+  /(^|\.)rakuten\.(co\.jp|com)$/i,
+  /(^|\.)mercari\.com$/i,
+  /(^|\.)ebay\.(com|co\.jp)$/i,
+  /(^|\.)yodobashi\.com$/i,
+  /(^|\.)kakaku\.com$/i,
+  /(^|\.)alibaba\.com$/i,
+  /(^|\.)apps\.apple\.com$/i,
+  /(^|\.)play\.google\.com$/i,
+  /(^|\.)microsoft\.com\/store/i,
+  /(^|\.)note\.com$/i,
+  /(^|\.)medium\.com$/i,
+  /(^|\.)hatena\.ne\.jp$/i,
+  /(^|\.)ameblo\.jp$/i,
+  /(^|\.)youtube\.com$/i,
+  /(^|\.)tiktok\.com$/i,
 ];
 
 function decodeHtml(value) {
