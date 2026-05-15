@@ -172,9 +172,15 @@ module.exports = function createSimpleApiRoutes(ctx) {
     const siteTextLength = Number(analysis.siteTextLength) || 0;
     // urlMissing=true の場合でも form_fill + confirm_reached 記録済みであれば
     // Phase B で CLI が WebSearch を通じて公式サイトを特定・入力したとみなして通過させる。
-    // （urlMissing=false かつサイト本文不足の場合は依然として拒否する）
     const isUrlMissingButFilled = analysis.urlMissing === true && hasFormFill;
-    if (!isUrlMissingButFilled && siteTextLength < minSiteTextLength) {
+    // v2.0.32: form_fill + confirm_reached 両方ある = Claude が実際に MCP Playwright で
+    // サイト確認 → フォーム入力 → 確認画面到達まで成功させた証拠。siteTextLength が
+    // 800 字未満でも、最終的な sentMessage 品質は次の validateSentMessageQuality で
+    // 別途チェックする。site_analysis 厳密バリデーションを優先して拒否すると、
+    // 「フォーム入力済 + スクショ済 + 確認画面到達済」を全部捨てて error 化してしまい、
+    // ユーザーには「永久に awaiting_approval にならない」状態に見える。
+    const filledAndReached = hasFormFill && hasConfirmReached;
+    if (!isUrlMissingButFilled && !filledAndReached && siteTextLength < minSiteTextLength) {
       return {
         ok: false,
         error: `site_analysis is insufficient (${siteTextLength} chars; required ${minSiteTextLength}).`,

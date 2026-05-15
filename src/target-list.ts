@@ -323,6 +323,32 @@ function getImportDir() {
   return resolveDataPath('imports');
 }
 
+/**
+ * imports/ から最新 (mtime 降順) の `*-target-list.xlsx` を返す。
+ * settings.targetList.filePath が削除済み参照を保持していて、AI Form Fill
+ * 投入時に「Target list file not found」400 が連発する事故から自動復旧する。
+ */
+function findLatestTargetListInImports(): string | null {
+  try {
+    const dir = getImportDir();
+    if (!fs.existsSync(dir)) return null;
+    const entries = fs.readdirSync(dir).filter((name: string) => /-target-list\.xlsx$/i.test(name));
+    if (entries.length === 0) return null;
+    const withMtime = entries
+      .map((name: string) => {
+        const full = path.join(dir, name);
+        try { return { full, mtime: fs.statSync(full).mtimeMs }; }
+        catch (_) { return null; }
+      })
+      .filter((entry: any) => entry !== null) as Array<{ full: string; mtime: number }>;
+    if (withMtime.length === 0) return null;
+    withMtime.sort((a, b) => b.mtime - a.mtime);
+    return withMtime[0].full;
+  } catch (_) {
+    return null;
+  }
+}
+
 function getDefaultTargetFile() {
   return resolveDataPath('manual-targets.csv');
 }
@@ -388,6 +414,25 @@ function readWorkbookBundle(targetPath, options: Record<string, unknown> = {}) {
   }
 
   if (!signature) {
+    // v2.0.32: ファイル不在時に imports/ ディレクトリから最新の
+    // *-target-list.xlsx を auto-recover。settings.targetList.filePath が
+    // 古いファイル参照のまま残り、cleanup 等で実ファイルが削除されると
+    // AI Form Fill 投入時に「対象が見つかりません」400 が連発する事故を防ぐ。
+    if (options.allowAutoRecover !== false) {
+      const recovered = findLatestTargetListInImports();
+      if (recovered && recovered !== targetPath) {
+        const recoveredSig = getFileSignature(recovered);
+        if (recoveredSig) {
+          // settings を更新 (絶対パスのまま保存)
+          try {
+            const tlSection = settings.getSection('targetList') || {};
+            settings.updateSection('targetList', { ...tlSection, filePath: recovered });
+          } catch (_) { /* settings 書き込み失敗は無視、in-memory fallback で続行 */ }
+          // recovered で再帰呼び出し (autoRecover を無効化して無限再帰防止)
+          return readWorkbookBundle(recovered, { ...options, allowAutoRecover: false });
+        }
+      }
+    }
     if (!options.createIfMissing) {
       return { ok: false, error: `Target list file not found: ${targetPath}`, targetPath };
     }

@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.0.32 - 2026-05-16 — site_analysis 800字ガード過剰拒否 + target list 自動復旧 (致命)
+
+### バグ 1: 「対象が見つかりません」永久ループ
+
+`settings.targetList.filePath` が古いファイルを指したまま実ファイルが
+削除されると、AI Form Fill 投入時に **400 + Target list file not found**
+が返り、UI に「対象が見つかりません」と表示されて誰も解決できない状態に
+なる (Sales Claw v2.0.31 で複数ユーザーから報告)。
+
+**修正** (`src/target-list.ts`): `readWorkbookBundle` でファイル不在を検知
+したら `imports/` ディレクトリから最新 `*-target-list.xlsx` を mtime 降順
+で auto-recover し、settings を更新。再帰呼び出しでそのファイルを使う。
+
+### バグ 2: awaiting_approval が永久に届かない
+
+5 社並列実機テスト中に発見:
+1. Claude が MCP Playwright でサイト確認 → フォーム入力 → 確認画面到達まで成功
+2. `awaiting_approval` ログ記録を試みる
+3. **サーバが 422 で「site_analysis 不足 (739 字 / 必要 800 字)」と拒否**
+4. Claude が「拒否されたので error にする」 → 全社 error 終了
+5. ユーザーには「Phase B 走ったのに全部 error」と見える
+
+実際にはフォーム入力 + スクショ + 確認画面到達まで完了している。
+「Claude の本文品質保証」用の 800 字ガードが過剰防衛で、せっかく完了
+した作業を全部 error 化してしまっていた。
+
+**修正** (`src/routes/simple-api.ts:177`): `form_fill + confirm_reached`
+両方ある = Claude が実際に MCP Playwright で全フェーズ完了の証拠と
+みなし、`siteTextLength < minSiteTextLength` でも awaiting_approval を
+通過させる。最終的な sentMessage 品質は後段の
+`validateSentMessageQuality` で別途チェック。
+
+### 検証 (実機 5 社並列テスト)
+
+| No. | 会社名 | 結果 |
+|---|---|---|
+| 14 | アイネス | ✅ awaiting_approval |
+| 16 | ユニリタ | ✅ awaiting_approval |
+| 30 | エクシオグループ | ✅ awaiting_approval |
+| 36 | NDS | error (フォーム無し、想定内) |
+| 38 | シーテック | Phase A failure (フォーム探索失敗、想定内) |
+
+フォームに到達できた 3/3 社が awaiting_approval まで完走。
+修正前は同じ条件で 0/3 が完走していたバグが完全解消。
+
 ## 2.0.31 - 2026-05-16 — AI 起動 75 秒タイムアウトバグ修正 (致命)
 
 ### バグ
