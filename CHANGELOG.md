@@ -1,5 +1,64 @@
 # Changelog
 
+## 2.0.26 - 2026-05-15 — Phase B タブ並列 pipeline (1.3-1.7x 高速化)
+
+### 仕組み
+
+Phase B (Claude CLI が MCP Playwright でフォーム入力する局面) を「1 社ずつ
+直列」から「最大 N タブ pipeline」に拡張。
+
+**実態**:
+- MCP Playwright は **1 ブラウザインスタンスのみ** という制約は変えない
+- 1 つの Claude PTY が `browser_tabs` + `window.open` で複数タブを開き、
+  ページ navigation 待ちの間に別タブの操作を進める (cooperative pipeline)
+- tool call 自体は直列 (Claude は 1 度に 1 tool しか発行できない)
+- ナビゲーション待ち / フォーム送信待ちの I/O だけがオーバーラップ
+
+**現実的な効果**: **1.3-1.7 倍速** (3 倍速ではない)
+
+### 新設定
+
+`preferences.parallelTabs` (range 1-3, default 1)
+- 1 = 直列 (現状互換、最も安定)
+- 2 = ナビゲーション待ちオーバーラップ (推奨)
+- 3 = アグレッシブ (タブ管理混乱のリスク増)
+
+UI: 設定タブ Preferences セクションに「Phase B タブ並列度」入力欄を追加
+(`pf-parallelTabs`)。env override: `SALES_CLAW_PHASE_B_PARALLEL_TABS`。
+
+### prompt 改変
+
+`buildClaudeFormFillPrompt` の batch_rules に並列度 > 1 のときの指示を動的追加:
+- browser_navigate を発行後、snapshot 待たずに次社のタブを開いて navigation 発行
+- 両方 ready になってから snapshot → fill
+- 同時 4 社以上は禁止 (Claude の状態管理が混乱する境界)
+- CAPTCHA 解析・本文生成は 1 社集中
+
+### 監視
+
+`phase_b_prompt_compiled` の `parallelTabs` フィールドで実利用状況を記録。
+失敗率が上がったら 1 に戻す判断ができる。
+
+### 副作用リスクとミティゲーション
+
+| リスク | ミティゲーション |
+|---|---|
+| タブ管理契約 (finalFormTab) 破綻 | prompt で「会社単位で完結、混同しない」を強調 |
+| スクショ取り違え | ss-{No}-input.png のファイル名で識別 (既存) |
+| CAPTCHA タブが消える | prompt で「CAPTCHA は 1 社集中」を明示 |
+
+不安なら default = 1 のまま使えば旧来通り動く。検証を経てから 2 に上げるのが推奨。
+
+### コスト/時間試算 (100 社)
+
+| | parallelTabs=1 | parallelTabs=2 | parallelTabs=3 |
+|---|---|---|---|
+| Phase B 所要時間 | 約 9 時間 | **約 5.5 時間** | 約 3.7 時間 (高リスク) |
+| LLM input tokens | 同 | 同 | 同 |
+| 失敗率 | 基準 | 同等想定 | やや上昇可 |
+
+---
+
 ## 2.0.25 - 2026-05-15 — corruption resilience + 大規模負荷耐性検証
 
 ユーザー要望: E2E / data corruption / API key 漏洩 / 1000 社負荷を全部検査。

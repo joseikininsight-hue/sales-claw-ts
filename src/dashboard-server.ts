@@ -235,6 +235,29 @@ function getManagedAiFormBatchSize(): number {
   if (!Number.isFinite(n)) return DEFAULT_MANAGED_AI_FORM_BATCH_SIZE;
   return Math.max(MIN_MANAGED_AI_FORM_BATCH_SIZE, Math.min(MAX_MANAGED_AI_FORM_BATCH_SIZE, Math.floor(n)));
 }
+
+// v2.0.26: Phase B 内のタブ並列度 (1 Playwright + 1 Claude PTY が pipeline で
+// 進めるタブ数)。1 = 直列、2-3 でナビゲーション待ちオーバーラップ。
+const DEFAULT_PHASE_B_PARALLEL_TABS = 1;
+const MIN_PHASE_B_PARALLEL_TABS = 1;
+const MAX_PHASE_B_PARALLEL_TABS = 3;
+function getPhaseBParallelTabs(): number {
+  let raw: any = null;
+  try {
+    const prefs = settings.getSection('preferences') || {};
+    if (prefs.parallelTabs !== undefined && prefs.parallelTabs !== null) {
+      raw = prefs.parallelTabs;
+    }
+  } catch (_) { /* swallow */ }
+  if (raw === null && process.env.SALES_CLAW_PHASE_B_PARALLEL_TABS) {
+    raw = process.env.SALES_CLAW_PHASE_B_PARALLEL_TABS;
+  }
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_PHASE_B_PARALLEL_TABS;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_PHASE_B_PARALLEL_TABS;
+  return Math.max(MIN_PHASE_B_PARALLEL_TABS, Math.min(MAX_PHASE_B_PARALLEL_TABS, Math.floor(n)));
+}
+
 const MANAGED_AI_BATCH_POLL_MS = 5000;
 // Claude が大きなペースト (5000+ chars / 49+ lines) を受け取ると、UI 側で
 // "[Pasted text] paste again to expand" バナーを出して 2nd Enter 待ちになる。
@@ -5066,7 +5089,11 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',
     '- visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は browser_click で 1 回だけ試行可。画像チャレンジが出たら諦めて awaiting_approval',
     '- CAPTCHA を理由に error にするのは「フォームが表示されない」「Cloudflare 等のページゲートで本体に到達できない」場合だけ',
-    '- 1社ずつ処理し、結果報告は簡潔にする',
+    (() => {
+      const tabs = getPhaseBParallelTabs();
+      if (tabs <= 1) return '- 1社ずつ処理し、結果報告は簡潔にする';
+      return `- ★ タブ並列 pipeline 許可 (最大 ${tabs} 並列): browser_navigate を発行したら snapshot を待たずに、次の会社のタブを window.open / browser_tabs で開いてさらに navigate を発行してよい。両方の navigate 完了を待ってから browser_snapshot → browser_fill_form の順で進める。同時に 4 社以上のタブを開いてはいけない (Claude の状態管理が混乱する)。各社の入力・スクショ・ログ記録は会社単位で完結させ、混同しない。会社ごとの awaiting_approval / submitted ログには finalFormTab URL を含める。\n- pipeline で進めるのはサイト到達 / form 発見 / form_fill の navigation 待ち局面のみ。CAPTCHA 解析・本文生成は 1 社ずつ集中する`;
+    })(),
     autoSendSafe
       ? '- CAPTCHA / 手動必須項目 / 営業NG / 不確実ケースを除き、確認画面が取れたら最終送信まで進めて submitted にする'
       : '- 送信は行わず awaiting_approval で止める',
@@ -5261,6 +5288,7 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     autoSendSafe,
     phaseASuccessCount: Array.isArray(options.phaseASuccesses) ? options.phaseASuccesses.length : null,
     phaseAFailureCount: Array.isArray(options.phaseAFailures) ? options.phaseAFailures.length : null,
+    parallelTabs: getPhaseBParallelTabs(),
   });
   const queueState = queueManagedAiPrompt(queuedPrompt, normalizedProviderId);
   if (needsSessionContract) {
@@ -8241,6 +8269,11 @@ ${renderStyles()}
               <label>${_t['field.managedAiFormBatchSize']}</label>
               <input type="number" id="pf-managedAiFormBatchSize" min="1" max="10" placeholder="3">
               <div class="help-text">${_t['help.managedAiFormBatchSize']}</div>
+            </div>
+            <div class="settings-group">
+              <label>${_t['field.parallelTabs']}</label>
+              <input type="number" id="pf-parallelTabs" min="1" max="3" placeholder="1">
+              <div class="help-text">${_t['help.parallelTabs']}</div>
             </div>
           </div>
 
