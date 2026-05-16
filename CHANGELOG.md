@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.36 - 2026-05-16 — bulkDeleteCompanies 構文エラー修正 + ja モード Accept-Language 互換保証
+
+### バグ修正
+
+1. **「全選択して削除」が 1 回目で効かないバグ**
+   - 原因: `bulkDeleteCompanies()` が `async` 修飾子なしで `await fetch()` を使用 →
+     ブラウザでパースエラーで関数が **未定義** → ボタンクリックは TypeError
+     で何も起きない状態。
+   - 修正: `function` → `async function` (1 行追加)
+   - 検証: Playwright で `bulkDeleteCompanies.constructor.name === 'AsyncFunction'` 確認
+     console errors 0
+   - 影響範囲: 「企業一覧」タブ + 「確認待ち」タブの選択削除全般
+
+2. **parallel-analysis.ts の Accept-Language 動的化が日本語ユーザーに影響する可能性**
+   - v2.0.35 で `.com` ドメイン → `Accept-Language: en,ja;q=0.5` (英語優先) に変えていた
+   - 既存日本語ユーザー (preferences.language === 'ja' or messageTemplates.language === 'ja')
+     向けに **強制 ja 優先** にする保険策を追加 (v2.0.34 以前と完全互換)
+   - default 'auto' の場合のみ TLD で動的判定 (英語ユーザーは英語サイトを取りやすく)
+
 ## 2.0.35 - 2026-05-16 — i18n フル対応 完遂 (Phase 2-5 全完了)
 
 OSS 公開水準の bilingual 対応が全 Phase 完遂。

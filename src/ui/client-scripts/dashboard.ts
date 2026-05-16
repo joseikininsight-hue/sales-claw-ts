@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * Dashboard client-side JavaScript bundle.

@@ -231,6 +231,19 @@ async function analyzeCompanyLite(url, companyName, companyType) {
    * 推定が外れたサイトでも detectLanguage() で再判定するため過信しない。
    */
   function pickAcceptLanguageForUrl(targetUrl: string): string {
+    // v2.0.36: 既存日本語ユーザー保護。messageTemplates.language が明示 'ja'
+    // または preferences.language === 'ja' (= 日本市場のみターゲット) の場合、
+    // 全サイト ja 優先で取得して旧 v2.0.34 以前と完全互換にする。
+    // (default 'auto' の場合のみ TLD で動的に判定する。これは英語ユーザーが
+    // .com の英語企業を分析するときに英語版を取りやすくするため。)
+    try {
+      const settings = require('./settings-manager');
+      const msgLang = settings.getSection('messageTemplates')?.language;
+      const uiLang = settings.getSection('preferences')?.language;
+      if (msgLang === 'ja' || (msgLang !== 'en' && uiLang === 'ja')) {
+        return 'ja,en-US;q=0.9,en;q=0.8';
+      }
+    } catch (_) { /* settings 読み込み失敗は default 挙動 */ }
     try {
       const host = new URL(targetUrl).hostname.toLowerCase();
       // Japanese TLDs / co.jp / ne.jp / or.jp / ac.jp / go.jp / lg.jp / ed.jp
