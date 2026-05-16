@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.0.34 - 2026-05-16 — i18n Phase 1 大半完了 (UI ほぼ完全英語化)
+
+### 追加翻訳カバレッジ
+
+1. **dashboard-server.ts HTML テンプレート**: 178 箇所の `_lang === 'ja' ? 'X' : 'Y'`
+   パターンを `_t['key']` 形式に統一。i18n.ts に 175 ユニークキー (350 エントリ) 追加。
+2. **dashboard.ts client script**: 71 箇所の表示用 ternary を `t('key')` 化 (87% 削減)。
+   進捗ラベル / monitor status / launch modal / approval / cost chip 等。i18n.ts に 62 キー追加。
+3. **onboarding-wizard.ts Step 2-5**: Company / Strengths / Targets / AI Setup の
+   全 70+ 文字列を bilingual 化。preset strengths (18 種) と provider hints も英訳。
+4. **`<html lang>` 属性**: `_lang` 連動で `ja` / `en` を切替。
+
+### 検証
+
+実機 Playwright で `language: 'en'` 設定後リロード:
+- ヘッダー全要素 (Dashboard / Companies / List Builder / Awaiting / Sent / CLI Activity / Settings) 英語表示
+- Cost chip "AI cost estimate / Today / This month / Avg/company" 英語
+- Onboarding wizard 全 5 step の titlebar / subtitle / step labels / 全フィールド英語
+
+### 既知の残り (今後)
+
+動的構築の些細な日本語: 「社」(ratio表示) / 「完了」(進捗) / Recovery バナーの「ほか N 社」等。
+正式対応は Phase 3 (CLI prompt 双言語化) と並行で完了予定。
+
 ## 2.0.33 - 2026-05-16 — i18n フル対応 Phase 1: ヘッダー言語切替 + Onboarding 言語選択
 
 ### 概要

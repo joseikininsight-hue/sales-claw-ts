@@ -830,7 +830,7 @@ body {
   }
 
   // ---- step 2: company profile ----
-  const PROFILE_FIELDS = [
+  const PROFILE_FIELDS_JA = [
     { key: 'companyName',     label: '会社名',        required: true,  hint: '株式会社 ○○' },
     { key: 'contactName',     label: '担当者名',      required: true,  hint: '山田 太郎' },
     { key: 'contactNameKana', label: '担当者名カナ',  required: false, hint: 'ヤマダ タロウ' },
@@ -842,12 +842,26 @@ body {
     { key: 'website',         label: '自社 Web サイト', required: false, hint: 'https://www.example.com/' },
     { key: 'address',         label: '住所',          required: true,  fullWidth: true, hint: '東京都千代田区...' },
   ];
+  const PROFILE_FIELDS_EN = [
+    { key: 'companyName',     label: 'Company name',   required: true,  hint: 'Acme, Inc.' },
+    { key: 'contactName',     label: 'Contact name',   required: true,  hint: 'Taro Yamada' },
+    { key: 'contactNameKana', label: 'Name (Kana)',    required: false, hint: 'optional — used by JP forms' },
+    { key: 'department',      label: 'Department',     required: false },
+    { key: 'contactTitle',    label: 'Job title',      required: false },
+    { key: 'email',           label: 'Email',          required: true,  hint: 'name@company.com' },
+    { key: 'phone',           label: 'Phone',          required: true,  hint: '+1 555 0100' },
+    { key: 'mobile',          label: 'Mobile',         required: false },
+    { key: 'website',         label: 'Company website', required: false, hint: 'https://www.example.com/' },
+    { key: 'address',         label: 'Address',        required: true,  fullWidth: true, hint: '1 Market St, San Francisco, CA' },
+  ];
 
   function renderStep2() {
+    const isJa = (state.language || 'ja') === 'ja';
+    const PROFILE_FIELDS = isJa ? PROFILE_FIELDS_JA : PROFILE_FIELDS_EN;
     const errMap = {};
     state.errors.forEach((e) => { errMap[e.field] = e.message || e.code; });
     const errBox = state.errors.length === 0 ? '' :
-      '<div class="errors"><strong>入力エラー</strong><ul>' +
+      '<div class="errors"><strong>' + (isJa ? '入力エラー' : 'Input error') + '</strong><ul>' +
       state.errors.map((e) => '<li>' + esc(e.message || e.code) + '</li>').join('') +
       '</ul></div>';
 
@@ -876,8 +890,12 @@ body {
       '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
       '  <div style="font-size: 40px;">🏢</div>',
       '  <div>',
-      '    <h2 style="margin: 0 0 4px;">自社情報</h2>',
-      '    <p class="lead" style="margin: 0;">送信先フォームに自動入力される情報です。<span class="req" style="color: var(--danger);">*</span> は必須項目。</p>',
+      isJa
+        ? '    <h2 style="margin: 0 0 4px;">自社情報</h2>'
+        : '    <h2 style="margin: 0 0 4px;">Company profile</h2>',
+      isJa
+        ? '    <p class="lead" style="margin: 0;">送信先フォームに自動入力される情報です。<span class="req" style="color: var(--danger);">*</span> は必須項目。</p>'
+        : '    <p class="lead" style="margin: 0;">This information is auto-filled into the recipient contact forms. <span class="req" style="color: var(--danger);">*</span> means required.</p>',
       '  </div>',
       '</div>',
       '<hr class="divider">',
@@ -887,15 +905,17 @@ body {
   }
 
   function renderStep2Actions() {
+    const isJa = (state.language || 'ja') === 'ja';
     return [
-      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<button class="btn btn-secondary" data-action="back">' + (isJa ? '戻る' : 'Back') + '</button>',
       '<div class="wiz-actions-right">',
-      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '  <button class="btn btn-primary" data-action="next">' + (isJa ? '次へ' : 'Next') + '</button>',
       '</div>',
     ].join('');
   }
 
   function bindStep2() {
+    const isJa = (state.language || 'ja') === 'ja';
     document.querySelectorAll('[data-field]').forEach((el) => {
       el.addEventListener('input', (e) => {
         state.companyProfile[el.dataset.field] = e.target.value;
@@ -909,31 +929,62 @@ body {
         body: JSON.stringify({ step: 'companyProfile', companyProfile: state.companyProfile })
       });
       if (r.body && r.body.errors && r.body.errors.length === 0) setStep(3);
-      else { state.errors = (r.body && r.body.errors) || [{ message: 'サーバ検証に失敗しました' }]; render(); }
+      else { state.errors = (r.body && r.body.errors) || [{ message: isJa ? 'サーバ検証に失敗しました' : 'Server-side validation failed' }]; render(); }
     });
   }
 
   // ---- step 3: strengths ----
+  // English translations of the 18 PRESET_STRENGTHS labels/details (parallel to PRESET_STRENGTHS order).
+  const PRESET_STRENGTHS_EN = {
+    web_app:     { label: 'Web app development',         detail: 'Frontend / backend / API for business web apps' },
+    cloud:       { label: 'Cloud build & operate',       detail: 'AWS / Azure / GCP infrastructure design and SRE' },
+    ai:          { label: 'AI / Machine learning',       detail: 'Generative AI, RAG, chatbots, inference platforms' },
+    data:        { label: 'Data analytics / BI',         detail: 'DWH, data pipelines, dashboard design' },
+    mobile:      { label: 'Mobile app development',      detail: 'iOS / Android native, React Native / Flutter' },
+    security:    { label: 'Security',                    detail: 'Vulnerability assessment, SOC ops, zero-trust design' },
+    cms:         { label: 'CMS / Web production',        detail: 'WordPress / Sitecore / HubSpot build & operate' },
+    design:      { label: 'UI / UX design',              detail: 'End-to-end from strategy through visual design' },
+    marketing:   { label: 'Digital marketing',           detail: 'SEO / paid ads / MA / CRM strategy' },
+    sales_ops:   { label: 'Sales outsourcing / SDR',     detail: 'Inside sales, appointment setting, deal qualification' },
+    pr_branding: { label: 'PR & branding',               detail: 'PR strategy, media exposure, corporate brand' },
+    research:    { label: 'Market research',             detail: 'Quant/qual research, competitive analysis, customer insight' },
+    biz_consult: { label: 'Management & ops consulting', detail: 'Business strategy, process improvement, DX support' },
+    hr:          { label: 'HR & talent acquisition',     detail: 'RPO, HR system design, talent management' },
+    finance:     { label: 'Accounting / tax / finance',  detail: 'Bookkeeping, tax filing, financial strategy, IPO prep' },
+    legal:       { label: 'Legal & contracts',           detail: 'Contract review, legal DD, IP, compliance' },
+    bpo:         { label: 'BPO / Outsourcing',           detail: 'Admin work, contact center, full back-office' },
+    logistics:   { label: 'Logistics / Supply chain',    detail: 'Warehouse ops, delivery optimization, SCM improvement' },
+  };
+
   function renderStep3() {
+    const isJa = (state.language || 'ja') === 'ja';
     const errBox = state.errors.length === 0 ? '' :
-      '<div class="errors"><strong>選択エラー</strong><ul>' +
+      '<div class="errors"><strong>' + (isJa ? '選択エラー' : 'Selection error') + '</strong><ul>' +
       state.errors.map((e) => '<li>' + esc(e.message || e.code) + '</li>').join('') +
       '</ul></div>';
 
     // セクション分類: index 0-7 = IT/Tech、 8-11 = 営業/マーケ、 12-15 = コンサル/専門、 16-17 = BPO/物流
-    const sectionRanges = [
+    const sectionRanges = isJa ? [
       { name: 'IT / テクノロジー',         start: 0,  end: 8 },
       { name: '営業 / マーケティング',     start: 8,  end: 12 },
       { name: 'コンサルティング / 専門',   start: 12, end: 16 },
       { name: 'BPO / 物流',                start: 16, end: 18 },
+    ] : [
+      { name: 'IT / Technology',           start: 0,  end: 8 },
+      { name: 'Sales / Marketing',         start: 8,  end: 12 },
+      { name: 'Consulting / Specialized',  start: 12, end: 16 },
+      { name: 'BPO / Logistics',           start: 16, end: 18 },
     ];
     let presetSectionsHtml = '';
     sectionRanges.forEach((sec) => {
       const cards = PRESETS.slice(sec.start, sec.end).map((p) => {
         const sel = state.selectedPresetKeys.indexOf(p.key) >= 0 ? ' selected' : '';
+        const en = PRESET_STRENGTHS_EN[p.key];
+        const label = isJa || !en ? p.label : en.label;
+        const detail = isJa || !en ? p.detail : en.detail;
         return '<div class="preset-card' + sel + '" data-key="' + esc(p.key) + '">' +
-          '<div class="label">' + esc(p.label) + '</div>' +
-          '<div class="detail">' + esc(p.detail) + '</div></div>';
+          '<div class="label">' + esc(label) + '</div>' +
+          '<div class="detail">' + esc(detail) + '</div></div>';
       }).join('');
       presetSectionsHtml += '<div class="preset-section">' + esc(sec.name) + '</div><div class="preset-grid">' + cards + '</div>';
     });
@@ -941,17 +992,17 @@ body {
     const customs = state.customStrengths.map((s, i) => [
       '<div class="custom-strength">',
       '  <div class="field-row">',
-      '    <div class="field"><label>ラベル<span class="req">*</span></label>',
-      '      <input data-custom="label" data-idx="' + i + '" type="text" value="' + esc(s.label || '') + '" placeholder="例: 越境 EC 構築">',
+      '    <div class="field"><label>' + (isJa ? 'ラベル' : 'Label') + '<span class="req">*</span></label>',
+      '      <input data-custom="label" data-idx="' + i + '" type="text" value="' + esc(s.label || '') + '" placeholder="' + (isJa ? '例: 越境 EC 構築' : 'e.g. Cross-border e-commerce build') + '">',
       '    </div>',
-      '    <div class="field"><label>キーワード (カンマ区切り)</label>',
+      '    <div class="field"><label>' + (isJa ? 'キーワード (カンマ区切り)' : 'Keywords (comma-separated)') + '</label>',
       '      <input data-custom="keywords" data-idx="' + i + '" type="text" value="' + esc((s.keywords || []).join(',')) + '">',
       '    </div>',
       '  </div>',
-      '  <div class="field"><label>詳細<span class="req">*</span></label>',
+      '  <div class="field"><label>' + (isJa ? '詳細' : 'Detail') + '<span class="req">*</span></label>',
       '    <textarea data-custom="detail" data-idx="' + i + '">' + esc(s.detail || '') + '</textarea>',
       '  </div>',
-      '  <button class="btn btn-link" data-custom-remove="' + i + '" style="padding:4px 8px;font-size:11px;color:var(--danger)">削除</button>',
+      '  <button class="btn btn-link" data-custom-remove="' + i + '" style="padding:4px 8px;font-size:11px;color:var(--danger)">' + (isJa ? '削除' : 'Remove') + '</button>',
       '</div>',
     ].join('')).join('');
 
@@ -959,26 +1010,31 @@ body {
       '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
       '  <div style="font-size: 40px;">💪</div>',
       '  <div>',
-      '    <h2 style="margin: 0 0 4px;">自社の強み</h2>',
-      '    <p class="lead" style="margin: 0;">フォーム送信時に相手企業のニーズに応じて 1〜2 個を選んで文面に反映します。<strong>最低 1 つ必須</strong>。</p>',
+      isJa
+        ? '    <h2 style="margin: 0 0 4px;">自社の強み</h2>'
+        : '    <h2 style="margin: 0 0 4px;">Your strengths</h2>',
+      isJa
+        ? '    <p class="lead" style="margin: 0;">フォーム送信時に相手企業のニーズに応じて 1〜2 個を選んで文面に反映します。<strong>最低 1 つ必須</strong>。</p>'
+        : '    <p class="lead" style="margin: 0;">When sending, 1-2 of these will be selected based on the recipient&#39;s needs and woven into the message. <strong>At least one is required.</strong></p>',
       '  </div>',
       '</div>',
       '<hr class="divider">',
       errBox,
       presetSectionsHtml,
       '<div style="display:flex;justify-content:space-between;align-items:center;margin: 24px 0 8px;">',
-      '  <div class="preset-section" style="margin: 0;">カスタム強み (任意)</div>',
-      '  <button class="btn btn-link" id="addCustom">+ 追加</button>',
+      '  <div class="preset-section" style="margin: 0;">' + (isJa ? 'カスタム強み (任意)' : 'Custom strengths (optional)') + '</div>',
+      '  <button class="btn btn-link" id="addCustom">+ ' + (isJa ? '追加' : 'Add') + '</button>',
       '</div>',
       customs,
     ].join('');
   }
 
   function renderStep3Actions() {
+    const isJa = (state.language || 'ja') === 'ja';
     return [
-      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<button class="btn btn-secondary" data-action="back">' + (isJa ? '戻る' : 'Back') + '</button>',
       '<div class="wiz-actions-right">',
-      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '  <button class="btn btn-primary" data-action="next">' + (isJa ? '次へ' : 'Next') + '</button>',
       '</div>',
     ].join('');
   }
@@ -1022,13 +1078,14 @@ body {
     });
     document.querySelector('[data-action="back"]').addEventListener('click', () => setStep(2));
     document.querySelector('[data-action="next"]').addEventListener('click', async () => {
+      const isJa = (state.language || 'ja') === 'ja';
       const merged = mergeStrengths();
       const r = await fetchJson('/api/onboarding/validate', {
         method: 'POST',
         body: JSON.stringify({ step: 'strengths', strengths: merged })
       });
       if (r.body && r.body.errors && r.body.errors.length === 0) setStep(4);
-      else { state.errors = (r.body && r.body.errors) || [{ message: 'サーバ検証に失敗しました' }]; render(); }
+      else { state.errors = (r.body && r.body.errors) || [{ message: isJa ? 'サーバ検証に失敗しました' : 'Server-side validation failed' }]; render(); }
     });
   }
 
@@ -1039,17 +1096,25 @@ body {
 
   // ---- step 4: target list (optional) ----
   function renderStep4() {
+    const isJa = (state.language || 'ja') === 'ja';
     const errBox = state.errors.length === 0 ? '' :
       '<div class="errors"><ul>' + state.errors.map((e) => '<li>' + esc(e.message) + '</li>').join('') + '</ul></div>';
     const loadedCount = state.targetList ? state.targetList.length : (state.targetListMeta && state.targetListMeta.count) || 0;
-    const summary = state.targetListMeta ?
-      '<div class="target-summary">✓ <strong>' + esc(state.targetListMeta.fileName) + '</strong> を読み込みました — 会社 ' + loadedCount + ' 件</div>' : '';
+    const summary = state.targetListMeta
+      ? (isJa
+          ? '<div class="target-summary">✓ <strong>' + esc(state.targetListMeta.fileName) + '</strong> を読み込みました — 会社 ' + loadedCount + ' 件</div>'
+          : '<div class="target-summary">✓ Loaded <strong>' + esc(state.targetListMeta.fileName) + '</strong> — ' + loadedCount + ' compan' + (loadedCount === 1 ? 'y' : 'ies') + '</div>')
+      : '';
     return [
       '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
       '  <div style="font-size: 40px;">📋</div>',
       '  <div>',
-      '    <h2 style="margin: 0 0 4px;">ターゲットリスト <span style="color: var(--text-3); font-weight: 500; font-size: 14px;">(任意)</span></h2>',
-      '    <p class="lead" style="margin: 0;">アプローチしたい会社の Excel/CSV をドラッグ&ドロップ。後でも追加可能です。<br>必須カラム: <code>会社名</code> / 推奨: <code>URL</code> <code>フォームURL</code></p>',
+      isJa
+        ? '    <h2 style="margin: 0 0 4px;">ターゲットリスト <span style="color: var(--text-3); font-weight: 500; font-size: 14px;">(任意)</span></h2>'
+        : '    <h2 style="margin: 0 0 4px;">Target list <span style="color: var(--text-3); font-weight: 500; font-size: 14px;">(optional)</span></h2>',
+      isJa
+        ? '    <p class="lead" style="margin: 0;">アプローチしたい会社の Excel/CSV をドラッグ&ドロップ。後でも追加可能です。<br>必須カラム: <code>会社名</code> / 推奨: <code>URL</code> <code>フォームURL</code></p>'
+        : '    <p class="lead" style="margin: 0;">Drag &amp; drop an Excel/CSV file of companies you want to reach out to. You can also add this later.<br>Required column: <code>Company name</code> / recommended: <code>URL</code> <code>Form URL</code></p>',
       '  </div>',
       '</div>',
       '<hr class="divider">',
@@ -1057,19 +1122,20 @@ body {
       '<div class="dropzone" id="dropzone">',
       '  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>',
       '  <div class="ico">📂</div>',
-      '  <div class="main-text">クリック または ドラッグ&ドロップ</div>',
-      '  <div class="sub-text">.xlsx / .xls / .csv 対応</div>',
+      '  <div class="main-text">' + (isJa ? 'クリック または ドラッグ&ドロップ' : 'Click or drag &amp; drop') + '</div>',
+      '  <div class="sub-text">' + (isJa ? '.xlsx / .xls / .csv 対応' : 'Supports .xlsx / .xls / .csv') + '</div>',
       '</div>',
       summary,
     ].join('');
   }
 
   function renderStep4Actions() {
+    const isJa = (state.language || 'ja') === 'ja';
     return [
-      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<button class="btn btn-secondary" data-action="back">' + (isJa ? '戻る' : 'Back') + '</button>',
       '<div class="wiz-actions-right">',
-      '  <button class="btn btn-link" data-action="skip">スキップ</button>',
-      '  <button class="btn btn-primary" data-action="next">次へ</button>',
+      '  <button class="btn btn-link" data-action="skip">' + (isJa ? 'スキップ' : 'Skip') + '</button>',
+      '  <button class="btn btn-primary" data-action="next">' + (isJa ? '次へ' : 'Next') + '</button>',
       '</div>',
     ].join('');
   }
@@ -1088,6 +1154,7 @@ body {
   }
 
   function handleFile(file) {
+    const isJa = (state.language || 'ja') === 'ja';
     const reader = new FileReader();
     reader.onload = function () {
       const bytes = new Uint8Array(reader.result);
@@ -1104,35 +1171,43 @@ body {
           state.errors = [];
           persistProgress();
         } else {
-          state.errors = [{ message: (r.body && r.body.error) || 'ファイル読み込みに失敗しました' }];
+          state.errors = [{ message: (r.body && r.body.error) || (isJa ? 'ファイル読み込みに失敗しました' : 'Failed to read the file') }];
         }
         render();
       });
     };
     reader.onerror = function () {
-      state.errors = [{ message: 'ファイル読み込みに失敗しました' }];
+      state.errors = [{ message: isJa ? 'ファイル読み込みに失敗しました' : 'Failed to read the file' }];
       render();
     };
     reader.readAsArrayBuffer(file);
   }
 
   // ---- step 5: AI auth ----
-  const AI_PROVIDERS = [
+  const AI_PROVIDERS_JA = [
     { id: 'claude', name: 'Claude',    vendor: 'Anthropic', icon: '/assets/vendor/ai-icons/claude-code.svg',  desc: 'Claude Code CLI を使って分析・送信' },
     { id: 'codex',  name: 'Codex',     vendor: 'OpenAI',    icon: '/assets/vendor/ai-icons/codex-openai.svg', desc: 'OpenAI Codex CLI を使って分析・送信' },
     { id: 'gemini', name: 'Gemini',    vendor: 'Google',    icon: '/assets/vendor/ai-icons/gemini-cli.svg',   desc: 'Google Gemini CLI を使って分析・送信' },
   ];
+  const AI_PROVIDERS_EN = [
+    { id: 'claude', name: 'Claude',    vendor: 'Anthropic', icon: '/assets/vendor/ai-icons/claude-code.svg',  desc: 'Use Claude Code CLI to analyze and send' },
+    { id: 'codex',  name: 'Codex',     vendor: 'OpenAI',    icon: '/assets/vendor/ai-icons/codex-openai.svg', desc: 'Use OpenAI Codex CLI to analyze and send' },
+    { id: 'gemini', name: 'Gemini',    vendor: 'Google',    icon: '/assets/vendor/ai-icons/gemini-cli.svg',   desc: 'Use Google Gemini CLI to analyze and send' },
+  ];
 
   function aiStatusBadge(provider) {
+    const isJa = (state.language || 'ja') === 'ja';
     const status = state.aiAuthStatus && state.aiAuthStatus[provider];
-    if (!status) return '<span class="status unknown"><span class="dot"></span>未確認</span>';
-    if (status.checking) return '<span class="status unknown"><span class="spinner" style="width:9px;height:9px;border-width:1.5px;vertical-align:middle"></span> 確認中…</span>';
-    if (status.installed && status.loggedIn) return '<span class="status ok"><span class="dot"></span>接続済</span>';
-    if (status.installed) return '<span class="status bad"><span class="dot"></span>未ログイン</span>';
-    return '<span class="status bad"><span class="dot"></span>未インストール</span>';
+    if (!status) return '<span class="status unknown"><span class="dot"></span>' + (isJa ? '未確認' : 'Not checked') + '</span>';
+    if (status.checking) return '<span class="status unknown"><span class="spinner" style="width:9px;height:9px;border-width:1.5px;vertical-align:middle"></span> ' + (isJa ? '確認中…' : 'Checking…') + '</span>';
+    if (status.installed && status.loggedIn) return '<span class="status ok"><span class="dot"></span>' + (isJa ? '接続済' : 'Connected') + '</span>';
+    if (status.installed) return '<span class="status bad"><span class="dot"></span>' + (isJa ? '未ログイン' : 'Not signed in') + '</span>';
+    return '<span class="status bad"><span class="dot"></span>' + (isJa ? '未インストール' : 'Not installed') + '</span>';
   }
 
   function renderStep5() {
+    const isJa = (state.language || 'ja') === 'ja';
+    const AI_PROVIDERS = isJa ? AI_PROVIDERS_JA : AI_PROVIDERS_EN;
     const errBox = state.errors.length === 0 ? '' :
       '<div class="errors"><ul>' + state.errors.map((e) => '<li>' + esc(e.message) + '</li>').join('') + '</ul></div>';
     const cards = AI_PROVIDERS.map((p) => {
@@ -1152,8 +1227,10 @@ body {
     let actionHint = '';
     if (status && status.installed === false) {
       actionHint =
-        '<div class="notice warn"><strong>' + esc(selectedProvider.name) + ' CLI が未インストールです</strong>' +
-        'ターミナルで以下のコマンドでインストールしてから「認証状態を再確認」してください:<br>' +
+        '<div class="notice warn"><strong>' + esc(selectedProvider.name) + (isJa ? ' CLI が未インストールです' : ' CLI is not installed') + '</strong>' +
+        (isJa
+          ? 'ターミナルで以下のコマンドでインストールしてから「認証状態を再確認」してください:<br>'
+          : 'Install it from a terminal with the command below, then click &quot;Re-check status&quot;:<br>') +
         '<code style="display:block;margin-top:8px;padding:8px;background:#fff;border:1px solid var(--border);border-radius:6px;font-family:monospace;">' +
         (state.aiProvider === 'claude' ? 'npm install -g @anthropic-ai/claude-code' :
          state.aiProvider === 'codex' ? 'npm install -g @openai/codex' :
@@ -1161,23 +1238,39 @@ body {
         '</code></div>';
     } else if (status && status.installed && !status.loggedIn) {
       actionHint =
-        '<div class="notice info"><strong>' + esc(selectedProvider.name) + ' CLI に未ログインです</strong>' +
-        'ダッシュボードの「AI を起動」→ ターミナルで <code>/login</code> (または各 CLI のログイン手順) を実行してください。' +
-        (state.aiProvider === 'claude' ? '<br>Claude は <a href="https://claude.ai/login" target="_blank" rel="noopener">claude.ai/login</a> 経由のブラウザ認証です。' : '') +
+        '<div class="notice info"><strong>' + esc(selectedProvider.name) + (isJa ? ' CLI に未ログインです' : ' CLI is not signed in') + '</strong>' +
+        (isJa
+          ? 'ダッシュボードの「AI を起動」→ ターミナルで <code>/login</code> (または各 CLI のログイン手順) を実行してください。'
+          : 'From the dashboard click &quot;Start AI&quot;, then run <code>/login</code> in the terminal (or follow that CLI&#39;s sign-in flow).') +
+        (state.aiProvider === 'claude'
+          ? (isJa
+              ? '<br>Claude は <a href="https://claude.ai/login" target="_blank" rel="noopener">claude.ai/login</a> 経由のブラウザ認証です。'
+              : '<br>Claude uses browser-based auth via <a href="https://claude.ai/login" target="_blank" rel="noopener">claude.ai/login</a>.')
+          : '') +
         '</div>';
     } else if (status && status.installed && status.loggedIn) {
       actionHint =
-        '<div class="notice ok"><strong>✓ ' + esc(selectedProvider.name) + ' 連携 OK</strong>セットアップを完了できます。</div>';
+        '<div class="notice ok"><strong>✓ ' + esc(selectedProvider.name) + (isJa ? ' 連携 OK' : ' is ready') + '</strong>' +
+        (isJa ? 'セットアップを完了できます。' : 'You can complete setup now.') +
+        '</div>';
     } else {
-      actionHint = '<div class="notice info"><strong>認証状態を確認中…</strong>「認証状態を再確認」ボタンで再度チェックできます。</div>';
+      actionHint = '<div class="notice info"><strong>' +
+        (isJa ? '認証状態を確認中…' : 'Checking auth status…') +
+        '</strong>' +
+        (isJa ? '「認証状態を再確認」ボタンで再度チェックできます。' : 'Use the &quot;Re-check status&quot; button to retry.') +
+        '</div>';
     }
 
     return [
       '<div class="welcome-grid" style="grid-template-columns: 64px 1fr; align-items: center; margin-bottom: 8px;">',
       '  <div style="font-size: 40px;">🤖</div>',
       '  <div>',
-      '    <h2 style="margin: 0 0 4px;">AI 連携</h2>',
-      '    <p class="lead" style="margin: 0;">フォーム解析と入力を担当する AI CLI を選びます。Sales Claw 自体には課金機能はなく、各 AI プロバイダの料金体系に従います。</p>',
+      isJa
+        ? '    <h2 style="margin: 0 0 4px;">AI 連携</h2>'
+        : '    <h2 style="margin: 0 0 4px;">AI integration</h2>',
+      isJa
+        ? '    <p class="lead" style="margin: 0;">フォーム解析と入力を担当する AI CLI を選びます。Sales Claw 自体には課金機能はなく、各 AI プロバイダの料金体系に従います。</p>'
+        : '    <p class="lead" style="margin: 0;">Choose the AI CLI that will analyze and fill forms. Sales Claw itself does not bill; each AI provider charges per their own pricing.</p>',
       '  </div>',
       '</div>',
       '<hr class="divider">',
@@ -1186,21 +1279,24 @@ body {
       actionHint,
       '<button class="btn btn-secondary" id="recheckAi" style="margin-top: 14px;">',
       '  <span class="spinner" id="recheckSpinner" style="display:none"></span>',
-      '  認証状態を再確認',
+      '  ' + (isJa ? '認証状態を再確認' : 'Re-check status'),
       '</button>',
       '<label class="terms-check" style="margin-top: 24px;">',
       '  <input type="checkbox" id="bypassAi"' + (state.bypassAi ? ' checked' : '') + '>',
       '  <span class="box"></span>',
-      '  <span>後で設定する (AI 連携なしで完了する) — フォーム入力機能は使えません</span>',
+      isJa
+        ? '  <span>後で設定する (AI 連携なしで完了する) — フォーム入力機能は使えません</span>'
+        : '  <span>Configure later (finish without AI integration) — form filling will not be available</span>',
       '</label>',
     ].join('');
   }
 
   function renderStep5Actions() {
+    const isJa = (state.language || 'ja') === 'ja';
     return [
-      '<button class="btn btn-secondary" data-action="back">戻る</button>',
+      '<button class="btn btn-secondary" data-action="back">' + (isJa ? '戻る' : 'Back') + '</button>',
       '<div class="wiz-actions-right">',
-      '  <button class="btn btn-primary" data-action="finish">セットアップ完了</button>',
+      '  <button class="btn btn-primary" data-action="finish">' + (isJa ? 'セットアップ完了' : 'Finish setup') + '</button>',
       '</div>',
     ].join('');
   }
@@ -1236,6 +1332,7 @@ body {
   }
 
   async function finish() {
+    const isJa = (state.language || 'ja') === 'ja';
     const payload = {
       companyProfile: state.companyProfile,
       valuePropositions: { strengths: mergeStrengths() },
@@ -1248,13 +1345,17 @@ body {
     if (r.body && r.body.ok) {
       window.location.href = '/' + (SESSION_TOKEN ? '?session=' + encodeURIComponent(SESSION_TOKEN) : '');
     } else {
-      state.errors = (r.body && r.body.errors) || [{ message: 'セットアップに失敗しました。もう一度お試しください。' }];
+      state.errors = (r.body && r.body.errors) || [{ message: isJa ? 'セットアップに失敗しました。もう一度お試しください。' : 'Setup failed. Please try again.' }];
       render();
     }
   }
 
   function cancelWizard() {
-    if (confirm('セットアップをキャンセルしますか? 入力した内容は保存されています。再起動時に続きから再開できます。')) {
+    const isJa = (state.language || 'ja') === 'ja';
+    const msg = isJa
+      ? 'セットアップをキャンセルしますか? 入力した内容は保存されています。再起動時に続きから再開できます。'
+      : 'Cancel setup? Your progress has been saved and will resume next time you start.';
+    if (confirm(msg)) {
       window.location.href = '/' + (SESSION_TOKEN ? '?session=' + encodeURIComponent(SESSION_TOKEN) : '');
     }
   }

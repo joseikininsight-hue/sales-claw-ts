@@ -6327,7 +6327,7 @@ function buildDashboardDataFromSources() {
   for (let i = trendDays - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    trendLabels.push(i === 0 ? (_lang === 'ja' ? '今日' : 'Today') : i === 1 ? (_lang === 'ja' ? '昨日' : 'Yesterday') : (_lang === 'ja' ? `${i}日前` : `${i}d ago`));
+    trendLabels.push(i === 0 ? i18nT(_lang, 'analytics.trend.today') : i === 1 ? i18nT(_lang, 'analytics.trend.yesterday') : i18nT(_lang, 'analytics.trend.daysAgo', { n: i }));
     trendIndexByDay.set(d.toISOString().slice(0, 10), trendDays - 1 - i);
   }
   allLogs.forEach((log: any) => {
@@ -6467,7 +6467,7 @@ function buildPage() {
     `<option value="${provider.id}">${provider.displayName}</option>`
   ).join('');
   return `<!DOCTYPE html>
-<html lang="ja">
+<html lang="${_lang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -6516,9 +6516,9 @@ ${renderStyles()}
   <div class="app-brand-meta">
     <span title="Version ${APP_VERSION}" class="app-version-chip">v${APP_VERSION}</span>
     <span class="app-build-chip" style="color:${buildMeta.fg};background:${buildMeta.bg}" title="${buildMeta.title}">${buildMeta.label}</span>
-    <button id="updateCheckBtn" type="button" title="${_lang === 'ja' ? '最新アップデートを確認' : 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
+    <button id="updateCheckBtn" type="button" title="${_t['header.updateCheck.title'] || 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
       <span id="updateCheckIcon" class="material-symbols-outlined" style="font-size:13px">sync</span>
-      <span id="updateCheckLabel">${_lang === 'ja' ? '更新確認' : 'Update'}</span>
+      <span id="updateCheckLabel">${_t['header.updateCheck.label'] || 'Update'}</span>
     </button>
   <!-- Live status -->
   <div style="display:flex;align-items:center;gap:6px;margin-right:2px">
@@ -6536,16 +6536,16 @@ ${renderStyles()}
     </div>
     <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
     <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
-    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_lang === 'ja' ? 'AI 停止中にキューに残っている会社をクリア (再投入可能にする)' : 'Clear stuck queue while AI is stopped (lets you re-queue)'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_lang === 'ja' ? 'キュー' : 'QUEUE'}</button>
+    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_t['header.queueReset.title'] || 'Clear stuck queue'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_t['header.queueReset.label'] || 'QUEUE'}</button>
   </div>
   <!-- Icon-only action buttons -->
   <div style="display:flex;align-items:center;gap:2px">
     <!-- v2.0.33: 言語切替トグル (ja ↔ en)。クリックで preferences.language を更新 → リロード -->
-    <button class="lang-toggle" onclick="toggleLanguage()" title="${_lang === 'ja' ? '言語切替 (Switch to English)' : 'Switch language (日本語へ)'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.72rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
+    <button class="lang-toggle" onclick="toggleLanguage()" title="${_t['header.langToggle.title'] || 'Switch language'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.72rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
       <span class="material-symbols-outlined" style="font-size:14px;margin-right:4px">language</span>
-      <span>${_lang === 'ja' ? 'EN' : '日本語'}</span>
+      <span>${_t['header.langToggle.label'] || 'EN'}</span>
     </button>
-    <button class="theme-toggle" onclick="toggleTheme()" title="${_lang === 'ja' ? 'テーマ切替' : 'Toggle theme'}" aria-label="Toggle theme">
+    <button class="theme-toggle" onclick="toggleTheme()" title="${_t['header.themeToggle.title'] || 'Toggle theme'}" aria-label="Toggle theme">
       <span class="ti sun"><span class="material-symbols-outlined" style="font-size:18px">light_mode</span></span>
       <span class="ti moon"><span class="material-symbols-outlined" style="font-size:18px">dark_mode</span></span>
     </button>
@@ -6566,31 +6566,31 @@ ${renderStyles()}
 <div id="updateBanner" style="display:none;position:fixed;top:48px;left:0;right:0;z-index:49;background:#2563eb;color:#fff;padding:6px 16px;font-size:.75rem;font-weight:600;align-items:center;gap:8px;justify-content:center"></div>
 
 <!-- Cost summary chip (AI トークン消費概算 — pollCostSummary 経由で表示) -->
-<div id="costChip" title="${_lang === 'ja' ? 'AI トークン概算 (Anthropic 公開価格 / 実請求とは異なる場合があります)' : 'AI token cost estimate (Anthropic listed prices, actual billing may differ)'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.72rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
+<div id="costChip" title="${_t['cost.title.tooltip'] || 'AI token cost estimate'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.72rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
     <span style="display:inline-flex;align-items:center;gap:5px;font-weight:700">
       <span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">payments</span>
-      ${_lang === 'ja' ? 'AI コスト目安' : 'AI cost estimate'}
+      ${_t['cost.title'] || 'AI cost estimate'}
     </span>
     <button onclick="document.getElementById('costChip').style.display='none'" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;padding:0;line-height:1">×</button>
   </div>
-  <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_lang === 'ja' ? '今日' : 'Today'}</span><span id="costToday" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
-  <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_lang === 'ja' ? '今月' : 'This month'}</span><span id="costMonth" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
-  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.66rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_lang === 'ja' ? '1社平均' : 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
+  <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.today'] || 'Today'}</span><span id="costToday" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
+  <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.thisMonth'] || 'This month'}</span><span id="costMonth" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
+  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.66rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_t['cost.avgPerCompany'] || 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
 </div>
 
 <!-- Recovery banner (前回中断バッチの復旧通知) — pollRecoveryStatus 経由で表示 -->
 <div id="recoveryBanner" style="display:none;position:fixed;top:48px;left:0;right:0;z-index:48;background:#ea580c;color:#fff;padding:10px 20px;font-size:.78rem;font-weight:600;align-items:center;gap:14px;justify-content:center;flex-wrap:wrap">
   <span style="display:inline-flex;align-items:center;gap:6px">
     <span class="material-symbols-outlined" style="font-size:18px">history</span>
-    <span id="recoveryBannerText">${_lang === 'ja' ? '前回のセッションで中断されたバッチがあります' : 'Recovery snapshot detected from previous session'}</span>
+    <span id="recoveryBannerText">${_t['recovery.banner.text'] || 'Recovery snapshot detected from previous session'}</span>
   </span>
   <span id="recoveryBannerDetail" style="font-weight:400;opacity:.9"></span>
   <button id="recoveryResumeBtn" onclick="resumeRecovery()" style="background:#fff;color:#ea580c;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.72rem">
-    ${_lang === 'ja' ? '続きから実行' : 'Resume'}
+    ${_t['recovery.banner.resume'] || 'Resume'}
   </button>
   <button id="recoveryDiscardBtn" onclick="discardRecovery()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.72rem">
-    ${_lang === 'ja' ? '破棄' : 'Discard'}
+    ${_t['recovery.banner.discard'] || 'Discard'}
   </button>
 </div>
 
@@ -6604,8 +6604,8 @@ ${renderStyles()}
         <img src="/assets/vendor/ai-icons/claude-code.svg" width="26" height="26" alt="Claude Code">
       </div>
       <div class="launch-head-copy">
-        <div id="launchProviderTitle" class="launch-head-title">${_lang === 'ja' ? 'AI を起動' : 'Launch AI'}</div>
-        <div id="launchProviderSubtitle" class="launch-head-sub">${_lang === 'ja' ? 'CLI 環境で AI を起動します' : 'Launch AI in CLI environment'}</div>
+        <div id="launchProviderTitle" class="launch-head-title">${_t['launch.title'] || 'Launch AI'}</div>
+        <div id="launchProviderSubtitle" class="launch-head-sub">${_t['launch.subtitle'] || 'Launch AI in CLI environment'}</div>
       </div>
       <button class="launch-close" onclick="closeLaunchModal()" aria-label="Close">
         <span class="material-symbols-outlined">close</span>
@@ -6618,7 +6618,7 @@ ${renderStyles()}
     <div class="launch-body">
       <!-- AI モデル -->
       <section class="launch-section">
-        <div class="launch-section-label">${_lang === 'ja' ? 'AI モデル' : 'AI model'}</div>
+        <div class="launch-section-label">${_t['launch.section.aiModel'] || 'AI model'}</div>
         <div class="launch-providers">
           <div id="launchProviderCard_claude" class="launch-provider-card claude" onclick="selectLaunchProvider('claude')">
             <div class="lp-check">✓</div>
@@ -6651,17 +6651,17 @@ ${renderStyles()}
 
       <!-- 送信ポリシー -->
       <section class="launch-section">
-        <div class="launch-section-label">${_t['launch.submitPolicy.title'] || (_lang === 'ja' ? '送信ポリシー' : 'Submission policy')}</div>
+        <div class="launch-section-label">${_t['launch.submitPolicy.title'] || 'Submission policy'}</div>
         <div class="launch-policy-select">
           <select id="launchAutoSendSafeSelect" onchange="setLaunchAutoSendSafe(this.value === 'true')">
-            <option value="false">${_t['launch.submitPolicy.approval'] || (_lang === 'ja' ? '確認待ちで止める（推奨）' : 'Stop for approval (recommended)')}</option>
-            <option value="true">${_t['launch.submitPolicy.autoSendSafe'] || (_lang === 'ja' ? '安全なフォームは自動送信する' : 'Auto-send safe forms')}</option>
+            <option value="false">${_t['launch.submitPolicy.approval'] || 'Stop for approval (recommended)'}</option>
+            <option value="true">${_t['launch.submitPolicy.autoSendSafe'] || 'Auto-send safe forms'}</option>
           </select>
           <span class="material-symbols-outlined launch-policy-arrow">expand_more</span>
         </div>
         <div class="launch-policy-note">
           <span class="material-symbols-outlined">verified_user</span>
-          <span id="launchAutoSendSafeHelp">${_t['launch.submitPolicy.help'] || (_lang === 'ja' ? '機密情報や個人情報を保護するための安全な設定です。' : 'Safe defaults to protect confidential and personal data.')}</span>
+          <span id="launchAutoSendSafeHelp">${_t['launch.submitPolicy.help'] || 'Safe defaults to protect confidential and personal data.'}</span>
         </div>
       </section>
 
@@ -6671,46 +6671,46 @@ ${renderStyles()}
            (yolo) で固定。詳細設定を開いた人だけが変更可能。 -->
       <div id="launchAdvancedModes" style="display:none">
         <section class="launch-section">
-          <div class="launch-section-label">${_lang === 'ja' ? '起動モード（任意・上級者向け）' : 'Launch mode (advanced, optional)'}</div>
+          <div class="launch-section-label">${_t['launch.section.mode'] || 'Launch mode (advanced, optional)'}</div>
           <div class="launch-modes">
             <div id="launchOpt_bypassPermissions" class="launch-mode-card recommended" onclick="selectLaunchMode('bypassPermissions')">
               <input type="radio" name="launchMode" value="bypassPermissions" style="display:none">
-              <div id="launchOptTag_bypassPermissions" class="launch-mode-tag">${_lang === 'ja' ? '推奨 (yolo)' : 'Default (yolo)'}</div>
+              <div id="launchOptTag_bypassPermissions" class="launch-mode-tag">${_t['launch.mode.bypass.tag'] || 'Default (yolo)'}</div>
               <div class="launch-mode-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 L3 14 H12 L11 22 L21 10 H12 Z"/></svg>
               </div>
-              <div id="launchOptTitle_bypassPermissions" class="launch-mode-title">${_lang === 'ja' ? '権限スキップ（yolo / 推奨）' : 'Skip permissions (yolo / default)'}</div>
-              <div id="launchOptDesc_bypassPermissions" class="launch-mode-desc">${_lang === 'ja' ? 'Sales Claw 側で送信前承認とログを管理しているので、CLI 側の確認は不要。' : 'Sales Claw enforces human approval and logs separately, so the CLI prompts are redundant.'}</div>
+              <div id="launchOptTitle_bypassPermissions" class="launch-mode-title">${_t['launch.mode.bypass.title'] || 'Skip permissions (yolo / default)'}</div>
+              <div id="launchOptDesc_bypassPermissions" class="launch-mode-desc">${_t['launch.mode.bypass.desc'] || 'Sales Claw enforces human approval and logs separately, so the CLI prompts are redundant.'}</div>
               <div id="launchCheck_bypassPermissions" class="launch-mode-check"><span class="material-symbols-outlined">check</span></div>
             </div>
             <div id="launchOpt_auto" class="launch-mode-card dev" onclick="selectLaunchMode('auto')">
               <input type="radio" name="launchMode" value="auto" style="display:none">
-              <div id="launchOptTag_auto" class="launch-mode-tag">${_lang === 'ja' ? '自動' : 'Auto'}</div>
+              <div id="launchOptTag_auto" class="launch-mode-tag">${_t['launch.mode.auto.tag'] || 'Auto'}</div>
               <div class="launch-mode-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 12 11 14 15 10"/><circle cx="12" cy="12" r="10"/></svg>
               </div>
-              <div id="launchOptTitle_auto" class="launch-mode-title">${_lang === 'ja' ? '自動 (auto)' : 'Auto'}</div>
-              <div id="launchOptDesc_auto" class="launch-mode-desc">${_lang === 'ja' ? 'CLI 側の許可ロジックを使う。多くの操作で自動承認される。' : 'Use CLI permission logic; most actions auto-approve.'}</div>
+              <div id="launchOptTitle_auto" class="launch-mode-title">${_t['launch.mode.auto.title'] || 'Auto'}</div>
+              <div id="launchOptDesc_auto" class="launch-mode-desc">${_t['launch.mode.auto.desc'] || 'Use CLI permission logic; most actions auto-approve.'}</div>
               <div id="launchCheck_auto" class="launch-mode-check"><span class="material-symbols-outlined">check</span></div>
             </div>
             <div id="launchOpt_default" class="launch-mode-card dev" onclick="selectLaunchMode('default')">
               <input type="radio" name="launchMode" value="default" style="display:none">
-              <div id="launchOptTag_default" class="launch-mode-tag">${_lang === 'ja' ? '開発' : 'Dev'}</div>
+              <div id="launchOptTag_default" class="launch-mode-tag">${_t['launch.mode.default.tag'] || 'Dev'}</div>
               <div class="launch-mode-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
               </div>
               <div id="launchOptTitle_default" class="launch-mode-title">default</div>
-              <div id="launchOptDesc_default" class="launch-mode-desc">${_lang === 'ja' ? '標準。CLIの許可プロンプトで止まることがあります' : 'Default. May stop on CLI permission prompts.'}</div>
+              <div id="launchOptDesc_default" class="launch-mode-desc">${_t['launch.mode.default.desc'] || 'Default. May stop on CLI permission prompts.'}</div>
               <div id="launchCheck_default" class="launch-mode-check"><span class="material-symbols-outlined">check</span></div>
             </div>
             <div id="launchOpt_acceptEdits" class="launch-mode-card dev" onclick="selectLaunchMode('acceptEdits')">
               <input type="radio" name="launchMode" value="acceptEdits" style="display:none">
-              <div id="launchOptTag_acceptEdits" class="launch-mode-tag">${_lang === 'ja' ? '開発' : 'Dev'}</div>
+              <div id="launchOptTag_acceptEdits" class="launch-mode-tag">${_t['launch.mode.acceptEdits.tag'] || 'Dev'}</div>
               <div class="launch-mode-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </div>
               <div id="launchOptTitle_acceptEdits" class="launch-mode-title">acceptEdits</div>
-              <div id="launchOptDesc_acceptEdits" class="launch-mode-desc">${_lang === 'ja' ? '編集は通り、コマンドやブラウザは確認待ちで止まることがあります' : 'Edits flow; commands/browser may still pause.'}</div>
+              <div id="launchOptDesc_acceptEdits" class="launch-mode-desc">${_t['launch.mode.acceptEdits.desc'] || 'Edits flow; commands/browser may still pause.'}</div>
               <div id="launchCheck_acceptEdits" class="launch-mode-check"><span class="material-symbols-outlined">check</span></div>
             </div>
           </div>
@@ -6719,12 +6719,12 @@ ${renderStyles()}
           <div id="launchSetupDiagnostics" class="launch-diag">
             <div class="launch-diag-head" onclick="toggleDiagPanel()">
               <div class="launch-diag-head-left">
-                <div class="launch-section-label" style="margin:0">${_lang === 'ja' ? 'セットアップ診断' : 'Setup diagnostics'}</div>
+                <div class="launch-section-label" style="margin:0">${_t['launch.diag.title'] || 'Setup diagnostics'}</div>
                 <div id="launchDiagBadge" class="launch-diag-badge"></div>
               </div>
               <span id="launchDiagArrow" class="launch-diag-arrow">▼</span>
             </div>
-            <div id="launchSetupDiagnosticsBody" class="launch-diag-body">${_lang === 'ja' ? '診断を読み込み中...' : 'Loading diagnostics...'}</div>
+            <div id="launchSetupDiagnosticsBody" class="launch-diag-body">${_t['launch.diag.loading'] || 'Loading diagnostics...'}</div>
           </div>
         </section>
       </div>
@@ -6734,14 +6734,14 @@ ${renderStyles()}
     <div class="launch-foot">
       <button id="launchAdvancedToggle" class="launch-advanced-link" type="button" onclick="toggleLaunchAdvancedModes()">
         <span class="material-symbols-outlined">settings</span>
-        ${_lang === 'ja' ? '詳細設定' : 'Advanced'}
+        ${_t['launch.advanced'] || 'Advanced'}
       </button>
       <div class="launch-foot-actions">
-        <button class="launch-cancel" onclick="closeLaunchModal()">${_lang === 'ja' ? 'キャンセル' : 'Cancel'}</button>
-        <button id="launchExternalBtn" class="launch-external" onclick="confirmExternalLaunch()" style="display:none">${_lang === 'ja' ? '外部で開く' : 'Open External'}</button>
+        <button class="launch-cancel" onclick="closeLaunchModal()">${_t['launch.cancel'] || 'Cancel'}</button>
+        <button id="launchExternalBtn" class="launch-external" onclick="confirmExternalLaunch()" style="display:none">${_t['launch.openExternal'] || 'Open External'}</button>
         <button id="launchConfirmBtn" class="launch-confirm-btn" onclick="confirmLaunch()">
           <span class="material-symbols-outlined">play_arrow</span>
-          ${_lang === 'ja' ? 'AI を起動' : 'Launch AI'}
+          ${_t['launch.confirm'] || 'Launch AI'}
         </button>
       </div>
       <div id="launchSelectedLabel" style="display:none"></div>
@@ -6815,8 +6815,8 @@ ${renderStyles()}
           <input type="text" id="new-companyName" placeholder="${_t['ph.companyName']}">
         </div>
         <div class="settings-group hud-field">
-          <label><span class="material-symbols-outlined">category</span>${_t['field.type'] || (_lang === 'ja' ? '種別' : 'Type')}</label>
-          <input type="text" id="new-type" placeholder="${_lang === 'ja' ? '例: SIer / SaaS / 製造' : 'e.g. SIer / SaaS / Manufacturing'}">
+          <label><span class="material-symbols-outlined">category</span>${_t['field.type'] || 'Type'}</label>
+          <input type="text" id="new-type" placeholder="${_t['companyModal.placeholder.type'] || 'e.g. SIer / SaaS / Manufacturing'}">
         </div>
         <div class="settings-group hud-field">
           <label><span class="material-symbols-outlined">language</span>${_t['field.website']}</label>
@@ -6828,15 +6828,15 @@ ${renderStyles()}
         </div>
         <div class="settings-group hud-field">
           <label><span class="material-symbols-outlined">radio_button_unchecked</span>${_t['field.colStatus']}</label>
-          <input type="text" id="new-status" placeholder="${_lang === 'ja' ? '例: ○ / 空欄' : 'e.g. target'}">
+          <input type="text" id="new-status" placeholder="${_t['companyModal.placeholder.status'] || 'e.g. target'}">
         </div>
         <div class="settings-group hud-field">
           <label><span class="material-symbols-outlined">trending_up</span>${_t['field.colProgress']}</label>
-          <input type="text" id="new-progress" placeholder="${_lang === 'ja' ? '任意' : 'Optional'}">
+          <input type="text" id="new-progress" placeholder="${_t['companyModal.placeholder.progress'] || 'Optional'}">
         </div>
         <div class="settings-group hud-field modal-grid-full">
           <label><span class="material-symbols-outlined">description</span>${_t['field.colNotes']}</label>
-          <textarea id="new-notes" placeholder="${_lang === 'ja' ? '社内メモや補足' : 'Internal note'}"></textarea>
+          <textarea id="new-notes" placeholder="${_t['companyModal.placeholder.notes'] || 'Internal note'}"></textarea>
         </div>
       </div>
       <label class="hud-check">
@@ -6860,15 +6860,15 @@ ${renderStyles()}
 <div id="mainTabNav">
   <button class="tab-btn active" data-tab="dashboard">
     <span class="material-symbols-outlined tab-icon">dashboard</span>
-    ${_lang === 'ja' ? 'ダッシュボード' : 'Dashboard'}
+    ${_t['tab.dashboard'] || 'Dashboard'}
   </button>
   <button class="tab-btn" data-tab="companies">
     <span class="material-symbols-outlined tab-icon">table_view</span>
     ${_t['tab.companies']}
   </button>
-  <button class="tab-btn" data-tab="list-builder" title="${_lang === 'ja' ? '企業リストを自動収集' : 'Auto-collect company list'}">
+  <button class="tab-btn" data-tab="list-builder" title="${_t['tab.listBuilder.title'] || 'Auto-collect company list'}">
     <span class="material-symbols-outlined tab-icon">playlist_add</span>
-    ${_lang === 'ja' ? 'リスト作成' : 'List Builder'}
+    ${_t['tab.listBuilder'] || 'List Builder'}
   </button>
   <button class="tab-btn" data-tab="awaiting">
     <span class="material-symbols-outlined tab-icon">pending_actions</span>
@@ -6913,14 +6913,14 @@ ${renderStyles()}
         <div class="analytics-donut-center">
           <span class="analytics-donut-num" id="analyticsPercent">0</span>
           <span class="analytics-donut-suffix">%</span>
-          <span class="analytics-donut-label">${_lang === 'ja' ? '完了率' : 'Complete'}</span>
+          <span class="analytics-donut-label">${_t['analytics.donut.complete'] || 'Complete'}</span>
         </div>
       </div>
       <div class="analytics-hero-main">
         <div class="analytics-hero-title">
           <span class="num" id="analyticsSubmittedNum">0</span>
           <span class="ratio" id="analyticsRatio">/ 0</span>
-          <span class="lab">${_lang === 'ja' ? '送信済み' : 'Sent'}</span>
+          <span class="lab">${_t['analytics.hero.sent'] || 'Sent'}</span>
         </div>
         <div class="analytics-pipeline-bar" id="analyticsPipeline">
           <span id="analyticsProgressBar" style="background:linear-gradient(90deg,#3b82f6,#6366f1);width:0%"></span>
@@ -6928,7 +6928,7 @@ ${renderStyles()}
       </div>
       <div class="analytics-meta">
         <div class="analytics-live"><span class="analytics-live-dot"></span>Live</div>
-        <div class="analytics-meta-sum" id="analyticsMetaSum">0 / 0 ${_lang === 'ja' ? '完了' : 'done'} (0%)</div>
+        <div class="analytics-meta-sum" id="analyticsMetaSum">0 / 0 ${_t['analytics.meta.done'] || 'done'} (0%)</div>
       </div>
     </div>
 
@@ -6937,71 +6937,71 @@ ${renderStyles()}
       <div class="stat-card-v2" style="--_c:#6366f1">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">adjust</span></div>
-          <div class="stat-card-v2-label">${_t['stats.target'] || (_lang==='ja'?'対象':'Target')}</div>
+          <div class="stat-card-v2-label">${_t['stats.target'] || _t['stats.target.label'] || 'Target'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-approachable">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'全体の件数':'Total'}</div>
+        <div class="stat-card-v2-note">${_t['stats.target.note'] || 'Total'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#94a3b8">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">contact_page</span></div>
-          <div class="stat-card-v2-label">${_t['stats.hasForm'] || (_lang==='ja'?'フォーム有':'Has form')}</div>
+          <div class="stat-card-v2-label">${_t['stats.hasForm'] || _t['stats.hasForm.label'] || 'Has form'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-hasFormUrl">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'フォーム送信あり':'Submittable'}</div>
+        <div class="stat-card-v2-note">${_t['stats.hasForm.note'] || 'Submittable'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#10b981">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">mark_email_read</span></div>
-          <div class="stat-card-v2-label">${_t['stats.sent'] || (_lang==='ja'?'送信済み':'Sent')}</div>
+          <div class="stat-card-v2-label">${_t['stats.sent'] || _t['stats.sent.label'] || 'Sent'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-submitted">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'送信が完了した件数':'Completed'}</div>
+        <div class="stat-card-v2-note">${_t['stats.sent.note'] || 'Completed'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#3b82f6">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">task_alt</span></div>
-          <div class="stat-card-v2-label">${_t['stats.filled'] || (_lang==='ja'?'要対応':'Action')}</div>
+          <div class="stat-card-v2-label">${_t['stats.filled'] || _t['stats.filled.label'] || 'Action'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-formFill">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'対応が必要な件数':'Needs action'}</div>
+        <div class="stat-card-v2-note">${_t['stats.filled.note'] || 'Needs action'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#f59e0b">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">hourglass_empty</span></div>
-          <div class="stat-card-v2-label">${_t['stats.awaiting'] || (_lang==='ja'?'確認待ち':'Awaiting')}</div>
+          <div class="stat-card-v2-label">${_t['stats.awaiting'] || _t['stats.awaiting.label'] || 'Awaiting'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-awaitingApproval">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'確認待ちの件数':'Awaiting approval'}</div>
+        <div class="stat-card-v2-note">${_t['stats.awaiting.note'] || 'Awaiting approval'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#ef4444">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">error_outline</span></div>
-          <div class="stat-card-v2-label">${_t['stats.error'] || (_lang==='ja'?'エラー':'Errors')}</div>
+          <div class="stat-card-v2-label">${_t['stats.error'] || _t['stats.error.label'] || 'Errors'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-error">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'エラーの件数':'Error count'}</div>
+        <div class="stat-card-v2-note">${_t['stats.error.note'] || 'Error count'}</div>
       </div>
       <div class="stat-card-v2" style="--_c:#64748b">
         <div class="stat-card-v2-head">
           <div class="stat-card-v2-icon"><span class="material-symbols-outlined">block</span></div>
-          <div class="stat-card-v2-label">${_t['stats.excluded'] || (_lang==='ja'?'除外':'Excluded')}</div>
+          <div class="stat-card-v2-label">${_t['stats.excluded'] || _t['stats.excluded.label'] || 'Excluded'}</div>
         </div>
         <div class="stat-card-v2-num" id="s-excluded">0</div>
-        <div class="stat-card-v2-note">${_lang==='ja'?'対象外の件数':'Excluded'}</div>
+        <div class="stat-card-v2-note">${_t['stats.excluded.note'] || 'Excluded'}</div>
       </div>
     </div>
 
     <!-- TREND CHART -->
     <div class="analytics-trend-panel">
       <div class="analytics-trend-head">
-        <div class="analytics-trend-title">${_lang === 'ja' ? '処理推移' : 'Processing trend'}</div>
+        <div class="analytics-trend-title">${_t['analytics.trend.title'] || 'Processing trend'}</div>
         <div class="analytics-trend-legend">
-          <span class="lg"><span class="dot" style="background:#10b981"></span>${_lang === 'ja' ? '送信済み' : 'Sent'}</span>
-          <span class="lg"><span class="dot" style="background:#3b82f6"></span>${_lang === 'ja' ? '要対応' : 'Action'}</span>
-          <span class="lg" style="color:#ef4444"><span class="dash"></span>${_lang === 'ja' ? 'エラー' : 'Error'}</span>
+          <span class="lg"><span class="dot" style="background:#10b981"></span>${_t['analytics.trend.legend.sent'] || 'Sent'}</span>
+          <span class="lg"><span class="dot" style="background:#3b82f6"></span>${_t['analytics.trend.legend.action'] || 'Action'}</span>
+          <span class="lg" style="color:#ef4444"><span class="dash"></span>${_t['analytics.trend.legend.error'] || 'Error'}</span>
         </div>
-        <div class="analytics-trend-range"><span class="material-symbols-outlined">calendar_month</span>${_lang === 'ja' ? '7日間' : '7 days'}</div>
+        <div class="analytics-trend-range"><span class="material-symbols-outlined">calendar_month</span>${_t['analytics.trend.range'] || '7 days'}</div>
       </div>
       <div class="analytics-trend-body"><canvas id="trendAreaChart"></canvas></div>
     </div>
@@ -7009,7 +7009,7 @@ ${renderStyles()}
     <!-- 3-COLUMN GRID: breakdown donut + daily bars + recent errors -->
     <div class="analytics-grid">
       <div class="analytics-sub-card">
-        <div class="analytics-sub-title">${_lang === 'ja' ? 'ステータス内訳' : 'Status breakdown'}</div>
+        <div class="analytics-sub-title">${_t['analytics.breakdown.title'] || 'Status breakdown'}</div>
         <div class="breakdown-row">
           <div class="breakdown-donut-wrap">
             <svg viewBox="0 0 120 120" id="breakdownDonutSvg" aria-hidden="true">
@@ -7017,23 +7017,23 @@ ${renderStyles()}
             </svg>
             <div class="breakdown-donut-center">
               <div class="breakdown-donut-total" id="breakdownTotal">0</div>
-              <div class="breakdown-donut-total-lab">${_lang === 'ja' ? '対象件数' : 'Total'}</div>
+              <div class="breakdown-donut-total-lab">${_t['analytics.breakdown.total'] || 'Total'}</div>
             </div>
           </div>
           <div class="breakdown-legend" id="breakdownLegend"></div>
         </div>
       </div>
       <div class="analytics-sub-card">
-        <div class="analytics-sub-title">${_lang === 'ja' ? '日別送信数' : 'Daily sent'}</div>
+        <div class="analytics-sub-title">${_t['analytics.dailyBars.title'] || 'Daily sent'}</div>
         <div class="daily-bars"><canvas id="dailyBarsChart"></canvas></div>
       </div>
       <div class="analytics-sub-card">
         <div class="analytics-sub-title">
-          <span>${_lang === 'ja' ? '最近のエラー' : 'Recent errors'}</span>
-          <button class="analytics-sub-action" onclick="showAllErrors()">${_lang === 'ja' ? 'すべて表示' : 'View all'}</button>
+          <span>${_t['analytics.recentErrors.title'] || 'Recent errors'}</span>
+          <button class="analytics-sub-action" onclick="showAllErrors()">${_t['analytics.recentErrors.viewAll'] || 'View all'}</button>
         </div>
         <div class="recent-errors" id="recentErrorsList">
-          <div class="recent-errors-empty">${_lang === 'ja' ? 'エラーはありません' : 'No errors'}</div>
+          <div class="recent-errors-empty">${_t['analytics.recentErrors.empty'] || 'No errors'}</div>
         </div>
       </div>
     </div>
@@ -7042,8 +7042,8 @@ ${renderStyles()}
     <div class="insight-card">
       <div class="insight-icon"><span class="material-symbols-outlined">lightbulb</span></div>
       <div class="insight-body">
-        <div class="insight-title">${_lang === 'ja' ? 'インサイト' : 'Insight'}</div>
-        <div class="insight-desc" id="insightDesc">${_lang === 'ja' ? '送信データを集計中...' : 'Aggregating data...'}</div>
+        <div class="insight-title">${_t['analytics.insight.title'] || 'Insight'}</div>
+        <div class="insight-desc" id="insightDesc">${_t['analytics.insight.loading'] || 'Aggregating data...'}</div>
       </div>
       <svg class="insight-wave" viewBox="0 0 500 120" preserveAspectRatio="none" aria-hidden="true">
         <defs>
@@ -7097,13 +7097,13 @@ ${renderStyles()}
         <div class="filter-field">
           <span class="ms">category</span>
           <select id="companyTypeFilter">
-            <option value="">${_lang === 'ja' ? '種別: すべて' : 'Type: All'}</option>
+            <option value="">${_t['companies.filter.typeAll'] || 'Type: All'}</option>
           </select>
         </div>
         <div class="filter-field">
           <span class="ms">trending_up</span>
           <select id="companyProgressFilter">
-            <option value="">${_lang === 'ja' ? '進捗: すべて' : 'Progress: All'}</option>
+            <option value="">${_t['companies.filter.progressAll'] || 'Progress: All'}</option>
           </select>
         </div>
         <div class="filter-field" style="flex:1;min-width:180px">
@@ -7112,7 +7112,7 @@ ${renderStyles()}
         </div>
         <button id="clearFiltersBtn" class="filter-clear-btn" onclick="clearAllFilters()">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>
-          ${_lang === 'ja' ? 'リセット' : 'Reset'}
+          ${_t['companies.filter.reset'] || 'Reset'}
         </button>
       </div>
     </div>
@@ -7148,13 +7148,13 @@ ${renderStyles()}
       <div style="display:flex;align-items:center;gap:8px;min-width:0">
         <span class="material-symbols-outlined" style="font-size:16px;color:#059669">mark_email_read</span>
         <div style="display:flex;flex-direction:column;gap:2px">
-          <strong style="font-size:.76rem;color:var(--on-surface)">${_t['sent.panelTitle'] || (_lang === 'ja' ? '送信済みログ' : 'Sent log')}</strong>
-          <span style="font-size:.66rem;color:var(--outline)">${_t['sent.panelHint'] || (_lang === 'ja' ? '企業名・種別・本文・フォームURLで絞り込みできます' : 'Filter by company, type, message body, or form URL.')}</span>
+          <strong style="font-size:.76rem;color:var(--on-surface)">${_t['sent.panelTitle'] || 'Sent log'}</strong>
+          <span style="font-size:.66rem;color:var(--outline)">${_t['sent.panelHint'] || 'Filter by company, type, message body, or form URL.'}</span>
         </div>
       </div>
-      <input type="text" id="sentSearch" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || (_lang === 'ja' ? '企業名・種別・本文・フォームURLで検索...' : 'Search company, type, message, or URL...')}">
+      <input type="text" id="sentSearch" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || 'Search company, type, message, or URL...'}">
       <select id="sentTypeFilter" class="form-control-sm" style="width:180px;max-width:100%">
-        <option value="">${_lang === 'ja' ? '種別: すべて' : 'Type: All'}</option>
+        <option value="">${_t['sent.filter.typeAll'] || 'Type: All'}</option>
       </select>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <button class="fb-sent fb active" data-sf="all">${_t['sent.all']}</button>
@@ -7174,7 +7174,7 @@ ${renderStyles()}
     <div class="lb2-actionbar">
       <button class="lb2-btn-secondary lb2-btn-sm" id="lb2NgViewBtn" type="button">
         <span class="material-symbols-outlined">block</span>
-        ${_lang === 'ja' ? '営業 NG 企業を見る' : 'View NG companies'}
+        ${_t['lb.ng.viewBtn'] || 'View NG companies'}
         <span class="lb2-ng-badge" id="lb2NgBadge" hidden>0</span>
       </button>
     </div>
@@ -7183,24 +7183,24 @@ ${renderStyles()}
     <div class="lb2-modal-shell" id="lb2NgModal" hidden>
       <div class="lb2-modal-panel" role="dialog" aria-labelledby="lb2NgModalTitle">
         <div class="lb2-modal-head">
-          <h3 id="lb2NgModalTitle">${_lang === 'ja' ? '営業 NG 企業 (skipped)' : 'NG companies (skipped)'}</h3>
+          <h3 id="lb2NgModalTitle">${_t['lb.ng.modal.title'] || 'NG companies (skipped)'}</h3>
           <button class="lb2-icon-btn-modal" id="lb2NgModalClose" type="button" aria-label="close">
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
         <div class="lb2-modal-body">
-          <p class="lb2-ng-hint">${_lang === 'ja' ? '送信時に「営業お断り」「採用専用」「IR専用」などで対象外になった会社の一覧。次回アプローチを避けるための参照リスト。' : 'Companies skipped due to "no sales", "recruit-only", "IR-only" notes. Use as a do-not-contact reference.'}</p>
+          <p class="lb2-ng-hint">${_t['lb.ng.modal.hint'] || 'Companies skipped due to "no sales", "recruit-only", "IR-only" notes.'}</p>
           <table class="lb2-history-table">
             <thead>
               <tr>
-                <th>${_lang === 'ja' ? '日時' : 'When'}</th>
-                <th>${_lang === 'ja' ? '会社名' : 'Company'}</th>
-                <th>${_lang === 'ja' ? '理由' : 'Reason'}</th>
+                <th>${_t['lb.ng.col.when'] || 'When'}</th>
+                <th>${_t['lb.ng.col.company'] || 'Company'}</th>
+                <th>${_t['lb.ng.col.reason'] || 'Reason'}</th>
               </tr>
             </thead>
             <tbody id="lb2NgTableBody"></tbody>
           </table>
-          <div id="lb2NgTableEmpty" class="lb2-history-empty-msg" hidden>${_lang === 'ja' ? '営業 NG で skip された企業はありません' : 'No NG-skipped companies'}</div>
+          <div id="lb2NgTableEmpty" class="lb2-history-empty-msg" hidden>${_t['lb.ng.empty'] || 'No NG-skipped companies'}</div>
         </div>
       </div>
     </div>
@@ -7210,14 +7210,14 @@ ${renderStyles()}
         <div class="lb2-card">
           <div class="lb2-mode-tabs" role="tablist">
             <button class="lb2-mode-pill active" data-lb2-mode="ai" type="button" role="tab" aria-selected="true">
-              <span class="material-symbols-outlined">smart_toy</span>${_lang === 'ja' ? 'AI に依頼' : 'Ask AI'}
-              <span class="lb2-mode-tag">${_lang === 'ja' ? '推奨' : 'Recommended'}</span>
+              <span class="material-symbols-outlined">smart_toy</span>${_t['lb.mode.ai'] || 'Ask AI'}
+              <span class="lb2-mode-tag">${_t['lb.mode.tag.recommended'] || 'Recommended'}</span>
             </button>
             <button class="lb2-mode-pill" data-lb2-mode="url" type="button" role="tab" aria-selected="false">
-              <span class="material-symbols-outlined">link</span>${_lang === 'ja' ? 'URL から' : 'From URL'}
+              <span class="material-symbols-outlined">link</span>${_t['lb.mode.url'] || 'From URL'}
             </button>
             <button class="lb2-mode-pill" data-lb2-mode="category" type="button" role="tab" aria-selected="false">
-              <span class="material-symbols-outlined">database</span>${_lang === 'ja' ? '公式 API' : 'Official API'}
+              <span class="material-symbols-outlined">database</span>${_t['lb.mode.category'] || 'Official API'}
             </button>
           </div>
 
@@ -7226,19 +7226,19 @@ ${renderStyles()}
             <div class="lb2-helper">
               <span class="material-symbols-outlined">info</span>
               <div>
-                <strong>${_lang === 'ja' ? '企業一覧ページの URL を貼り付け' : 'Paste company-list page URLs'}</strong>
-                <p>${_lang === 'ja' ? '業界団体の会員一覧、商工会議所、DX 認定企業リスト、業界ランキング等の公開リストを自動でスクレイピングし、ページネーションを辿って全件取得します。robots.txt を遵守し、CAPTCHA 検出時は停止します。' : 'Auto-scrape paginated public list pages (industry assoc., chamber of commerce, ranking, etc.). robots.txt is respected; halts on CAPTCHA.'}</p>
+                <strong>${_t['lb.helper.url.title'] || 'Paste company-list page URLs'}</strong>
+                <p>${_t['lb.helper.url.desc'] || 'Auto-scrape paginated public list pages (industry assoc., chamber of commerce, ranking, etc.). robots.txt is respected; halts on CAPTCHA.'}</p>
               </div>
             </div>
-            <label class="lb2-field-label" for="lb2UrlInput">${_lang === 'ja' ? 'URL（複数行可）' : 'URLs (one per line)'}</label>
+            <label class="lb2-field-label" for="lb2UrlInput">${_t['lb.url.label'] || 'URLs (one per line)'}</label>
             <textarea id="lb2UrlInput" class="lb2-textarea" rows="4" placeholder="https://www.jaaa.ne.jp/about/members/&#10;https://example.com/dx-companies"></textarea>
             <div class="lb2-row">
               <div class="lb2-field">
-                <label class="lb2-field-label">${_lang === 'ja' ? '最大ページ数' : 'Max pages'}</label>
+                <label class="lb2-field-label">${_t['lb.url.maxPages'] || 'Max pages'}</label>
                 <input id="lb2UrlMaxPages" type="number" class="lb2-input" value="10" min="1" max="50">
               </div>
               <div class="lb2-field">
-                <label class="lb2-field-label">${_lang === 'ja' ? '最大企業数' : 'Max companies'}</label>
+                <label class="lb2-field-label">${_t['lb.url.maxCompanies'] || 'Max companies'}</label>
                 <input id="lb2UrlMaxCompanies" type="number" class="lb2-input" value="100" min="1" max="500">
               </div>
             </div>
@@ -7249,70 +7249,70 @@ ${renderStyles()}
             <div class="lb2-helper">
               <span class="material-symbols-outlined">verified</span>
               <div>
-                <strong>${_lang === 'ja' ? '国税庁・gBizINFO・EDINET から検索' : 'Query official Japan APIs'}</strong>
-                <p>${_lang === 'ja' ? '法人番号API（実在性）+ gBizINFO（業種・所在地）+ EDINET（売上・成長性）を組み合わせて、信頼度 High の候補企業を取得します。下の条件 chip 入力をそのまま使います。API キーは設定タブから登録してください（無料）。' : 'Combine Houjin-Bangou + gBizINFO + EDINET official APIs. Uses the chip-input criteria below. API keys (free) are required — set them in Settings.'}</p>
+                <strong>${_t['lb.helper.api.title'] || 'Query official Japan APIs'}</strong>
+                <p>${_t['lb.helper.api.desc'] || 'Combine Houjin-Bangou + gBizINFO + EDINET official APIs.'}</p>
               </div>
             </div>
           </div>
 
           <div class="lb2-card-head" id="lb2CriteriaHead">
-            <h3>${_lang === 'ja' ? '抽出条件' : 'Criteria'}</h3>
-            <span class="lb2-card-hint" id="lb2CriteriaHint">${_lang === 'ja' ? '空欄の項目は AI が判断します' : 'Empty fields are decided by AI'}</span>
+            <h3>${_t['lb.criteria.title'] || 'Criteria'}</h3>
+            <span class="lb2-card-hint" id="lb2CriteriaHint">${_t['lb.criteria.hint'] || 'Empty fields are decided by AI'}</span>
           </div>
           <div class="lb2-criteria-grid" id="lb2CriteriaGrid">
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">work</span>${_lang === 'ja' ? '業種' : 'Industry'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">work</span>${_t['lb.criteria.industry'] || 'Industry'}</label>
               <div class="lb2-chip-input" data-lb2-chip="industries">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) SaaS, SIer / Enter で追加' : 'e.g. SaaS / press Enter'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.industry.placeholder'] || 'e.g. SaaS / press Enter'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">place</span>${_lang === 'ja' ? '地域' : 'Region'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">place</span>${_t['lb.criteria.region'] || 'Region'}</label>
               <div class="lb2-chip-input" data-lb2-chip="regions">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 東京都, 大阪府' : 'e.g. Tokyo, Osaka'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.region.placeholder'] || 'e.g. Tokyo, Osaka'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">groups</span>${_lang === 'ja' ? '従業員規模' : 'Employee size'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">groups</span>${_t['lb.criteria.employees'] || 'Employee size'}</label>
               <div class="lb2-chip-input" data-lb2-chip="employeeSize">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 50〜500名' : 'e.g. 50-500'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.employees.placeholder'] || 'e.g. 50-500'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">monitoring</span>${_lang === 'ja' ? '売上規模' : 'Revenue'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">monitoring</span>${_t['lb.criteria.revenue'] || 'Revenue'}</label>
               <div class="lb2-chip-input" data-lb2-chip="revenue">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 10億円以上' : 'e.g. 1B+ JPY'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.revenue.placeholder'] || 'e.g. 1B+ JPY'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">badge</span>${_lang === 'ja' ? '部署・担当者' : 'Dept / role'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">badge</span>${_t['lb.criteria.dept'] || 'Dept / role'}</label>
               <div class="lb2-chip-input" data-lb2-chip="departments">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 営業企画, 情報システム' : 'e.g. Sales Ops, IT'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.dept.placeholder'] || 'e.g. Sales Ops, IT'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">tag</span>${_lang === 'ja' ? 'キーワード' : 'Keywords'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">tag</span>${_t['lb.criteria.keywords'] || 'Keywords'}</label>
               <div class="lb2-chip-input" data-lb2-chip="keywords">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 自動化, DX' : 'e.g. automation, DX'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.keywords.placeholder'] || 'e.g. automation, DX'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">block</span>${_lang === 'ja' ? '除外条件' : 'Exclude'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">block</span>${_t['lb.criteria.exclude'] || 'Exclude'}</label>
               <div class="lb2-chip-input" data-lb2-chip="excludes">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 採用ページのみ' : 'e.g. recruit-only'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.exclude.placeholder'] || 'e.g. recruit-only'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">database</span>${_lang === 'ja' ? 'ソース' : 'Sources'}</label>
+              <label class="lb2-field-label"><span class="material-symbols-outlined">database</span>${_t['lb.criteria.sources'] || 'Sources'}</label>
               <div class="lb2-chip-input" data-lb2-chip="sources">
-                <input type="text" placeholder="${_lang === 'ja' ? '例) 企業サイト, 法人DB' : 'e.g. company site, DB'}" autocomplete="off">
+                <input type="text" placeholder="${_t['lb.criteria.sources.placeholder'] || 'e.g. company site, DB'}" autocomplete="off">
               </div>
             </div>
           </div>
           <div class="lb2-form-toolbar">
             <div class="lb2-form-toolbar-meta">
               <label class="lb2-mini-field">
-                <span>${_lang === 'ja' ? '取得件数' : 'Count'}</span>
+                <span>${_t['lb.toolbar.count'] || 'Count'}</span>
                 <select id="lb2Limit" class="lb2-mini-select">
                   <option value="10">10</option>
                   <option value="30" selected>30</option>
@@ -7323,7 +7323,7 @@ ${renderStyles()}
                 </select>
               </label>
               <label class="lb2-mini-field" id="lb2ProviderField">
-                <span>${_lang === 'ja' ? 'CLI' : 'CLI'}</span>
+                <span>${_t['lb.toolbar.cli'] || 'CLI'}</span>
                 <select id="lb2Provider" class="lb2-mini-select">
                   <option value="claude" selected>Claude Code</option>
                   <option value="codex">Codex</option>
@@ -7334,11 +7334,11 @@ ${renderStyles()}
             <div class="lb2-form-actions">
               <button class="lb2-btn-secondary" id="lb2SaveCriteriaBtn" type="button">
                 <span class="material-symbols-outlined">bookmark_add</span>
-                ${_lang === 'ja' ? '条件を保存' : 'Save criteria'}
+                ${_t['lb.toolbar.saveCriteria'] || 'Save criteria'}
               </button>
               <button class="lb2-btn-primary" id="lb2RunBtn" type="button">
                 <span class="material-symbols-outlined" id="lb2RunBtnIcon">auto_awesome</span>
-                <span id="lb2RunBtnLabel">${_lang === 'ja' ? 'AI で候補企業を生成' : 'Generate with AI'}</span>
+                <span id="lb2RunBtnLabel">${_t['lb.toolbar.runBtn'] || 'Generate with AI'}</span>
               </button>
             </div>
           </div>
@@ -7348,28 +7348,28 @@ ${renderStyles()}
           <div class="lb2-progress-head">
             <span class="material-symbols-outlined lb2-spin" aria-hidden="true">autorenew</span>
             <div class="lb2-progress-meta">
-              <strong class="lb2-progress-title">${_lang === 'ja' ? 'AI 処理中' : 'AI processing'}</strong>
+              <strong class="lb2-progress-title">${_t['lb.progress.title'] || 'AI processing'}</strong>
               <span class="lb2-progress-message" id="lb2ProgressMessage"></span>
             </div>
             <div class="lb2-progress-stages">
               <span class="lb2-stage" data-lb2-stage="discovery">
-                <span class="lb2-stage-dot"></span>${_lang === 'ja' ? '情報収集' : 'Discovery'}
+                <span class="lb2-stage-dot"></span>${_t['lb.progress.discovery'] || 'Discovery'}
               </span>
               <span class="lb2-stage-arrow">→</span>
               <span class="lb2-stage" data-lb2-stage="qualification">
-                <span class="lb2-stage-dot"></span>${_lang === 'ja' ? 'スコアリング' : 'Scoring'}
+                <span class="lb2-stage-dot"></span>${_t['lb.progress.scoring'] || 'Scoring'}
               </span>
               <span class="lb2-stage-arrow">→</span>
               <span class="lb2-stage" data-lb2-stage="dedupe">
-                <span class="lb2-stage-dot"></span>${_lang === 'ja' ? '重複除外' : 'Dedupe'}
+                <span class="lb2-stage-dot"></span>${_t['lb.progress.dedupe'] || 'Dedupe'}
               </span>
               <span class="lb2-stage-arrow">→</span>
               <span class="lb2-stage" data-lb2-stage="preview_ready">
-                <span class="lb2-stage-dot"></span>${_lang === 'ja' ? 'リスト化' : 'Listing'}
+                <span class="lb2-stage-dot"></span>${_t['lb.progress.listing'] || 'Listing'}
               </span>
             </div>
             <span class="lb2-progress-percent" id="lb2ProgressPercent">0%</span>
-            <button class="lb2-progress-cancel" id="lb2CancelBtn" type="button" title="${_lang === 'ja' ? 'キャンセル' : 'Cancel'}">
+            <button class="lb2-progress-cancel" id="lb2CancelBtn" type="button" title="${_t['lb.progress.cancel'] || 'Cancel'}">
               <span class="material-symbols-outlined">close</span>
             </button>
           </div>
@@ -7379,35 +7379,35 @@ ${renderStyles()}
         <div class="lb2-card lb2-result-card" id="lb2Result">
           <div class="lb2-card-head lb2-result-head">
             <div class="lb2-result-headline">
-              <h3>${_lang === 'ja' ? '生成された企業リスト' : 'Generated list'}</h3>
+              <h3>${_t['lb.result.title'] || 'Generated list'}</h3>
               <div class="lb2-result-summary" id="lb2ResultSummary">
-                <span class="lb2-summary-pill lb2-summary-new">${_lang === 'ja' ? '新規' : 'New'} 0</span>
-                <span class="lb2-summary-pill lb2-summary-review">${_lang === 'ja' ? '要確認' : 'Review'} 0</span>
-                <span class="lb2-summary-pill lb2-summary-dup">${_lang === 'ja' ? '重複/除外' : 'Dup/Excl'} 0</span>
+                <span class="lb2-summary-pill lb2-summary-new">${_t['lb.result.summary.new'] || 'New'} 0</span>
+                <span class="lb2-summary-pill lb2-summary-review">${_t['lb.result.summary.review'] || 'Review'} 0</span>
+                <span class="lb2-summary-pill lb2-summary-dup">${_t['lb.result.summary.dup'] || 'Dup/Excl'} 0</span>
               </div>
             </div>
             <div class="lb2-result-toolbar">
               <label class="lb2-checkbox-inline">
                 <input type="checkbox" id="lb2SelectAll" checked>
-                <span>${_lang === 'ja' ? '全選択' : 'Select all'}</span>
+                <span>${_t['lb.result.selectAll'] || 'Select all'}</span>
               </label>
               <button class="lb2-btn-secondary lb2-btn-sm" id="lb2ExportCsvBtn" type="button">
                 <span class="material-symbols-outlined">download</span>CSV
               </button>
               <button class="lb2-btn-primary lb2-btn-sm" id="lb2CommitBtn" type="button" disabled>
-                <span class="material-symbols-outlined">add_task</span>${_lang === 'ja' ? '選択分を追加' : 'Add selected'}
+                <span class="material-symbols-outlined">add_task</span>${_t['lb.result.commit'] || 'Add selected'}
               </button>
             </div>
           </div>
           <div class="lb2-result-search">
             <span class="material-symbols-outlined lb2-result-search-icon">search</span>
-            <input type="text" id="lb2FilterText" placeholder="${_lang === 'ja' ? '会社名・業種で絞り込み' : 'Filter by name or industry'}" class="lb2-result-search-input">
+            <input type="text" id="lb2FilterText" placeholder="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" class="lb2-result-search-input">
             <select id="lb2FilterStatus" class="lb2-mini-select lb2-result-search-status">
-              <option value="">${_lang === 'ja' ? '全ステータス' : 'All status'}</option>
-              <option value="unique">${_lang === 'ja' ? '新規' : 'New'}</option>
-              <option value="needs_review">${_lang === 'ja' ? '要確認' : 'Review'}</option>
-              <option value="duplicate">${_lang === 'ja' ? '重複' : 'Duplicate'}</option>
-              <option value="suppressed">${_lang === 'ja' ? '除外' : 'Suppressed'}</option>
+              <option value="">${_t['lb.result.filter.allStatus'] || 'All status'}</option>
+              <option value="unique">${_t['lb.result.filter.unique'] || 'New'}</option>
+              <option value="needs_review">${_t['lb.result.filter.review'] || 'Review'}</option>
+              <option value="duplicate">${_t['lb.result.filter.duplicate'] || 'Duplicate'}</option>
+              <option value="suppressed">${_t['lb.result.filter.suppressed'] || 'Suppressed'}</option>
             </select>
           </div>
           <div class="lb2-result-table-wrap">
@@ -7415,14 +7415,14 @@ ${renderStyles()}
               <thead>
                 <tr>
                   <th class="lb2-th-check"><span></span></th>
-                  <th>${_lang === 'ja' ? '企業名' : 'Company'}</th>
+                  <th>${_t['lb.result.col.company'] || 'Company'}</th>
                   <th>URL</th>
-                  <th>${_lang === 'ja' ? '業種' : 'Industry'}</th>
-                  <th>${_lang === 'ja' ? '地域' : 'Region'}</th>
-                  <th>${_lang === 'ja' ? '従業員' : 'Empl.'}</th>
-                  <th class="lb2-th-fit">${_lang === 'ja' ? 'AI 適合度' : 'AI fit'}</th>
-                  <th>${_lang === 'ja' ? 'ステータス' : 'Status'}</th>
-                  <th>${_lang === 'ja' ? 'アクション' : 'Action'}</th>
+                  <th>${_t['lb.result.col.industry'] || 'Industry'}</th>
+                  <th>${_t['lb.result.col.region'] || 'Region'}</th>
+                  <th>${_t['lb.result.col.employees'] || 'Empl.'}</th>
+                  <th class="lb2-th-fit">${_t['lb.result.col.fit'] || 'AI fit'}</th>
+                  <th>${_t['lb.result.col.status'] || 'Status'}</th>
+                  <th>${_t['lb.result.col.action'] || 'Action'}</th>
                 </tr>
               </thead>
               <tbody id="lb2ResultBody"></tbody>
@@ -7430,7 +7430,7 @@ ${renderStyles()}
           </div>
           <div class="lb2-result-empty" id="lb2ResultEmpty">
             <span class="material-symbols-outlined">data_object</span>
-            <p>${_lang === 'ja' ? '抽出条件を入力して「AI で候補企業を生成」を押すと、ここに候補リストが表示されます。' : 'Set criteria and click "Generate with AI" to see candidates here.'}</p>
+            <p>${_t['lb.result.empty'] || 'Set criteria and click "Generate with AI" to see candidates here.'}</p>
           </div>
         </div>
       </div>
@@ -7439,50 +7439,50 @@ ${renderStyles()}
         <div class="lb2-card lb2-side-card">
           <div class="lb2-side-head">
             <span class="material-symbols-outlined">auto_awesome</span>
-            <span>${_lang === 'ja' ? 'AI 提案' : 'AI insights'}</span>
+            <span>${_t['lb.side.suggest.title'] || 'AI insights'}</span>
           </div>
           <ul class="lb2-suggest-list" id="lb2SuggestList">
-            <li class="lb2-suggest-item">${_lang === 'ja' ? '条件を入力して「AI で候補企業を生成」を押すと、ここに分析結果が表示されます。' : 'Run a query to see analytics here.'}</li>
+            <li class="lb2-suggest-item">${_t['lb.side.suggest.empty'] || 'Run a query to see analytics here.'}</li>
           </ul>
         </div>
 
         <div class="lb2-card lb2-side-card">
           <div class="lb2-side-head">
             <span class="material-symbols-outlined">recommend</span>
-            <span>${_lang === 'ja' ? 'おすすめアクション' : 'Recommendations'}</span>
+            <span>${_t['lb.side.recommend.title'] || 'Recommendations'}</span>
           </div>
           <button class="lb2-action-row" id="lb2ActionAddTopBtn" type="button" disabled>
-            <span class="material-symbols-outlined">bookmark</span>${_lang === 'ja' ? '高スコア上位を追加' : 'Add top hits'}
+            <span class="material-symbols-outlined">bookmark</span>${_t['lb.side.recommend.addTop'] || 'Add top hits'}
           </button>
           <button class="lb2-action-row" id="lb2ActionReanalyzeBtn" type="button" disabled>
-            <span class="material-symbols-outlined">refresh</span>${_lang === 'ja' ? '要確認企業を再分析' : 'Re-analyze review'}
+            <span class="material-symbols-outlined">refresh</span>${_t['lb.side.recommend.reanalyze'] || 'Re-analyze review'}
           </button>
           <button class="lb2-action-row" id="lb2ActionDraftBtn" type="button" disabled>
-            <span class="material-symbols-outlined">edit_note</span>${_lang === 'ja' ? '営業文面を作成' : 'Draft outreach'}
+            <span class="material-symbols-outlined">edit_note</span>${_t['lb.side.recommend.draft'] || 'Draft outreach'}
           </button>
         </div>
 
         <div class="lb2-card lb2-side-card">
           <div class="lb2-side-head">
             <span class="material-symbols-outlined">donut_small</span>
-            <span>${_lang === 'ja' ? '業種構成' : 'Industry mix'}</span>
+            <span>${_t['lb.side.industry.title'] || 'Industry mix'}</span>
           </div>
           <div class="lb2-chart-wrap">
             <canvas id="lb2IndustryChart"></canvas>
-            <div class="lb2-chart-empty" id="lb2ChartEmpty">${_lang === 'ja' ? '生成後に表示されます' : 'Appears after a run'}</div>
+            <div class="lb2-chart-empty" id="lb2ChartEmpty">${_t['lb.side.chart.empty'] || 'Appears after a run'}</div>
           </div>
         </div>
 
         <div class="lb2-card lb2-side-card">
           <div class="lb2-side-head">
             <span class="material-symbols-outlined">history</span>
-            <span>${_lang === 'ja' ? '最近の生成履歴' : 'Recent runs'}</span>
-            <button class="lb2-side-head-action" id="lb2HistoryAllBtn" type="button" title="${_lang === 'ja' ? 'すべて表示' : 'View all'}">
+            <span>${_t['lb.side.history.title'] || 'Recent runs'}</span>
+            <button class="lb2-side-head-action" id="lb2HistoryAllBtn" type="button" title="${_t['lb.side.history.viewAll'] || 'View all'}">
               <span class="material-symbols-outlined">open_in_full</span>
             </button>
           </div>
           <ul class="lb2-history-list" id="lb2HistoryList">
-            <li class="lb2-history-empty">${_lang === 'ja' ? '履歴はまだありません' : 'No runs yet'}</li>
+            <li class="lb2-history-empty">${_t['lb.side.history.empty'] || 'No runs yet'}</li>
           </ul>
         </div>
 
@@ -7490,7 +7490,7 @@ ${renderStyles()}
         <div class="lb2-modal-shell" id="lb2HistoryModal" hidden onclick="if(event.target===this)this.hidden=true">
           <div class="lb2-modal-panel" role="dialog" aria-labelledby="lb2HistoryModalTitle" onclick="event.stopPropagation()">
             <div class="lb2-modal-head">
-              <h3 id="lb2HistoryModalTitle">${_lang === 'ja' ? '生成履歴 (全件)' : 'All runs'}</h3>
+              <h3 id="lb2HistoryModalTitle">${_t['lb.history.modal.title'] || 'All runs'}</h3>
               <button class="lb2-icon-btn-modal" id="lb2HistoryModalClose" type="button" aria-label="close" onclick="event.preventDefault();event.stopPropagation();var m=document.getElementById('lb2HistoryModal');if(m)m.hidden=true">
                 <span class="material-symbols-outlined">close</span>
               </button>
@@ -7499,20 +7499,20 @@ ${renderStyles()}
               <table class="lb2-history-table">
                 <thead>
                   <tr>
-                    <th>${_lang === 'ja' ? '実行日時' : 'Started'}</th>
-                    <th>${_lang === 'ja' ? '状態' : 'Status'}</th>
-                    <th>${_lang === 'ja' ? 'モード' : 'Mode'}</th>
-                    <th>${_lang === 'ja' ? '取得' : 'Got'}</th>
-                    <th>${_lang === 'ja' ? '新規' : 'New'}</th>
-                    <th>${_lang === 'ja' ? '重複' : 'Dup'}</th>
-                    <th>${_lang === 'ja' ? '要確認' : 'Review'}</th>
-                    <th>${_lang === 'ja' ? '所要' : 'Time'}</th>
-                    <th>${_lang === 'ja' ? '操作' : 'Action'}</th>
+                    <th>${_t['lb.history.col.started'] || 'Started'}</th>
+                    <th>${_t['lb.history.col.status'] || 'Status'}</th>
+                    <th>${_t['lb.history.col.mode'] || 'Mode'}</th>
+                    <th>${_t['lb.history.col.got'] || 'Got'}</th>
+                    <th>${_t['lb.history.col.new'] || 'New'}</th>
+                    <th>${_t['lb.history.col.dup'] || 'Dup'}</th>
+                    <th>${_t['lb.history.col.review'] || 'Review'}</th>
+                    <th>${_t['lb.history.col.time'] || 'Time'}</th>
+                    <th>${_t['lb.history.col.action'] || 'Action'}</th>
                   </tr>
                 </thead>
                 <tbody id="lb2HistoryTableBody"></tbody>
               </table>
-              <div id="lb2HistoryTableEmpty" class="lb2-history-empty-msg" hidden>${_lang === 'ja' ? '履歴はありません' : 'No runs'}</div>
+              <div id="lb2HistoryTableEmpty" class="lb2-history-empty-msg" hidden>${_t['lb.history.empty'] || 'No runs'}</div>
             </div>
           </div>
         </div>
@@ -7526,7 +7526,7 @@ ${renderStyles()}
       <div class="cli-term-head">
         <div class="cli-term-title">
           <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary)">terminal</span>
-          <span>${_lang==='ja' ? 'ターミナル' : 'Terminal'}</span>
+          <span>${_t['cli.term.terminal'] || 'Terminal'}</span>
           <span id="cliTermProviderBadge" class="cli-term-badge" style="display:none"></span>
           <span id="cliTermStatusDot" class="cli-term-status-dot off" title=""></span>
         </div>
@@ -7557,7 +7557,7 @@ ${renderStyles()}
         </div>
         <div class="cli-term-auth-help-body">
           <h4 id="cliTermAuthHelpTitle">認証が必要です</h4>
-          <p id="cliTermAuthHelpDesc">${_lang==='ja' ? 'Claude のログイン期限が切れています。下のボタンを押すとターミナルに「/login」が自動入力され、ブラウザでログイン画面が開きます。' : 'Authentication required. Press the button below to type "/login" automatically.'}</p>
+          <p id="cliTermAuthHelpDesc">${_t['cli.term.authHelp.desc'] || 'Authentication required. Press the button below to type "/login" automatically.'}</p>
           <ol class="cli-term-auth-help-steps">
             <li>下の「<b>/login を実行</b>」ボタンをクリック</li>
             <li>ターミナルに <code>/login</code> が自動で入力されます</li>
@@ -7594,13 +7594,13 @@ ${renderStyles()}
     <div style="background:#fff;border:1px solid var(--outline-variant);margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant)">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_lang==='ja' ? 'リアルタイムCLI' : 'Live CLI'}</span>
+          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.live.title'] || 'Live CLI'}</span>
           <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliStreamLastEvent">—</span>
         </div>
       </div>
       <div id="cliThinkingRow" style="display:none;align-items:center;gap:8px;padding:10px 16px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.16)">
         <span class="think-spin"></span>
-        <span id="cliThinkingText" style="font-size:.76rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang==='ja' ? '思考中...' : 'Thinking...'}</span>
+        <span id="cliThinkingText" style="font-size:.76rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_t['cli.live.thinking'] || 'Thinking...'}</span>
       </div>
       <div id="cliStream" style="max-height:180px;overflow:auto;padding:10px 16px;background:var(--bg-card)"></div>
     </div>
@@ -8375,7 +8375,7 @@ ${renderStyles()}
   <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:linear-gradient(135deg,#1a1a1a 0%,#1e293b 100%);user-select:none;flex-shrink:0">
     <span class="material-symbols-outlined" style="font-size:16px;color:#eeefeb">monitoring</span>
     <span style="font-size:.72rem;font-weight:700;color:#eeefeb;flex:1">Live Activity</span>
-    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:#9a9a96;font-size:.56rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
+    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:#9a9a96;font-size:.56rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_t['monitor.idle'] || 'Idle'}</div>
     <button id="liveMonitorToggleBtn" onclick="toggleMonitorPanel()" style="display:inline-flex;align-items:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#eeefeb;font-size:14px;padding:3px;border-radius:6px;cursor:pointer;transition:all .15s;line-height:1" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.08)'">✕</button>
   </div>
 
@@ -8406,7 +8406,7 @@ ${renderStyles()}
     <div id="monitorFooter" style="border-top:1px solid var(--border-subtle);background:var(--bg-surface);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 14px">
         <a id="monitorCurrentUrl" href="#" target="_blank" style="flex:1;font-size:.62rem;color:var(--primary);font-family:var(--font-mono);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</a>
-        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.58rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_lang === 'ja' ? 'スクショ ↗' : 'SS ↗'}</a>
+        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.58rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_t['monitor.screenshot.short'] || 'SS ↗'}</a>
       </div>
       <div id="monitorScreenshotWrap" style="display:none;margin:0 14px 8px;max-height:100px;overflow:auto;overscroll-behavior:contain;border:1px dashed var(--border-default);border-radius:var(--radius-sm);background:var(--bg-deep)"></div>
     </div>
