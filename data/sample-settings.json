@@ -23,7 +23,8 @@
     "capital": "5,000万円",
     "industry": "IT・ソフトウェア",
     "businessDescription": "Webサイトや業務システムの制作・運用サンプル",
-    "notes": "サンプル用の設定値です"
+    "notes": "サンプル用の設定値です",
+    "country": "ja-jp"
   },
   "valuePropositions": {
     "companyUrl": "https://www.example.com/",

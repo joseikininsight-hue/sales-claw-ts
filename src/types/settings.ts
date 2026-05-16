@@ -3,6 +3,8 @@
 // data/settings.json の型定義。実体は src/settings-manager のデフォルト値と sample-settings.json を反映。
 // 段階的移行中なので、後方互換のため Partial を多用している。
 
+import type { Country } from './locale';
+
 export interface CompanyProfile {
   companyName: string;
   companyNameEn: string;
@@ -28,6 +30,11 @@ export interface CompanyProfile {
   industry: string;
   businessDescription: string;
   notes: string;
+  /**
+   * 拠点国コード。法令適合チェック / フッター生成の locale 切替に使う (Phase 4)。
+   * 未設定時は 'ja-jp' として扱う (既存ユーザー互換)。
+   */
+  country?: Country;
 }
 
 export interface ServiceUrl {
@@ -152,6 +159,14 @@ export interface MessageTemplates {
   referenceUrlText: string;
   signatureTemplate: string;
   letterTemplate: LetterTemplate;
+  /**
+   * Phase 3: メッセージ生成・CLI prompt の言語指定。
+   * - 'auto' (default): 各社の analysis.detectedLanguage を採用する
+   * - 'ja' | 'en': 全社で明示的に固定する
+   *
+   * ja のままなら従来挙動と完全互換。
+   */
+  language?: 'auto' | 'ja' | 'en';
 }
 
 export type EmailProvider = 'outlook' | 'gmail' | 'other';

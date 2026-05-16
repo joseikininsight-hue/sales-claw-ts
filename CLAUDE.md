@@ -1,336 +1,461 @@
 # Sales Claw
 
+> Japanese version: [docs/ja/CLAUDE.md](docs/ja/CLAUDE.md)
+
 ## About This Project
 
-企業の問い合わせフォーム経由で営業アプローチを自動化するツール。
-ユーザーが設定した自社情報・ターゲットリスト・提供価値に基づいて、Claude Code CLIが企業分析→メッセージ生成→フォーム入力を実行する。
+A tool that automates B2B outreach through company contact forms.
+Based on the user's company profile, target list, and value propositions
+configured in settings, the Claude Code CLI performs: company analysis →
+message generation → form filling.
 
-## 絶対ルール: フォーム入力+スクショなしで「確認待ち」にするな
+## ABSOLUTE RULE: Never log `awaiting_approval` without form-fill + screenshot
 
-**これはこのプロジェクトで最も重要なルール。違反は許されない。**
+**This is the single most important rule in this project. Violations are not
+acceptable.**
 
-「確認待ち」(awaiting_approval) にログを記録する前に、以下の全ステップを**必ず完了**すること:
+Before logging an `awaiting_approval` action, you **MUST** complete every one
+of the following steps:
 
-1. **フォームURLにアクセス** — MCP Playwright の `browser_navigate` / `browser_tabs` で公式サイト・問い合わせページを開く
-2. **フォーム構造を解析** — MCP Playwright の `browser_snapshot` でフィールドを特定
-3. **全フィールドに実際に入力** — MCP Playwright の `browser_fill_form` / `browser_type` / `browser_select_option` で会社名・氏名・メール・電話・本文を入力
-4. **入力済みフォームのスクリーンショット撮影** — MCP Playwright の `browser_take_screenshot` で `screenshots/ss-{No}-input.png`
-5. **ログ記録** — `form_fill` → `confirm_reached` → `awaiting_approval` の順でログ
-   - **`awaiting_approval` / `submitted` の details には必ず `sentMessage` (実際にフォームに入力した本文そのもの) を含める** — Phase A の templateDraft ではなく、実際に問い合わせフォーム本文欄に入力した文字列を渡す
-   - 1.2.100 から API ガードが入り、`sentMessage` 欠如 / 30 文字未満は **422 で拒否** されてログに残らない
+1. **Open the form URL** — use the MCP Playwright `browser_navigate` /
+   `browser_tabs` tools to open the official site / contact page.
+2. **Parse the form structure** — use MCP Playwright `browser_snapshot` to
+   identify each field.
+3. **Actually fill every field** — use MCP Playwright `browser_fill_form` /
+   `browser_type` / `browser_select_option` to enter company name, contact
+   name, email, phone, and message body.
+4. **Take a screenshot of the filled form** — use MCP Playwright
+   `browser_take_screenshot` and save to `screenshots/ss-{No}-input.png`.
+5. **Log in order**: `form_fill` → `confirm_reached` → `awaiting_approval`.
+   - **The `details` payload for `awaiting_approval` / `submitted` MUST
+     include `sentMessage`** (the exact text that was typed into the form
+     body). Pass the actual string you typed into the contact form's body
+     field, not the Phase A `templateDraft`.
+   - From 1.2.100 onwards an API guard rejects requests with **422** if
+     `sentMessage` is missing or shorter than 30 characters; the log entry
+     will not be recorded.
 
-### やってはいけないこと（厳禁）:
-- メッセージを生成しただけで `awaiting_approval` にする
-- フォームにアクセスせずに `form_fill` ログを書く
-- スクリーンショットを撮らずに確認待ちにする
-- 「フォームが見つからなかった」で黙って確認待ちにする → `error` ログにして理由を明記
-- **`awaiting_approval` / `submitted` の details に `sentMessage` を含めない**（ダッシュボード表示と実送信内容が乖離する事故が起きる）
-- **連絡先 (TEL/MAIL) のダンプだけのような縮退本文をフォーム入力する** — `companyProfile.companyName` + `valuePropositions.strengths` を活用した本文を生成すること。`buildMessagePrompt(analysis)` の出力に従う
+### Forbidden actions
 
-### フォーム入力に失敗した場合:
-- **CAPTCHA・reCAPTCHA・hCaptcha・Turnstile**: 停止せず可能な限り全フィールドを入力 → `ss-{No}-input.png` 撮影 → `awaiting_approval` (人間が CAPTCHA 解いて送信)
-  - visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は `browser_click` で 1 回だけ試行可。画像チャレンジが出たら諦めて `awaiting_approval`
-  - フォーム自体が表示されない / Cloudflare 等のページゲートで本体に到達できない場合だけ `error`
-- フォームが見つからない → `error` ログ + 理由 + フォーム探索結果
-- 入力はできたがフィールド不足 → 入力できた分のスクショを撮って `awaiting_approval` + 不足内容をログに明記
+- Logging `awaiting_approval` after only generating a message (without
+  touching the form).
+- Writing a `form_fill` log entry without ever opening the form.
+- Going to `awaiting_approval` without taking a screenshot.
+- Silently going to `awaiting_approval` after "couldn't find the form" →
+  must be an `error` log entry with the reason explicitly stated.
+- **Omitting `sentMessage` from the `details` of `awaiting_approval` /
+  `submitted`** (this causes the dashboard view to diverge from what was
+  actually typed — a real-world incident root cause).
+- **Typing a degenerate body that is just a contact-info dump (TEL / MAIL
+  only)** — the body must use `companyProfile.companyName` +
+  `valuePropositions.strengths`. Follow the output of
+  `buildMessagePrompt(analysis)`.
 
-### 営業NG・対象外フォームの扱い:
-- 「営業目的のお問い合わせはご遠慮ください」「既存顧客専用」「採用専用」「IR専用」「報道専用」などの記載がある場合は**送信対象外**
-- 送信対象外の場合は**フォーム入力しない**
-- `awaiting_approval` にしてはいけない
-- curl POST /api/log-action で `skipped` action を記録 (詳細は Workflow Step 参照)
-- 可能なら理由を `live-monitor` にも反映する
+### If form-filling fails
 
-### 入力項目ルール:
-- 最低限の基本項目は `会社名 / 担当者名 / メール / 電話 / 問い合わせ本文`
-- `部署 / 役職 / 担当者名カナ / 郵便番号 / 住所 / 携帯 / FAX / Webサイト` は、フォームに明示的な対応項目がある場合だけ入力する
-- 設定に存在しない値を推測して埋めてはいけない
-- `companyProfile.notes` のような内部メモはフォーム入力や送信本文に使ってはいけない
+- **CAPTCHA / reCAPTCHA / hCaptcha / Turnstile**: do not stop. Fill every
+  field you can → take `ss-{No}-input.png` → log `awaiting_approval`
+  (the human solves the CAPTCHA and submits).
+  - A visible checkbox-style reCAPTCHA v2 ("I'm not a robot") may be
+    `browser_click`'d **once**. If an image challenge appears, give up and go
+    to `awaiting_approval`.
+  - Only when the form itself never renders / a Cloudflare-style page gate
+    blocks you from reaching the form body should you log `error`.
+- Form not found → `error` log + reason + what was searched.
+- Filled what you could, but some fields are missing → take the screenshot of
+  what you did fill → `awaiting_approval` + explicitly note the missing
+  fields in the log.
 
-**ユーザーはダッシュボードのスクショを見て送信判断する。スクショがなければ判断できない。**
+### Handling "no solicitation" / out-of-scope forms
 
-## Architecture — CLI主体
+- If the page explicitly says things like
+  「営業目的のお問い合わせはご遠慮ください」 (no sales inquiries),
+  「既存顧客専用」 (existing customers only),
+  「採用専用」 (hiring only),
+  「IR専用」 (IR only),
+  「報道専用」 (press only),
+  the form is **out of scope**.
+- For out-of-scope forms: **do not fill the form**.
+- Do **not** log `awaiting_approval`.
+- Record a `skipped` action via `curl POST /api/log-action` (details in the
+  Workflow section).
+- If possible, also reflect the reason in `live-monitor`.
 
-**重要: このプロジェクトはClaude Code CLIが主体で動く。**
+### Field input rules
 
-- Claude Codeがその場で企業を分析し、メッセージを作成し、フォームに入力する
-- ダッシュボード（localhost:設定ポート）はUI表示・操作・設定管理
+- Minimum required fields: `company name / contact name / email / phone /
+  inquiry body`.
+- `department / job title / contact name (kana) / postal code / address /
+  mobile / fax / website` should only be filled when the form has an
+  **explicit corresponding field**.
+- **Never guess values that don't exist in settings.**
+- `companyProfile.notes` and similar internal memos must **never** be typed
+  into a form or used in a sent message.
 
-### フォーム入力モード
+**The user makes the send decision from the screenshot on the dashboard.
+Without a screenshot, they cannot decide.**
 
-**MCP Playwright モードのみを使用する。**
+## Architecture — CLI-driven
 
-- Claude Code CLI が企業サイトを確認し、問い合わせページを探し、フォーム構造を理解し、入力済み状態を保持する
-- フォーム操作は必ず MCP Playwright の `browser_*` ツールで行う
-- `/api/form-session/*`、Electron WebContentsView、direct JS automation、独自 Playwright worker はフォーム入力の代替に使わない
-- Electron ダッシュボードは UI表示・設定管理・ログ確認のために使う。フォーム探索/入力の主体ではない
-- MCP Playwright が見当たらない場合は、まず Claude Code の MCP 登録/再接続を確認する。Electron Form Session API へ切り替えない
-- 入力済みフォーム/確認画面/CAPTCHA/エラー根拠の最終タブだけを残し、探索残骸タブは閉じる
+**Important: this project is driven by the Claude Code CLI.**
 
-### タブ管理契約
+- Claude Code performs company analysis, message authoring, and form filling
+  inline.
+- The dashboard (localhost:configured port) is for UI display, manual
+  operations, and settings management.
 
-- 会社ごとの処理開始時に `browser_tabs` で既存タブを記録し、`baselineTabs` として扱う
-- 探索で開いた検索結果・候補ページ・会社サイト・プライバシー・ニュース等は `workingTabs` として管理する
-- 入力済みフォーム、確認画面、CAPTCHA、またはエラー根拠ページのうち最終確認に必要な1タブだけを `finalFormTab` として残す
-- `awaiting_approval` / `error` / `skipped` にする直前に `browser_tabs` で確認し、`baselineTabs` と `finalFormTab` 以外の `workingTabs` は閉じる
-- `submitted` の場合は `ss-{No}-sent.png` 保存後、その会社の `workingTabs` を閉じる
-- 既存の他社タブ、ユーザーが元から開いていたタブ、`baselineTabs` は閉じない
-- `logAction` の details には `finalFormTab` のURL、閉じたタブ数、残した理由を入れる
+### Form-fill mode
+
+**MCP Playwright mode only.**
+
+- The Claude Code CLI checks the company site, finds the contact page,
+  understands the form structure, and maintains the filled-in state.
+- All form operations **must** go through MCP Playwright `browser_*` tools.
+- Do **not** use `/api/form-session/*`, Electron `WebContentsView`, direct
+  JS automation, or a custom Playwright worker as an alternative for
+  form filling.
+- The Electron dashboard is for UI / settings / log inspection. It is not
+  the main driver for form discovery or filling.
+- If MCP Playwright is not visible, first check the Claude Code MCP
+  registration / reconnect. Do not switch to the Electron Form Session API.
+- Keep only the final tab(s): filled form / confirmation screen / CAPTCHA /
+  error evidence. Close exploration leftovers.
+
+### Tab management contract
+
+- At the start of processing each company, record existing tabs with
+  `browser_tabs` and treat them as `baselineTabs`.
+- Search-result pages, candidate pages, the company site, privacy /
+  news pages opened during exploration are tracked as `workingTabs`.
+- Of the filled form, confirmation screen, CAPTCHA, or error-evidence page,
+  keep **only one** as `finalFormTab` (the one needed for final
+  verification).
+- Just before logging `awaiting_approval` / `error` / `skipped`, run
+  `browser_tabs` again and close every `workingTab` that is not in
+  `baselineTabs` and is not the `finalFormTab`.
+- On `submitted`, after saving `ss-{No}-sent.png`, close that company's
+  `workingTabs`.
+- Never close other companies' tabs, tabs the user originally had open, or
+  `baselineTabs`.
+- The `details` payload of `logAction` must include the `finalFormTab` URL,
+  the number of tabs closed, and the reason the kept tab was kept.
 
 ## Desktop Release / Auto Update Gate
 
-**開発環境・Web環境・インストール済みElectronの差分を放置してはいけない。**
+**Never leave a gap between dev / web / installed Electron.**
 
-デスクトップ配布に関わる変更をした場合、Claude Code / Codex は以下を必ず守る:
+When making changes that affect desktop distribution, Claude Code / Codex
+**must** observe:
 
-1. プレビューダッシュボードは必ずルートの `npm run dashboard:preview` を使う。`.claude/worktrees/*` の 3480 表示だけを最新扱いしない
-2. 運用ダッシュボードの正本は `src/dashboard-server.cjs` + `src/ui/**` + `src/routes/**`。プレビュー/Electron は同じ正本から起動する
-3. Web版 `npm run lp:dev` はランディング/公開Web用。運用ダッシュボードの代替正本にしてはいけない
-4. `npm start` / `npm run dashboard:preview` / `npm run lp:dev` の表示だけで「デスクトップ版も最新」と判断しない
-5. リリース対象なら `package.json` / `package-lock.json` の version を必ず上げる
-6. ビルド前に `npm run verify:release` を実行する
-7. Windows配布物は `npm run dist:win -- --publish never` で生成する
-8. ビルド後に `npm run verify:dist` を実行し、`app-update.yml` と `latest.yml` の整合を確認する
-9. ローカルPCへ入れる場合は `npm run install:win` を使う。全ユーザー版は管理者PowerShellで `scripts/install-latest-win.ps1 -AllUsers`
-10. `electron-builder.yml` に `local-test` / `${env.GH_OWNER}` / `${env.GH_REPO}` を戻してはいけない
-11. `npm run verify:dist` が通るまで、自動アップデート準備完了と言ってはいけない
-12. **GitHub Releases に公開するまでユーザーに更新は届かない**: `git push origin main` で自動タグ・リリースが走る。リリース後は `npm run verify:github` で GitHub Releases の latest.yml を確認する
+1. The preview dashboard must always be launched via the root
+   `npm run dashboard:preview`. Do not treat the `.claude/worktrees/*` 3480
+   instance as authoritative.
+2. The canonical operational dashboard is `src/dashboard-server.cjs` +
+   `src/ui/**` + `src/routes/**`. Preview and Electron both start from this
+   same source.
+3. The web build `npm run lp:dev` is for the landing page / public web
+   only. Do not use it as a substitute for the operational dashboard.
+4. Do not infer "desktop build is up to date" merely from the output of
+   `npm start` / `npm run dashboard:preview` / `npm run lp:dev`.
+5. If this change targets a release, bump the version in `package.json` /
+   `package-lock.json`.
+6. Before building, run `npm run verify:release`.
+7. Build the Windows artifact via
+   `npm run dist:win -- --publish never`.
+8. After building, run `npm run verify:dist` to confirm `app-update.yml` and
+   `latest.yml` are consistent.
+9. To install on the local PC, use `npm run install:win`. For the
+   all-users install, run `scripts/install-latest-win.ps1 -AllUsers` from
+   an administrator PowerShell.
+10. Do **not** put `local-test` / `${env.GH_OWNER}` / `${env.GH_REPO}` back
+    into `electron-builder.yml`.
+11. Do not declare the auto-update pipeline ready until
+    `npm run verify:dist` passes.
+12. **Updates do not reach users until GitHub Releases publishes**: pushing
+    to `git push origin main` triggers automatic tagging + release. After
+    the release, run `npm run verify:github` to confirm the GitHub Releases
+    `latest.yml` is reachable.
 
-### 自動リリースの仕組み (v1.2.110+)
+### Automatic release pipeline (v1.2.110+)
 
-**main ブランチに push するだけで自動リリースが走る**:
-- `.github/workflows/release.yml` が `v{package.json version}` タグを自動作成
-- Windows/macOS/Linux をビルドして GitHub Releases に公開
-- `latest.yml` の 0KB チェック・CDN 疎通確認まで自動化
+**Pushing to `main` is enough to trigger a release**:
+- `.github/workflows/release.yml` automatically creates the
+  `v{package.json version}` tag.
+- Builds Windows / macOS / Linux and publishes them to GitHub Releases.
+- Includes automated checks for `latest.yml` 0KB regressions and CDN
+  reachability.
 
-**アップデートが届く仕組み**:
-- インストール済みアプリが起動 5 秒後 + 6 時間ごとに GitHub Releases の `latest.yml` を確認
-- 新バージョンがあれば自動 DL → 「再起動で更新」ダイアログ
-- ダッシュボードヘッダーの「アップデート確認」は Electron インストール版でのみ動作
-  (`npm run dashboard:preview` は `app.isPackaged=false` のため無効)
+**How the update reaches users**:
+- Installed apps check the GitHub Releases `latest.yml` 5 seconds after
+  startup and every 6 hours thereafter.
+- If a new version is found, it auto-downloads and shows
+  "Restart to update".
+- The "Check for updates" button in the dashboard header only works in
+  packaged Electron installs (`npm run dashboard:preview` has
+  `app.isPackaged=false` and is therefore disabled).
 
-**リリース後の検証**:
+**Post-release verification**:
 ```bash
-npm run verify:github   # GitHub Releases の latest.yml 疎通確認
+npm run verify:github   # Verify GitHub Releases latest.yml reachability
 ```
 
-詳細手順は `docs/release-parity-and-autoupdate.md`。Claude Code では `/release-parity` コマンドを使える。
+Full procedure: `docs/release-parity-and-autoupdate.md`. In Claude Code you
+can also run `/release-parity`.
 
 ## Configuration
 
-全設定は `data/settings.json` で管理。ダッシュボードのSettingsタブから編集可能。
+All settings live in `data/settings.json`. They can be edited from the
+**Settings** tab of the dashboard.
 
-### 初回セットアップウィザード
+### First-run setup wizard
 
-非エンジニアユーザー向けに 5 ステップの初回セットアップウィザードがある。
-初回起動時 (settings.json が無い or サンプル状態) に自動的に `/onboarding`
-へリダイレクトされる。
+A 5-step onboarding wizard is provided for non-engineer users. On first
+launch (when `settings.json` is missing or still in sample state), the user
+is automatically redirected to `/onboarding`.
 
-**手動で開く:**
+**Open manually:**
 ```
-http://127.0.0.1:3765/onboarding           # 通常起動 (進捗を保持して再開)
-http://127.0.0.1:3765/onboarding?fresh=1   # 進捗をクリアして最初から再実行
+http://127.0.0.1:3765/onboarding           # normal launch (resume progress)
+http://127.0.0.1:3765/onboarding?fresh=1   # clear progress, restart from step 1
 ```
 
-**5 ステップ:**
-1. ようこそ + 利用規約 (OSS / 自己責任) 同意
-2. 自社情報 (companyProfile)
-3. 自社の強み (valuePropositions.strengths) — プリセット 8 種 + カスタム
-4. ターゲットリスト (Excel/CSV、スキップ可)
-5. AI 連携 (Claude / Codex / Gemini ログイン状態確認)
+**Five steps:**
+1. Welcome + terms of use (OSS / self-responsibility) consent
+2. Company profile (`companyProfile`)
+3. Your strengths (`valuePropositions.strengths`) — 8 presets + custom
+4. Target list (Excel / CSV, can be skipped)
+5. AI integration (Claude / Codex / Gemini login status check)
 
-**完了条件:** `data/settings.json` に `_onboardedAt: <ISO>` が書き込まれ、
-以降のアクセスは通常ダッシュボードに直接遷移する。
+**Completion criterion:** `data/settings.json` gains an `_onboardedAt: <ISO>`
+field, after which subsequent visits go directly to the normal dashboard.
 
-**ファイル構成:**
+**File layout:**
 - `src/onboarding-wizard.cjs` — wizard renderer (HTML/CSS/JS embedded)
-- `src/onboarding-validator.cjs` — 入力検証
-- `src/routes/onboarding-api.cjs` — `/api/onboarding/*` エンドポイント
-- `tests/onboarding-validator.test.cjs` — 検証ロジック ユニットテスト
+- `src/onboarding-validator.cjs` — input validation
+- `src/routes/onboarding-api.cjs` — `/api/onboarding/*` endpoints
+- `tests/onboarding-validator.test.cjs` — validator unit tests
 
-### 設定の読み取り方法
+### Reading settings
 
 ```javascript
 const settings = require('./settings-manager.cjs');
 
-// 会社情報
+// Sender / company info
 const sender = settings.getSender();
 
-// 自社の強み
+// Strengths
 const strengths = settings.getStrengths();
 
-// 協業パターン
+// Collaboration patterns
 const patterns = settings.getSuccessPatterns();
 
-// 業種別プロフィール
+// Industry-specific profiles
 const profiles = settings.getIndustryProfiles();
 
-// ターゲットリストパス
+// Target list path
 const listPath = settings.getTargetListPath();
 
-// 除外ステータス
+// Excluded statuses
 const excludes = settings.getExcludeStatuses();
 ```
 
-初回セットアップ:
+First-time setup:
 ```bash
 cp data/sample-settings.json data/settings.json
 ```
 
-## 法令適合 / コスト可視化 / クラッシュリカバリ (1.2.31+)
+## Compliance / Cost visibility / Crash recovery (1.2.31+)
 
-### 法令適合 (P0-4)
+### Compliance (P0-4)
 
-`src/compliance.cjs` が **特定電子メール法 4 項要件** に該当する 4 要素を
-スキャン:
-1. 送信元会社名 (`companyProfile.companyName`)
-2. 送信者氏名 (`companyProfile.contactName`)
-3. 連絡先メール (`companyProfile.email`)
-4. オプトアウト案内 (「配信停止」「送信停止」「ご不要の場合」「今後ご連絡が不要」 等)
+`src/compliance.cjs` scans for the four required elements under Japan's
+**特定電子メール法 (Specified Commercial Email Act)**:
+1. Sender company name (`companyProfile.companyName`)
+2. Sender personal name (`companyProfile.contactName`)
+3. Contact email (`companyProfile.email`)
+4. Opt-out instructions (Japanese phrases such as 「配信停止」「送信停止」
+   「ご不要の場合」「今後ご連絡が不要」 etc.)
 
-`finalizeMessage()` (`src/message-builder.cjs`) は `preferences.complianceFooter`
-が true (デフォルト) のとき、不足要素のみ自動追記する。
+`finalizeMessage()` (`src/message-builder.cjs`) auto-appends only the
+missing elements when `preferences.complianceFooter` is true (default).
 
-API: `POST /api/compliance/check  body:{message}` → `{ ok, evaluation: { status: ok|warn|fail, missing[] } }`
+API: `POST /api/compliance/check  body:{message}` →
+`{ ok, evaluation: { status: ok|warn|fail, missing[] } }`
 
-### コスト可視化 (P0-3)
+### Cost visibility (P0-3)
 
-`src/cost-estimator.cjs` が `data/ai-run-metrics.jsonl` から `phase_b_prompt_compiled` を
-集計し、Anthropic 公開価格 (Sonnet $3/MTok input, $15/MTok output) で USD/JPY 換算。
+`src/cost-estimator.cjs` aggregates `phase_b_prompt_compiled` entries from
+`data/ai-run-metrics.jsonl` and converts to USD / JPY using Anthropic's
+public pricing (Sonnet $3/MTok input, $15/MTok output).
 
-API: `GET /api/cost/summary` → `{ ok, summary: { today, thisMonth, avgJpyPerCompany, ... } }`
+API: `GET /api/cost/summary` →
+`{ ok, summary: { today, thisMonth, avgJpyPerCompany, ... } }`
 
-UI: ダッシュボード左下に「AI コスト目安」chip (今日 / 今月 / 1社平均)。
-`preferences.usdJpy` で為替レート上書き可。
+UI: an "AI cost estimate" chip in the bottom-left of the dashboard (today /
+this month / per-company average). Override the FX rate via
+`preferences.usdJpy`.
 
-### クラッシュリカバリ (P0-5)
+### Crash recovery (P0-5)
 
-ダッシュボードサーバ起動時に `loadRecoverySnapshot()` が
-`data/recovery/managed-ai-batches.json` を検出すると、ダッシュボード上部に
-オレンジバナー「前回のセッションで N 社の処理が中断されました [続きから] [破棄]」
-が表示される。
+On dashboard server startup, `loadRecoverySnapshot()` checks for
+`data/recovery/managed-ai-batches.json`. If a snapshot exists, an orange
+banner appears at the top of the dashboard:
+"Previous session was interrupted with N companies in flight. [Resume]
+[Discard]".
 
 API:
 - `GET  /api/recovery/status`   `{ ok, hasSnapshot, batchCount, totalCompanies, companyNames[] }`
-- `POST /api/recovery/resume`   再 queue + snapshot 削除
-- `POST /api/recovery/discard`  snapshot 削除のみ
+- `POST /api/recovery/resume`   re-queue + delete snapshot
+- `POST /api/recovery/discard`  delete snapshot only
 
-## 企業リスト作成機能 (List Builder, 1.2.43+)
+## List Builder feature (1.2.43+)
 
-**詳細仕様**: `docs/list-builder-requirements.md` v2.0
+**Full spec**: `docs/list-builder-requirements.md` v2.0
 
-### 概要
-公開情報・公式データソース（国税庁法人番号API / gBizINFO / EDINET）・ユーザー指定URL
-をもとに、営業候補企業を発見・検証・適合度評価して、人間の承認の上でターゲットリストへ追加する。
+### Overview
 
-**3 つの入力モード:**
-- **URL モード**: 企業一覧ページ (業界ランキング・DX認定企業一覧等) のURL → ページネーション
-  踏破 → 各企業の詳細抽出
-- **自然言語モード**: 自由文 → Sonnet で構造化クエリ → SerpApi
-- **カテゴリモード**: 業種×地域×従業員数×売上規模×成長性のプリセット UI
+Discover, verify, and qualify candidate companies for outreach using only
+public information and official data sources (Japan National Tax Agency
+Corporate Number API / gBizINFO / EDINET) plus user-specified URLs.
+Human approval is required before any candidate is added to the target list.
 
-### URL
-- `GET /list-builder` — UI ページ (ダッシュボード右上のアイコンからもアクセス可)
+**Three input modes:**
+- **URL mode**: enter the URL of a company-listing page (industry ranking /
+  DX-certified company list / etc.) → paginate → extract details for each
+  company.
+- **Natural-language mode**: free text → Sonnet structures the query →
+  SerpApi.
+- **Category mode**: a preset UI keyed on industry × region × headcount ×
+  revenue band × growth.
+
+### URLs
+- `GET /list-builder` — UI page (also reachable from the icon in the
+  dashboard top-right)
 
 ### API
-- `POST /api/list-builder/run` — run 開始 (バックグラウンド実行)
-- `GET  /api/list-builder/stream/:runId` — SSE 進捗購読
-- `POST /api/list-builder/commit` — 選択分をターゲットリストに追加
-- `GET  /api/list-builder/runs` / `runs/:runId` — 一覧・詳細
+- `POST /api/list-builder/run` — start a run (background)
+- `GET  /api/list-builder/stream/:runId` — SSE progress subscription
+- `POST /api/list-builder/commit` — add the selected rows to the target list
+- `GET  /api/list-builder/runs` / `runs/:runId` — list / detail
 - `POST /api/list-builder/runs/:runId/cancel` / `retry-failed`
 - `DELETE /api/list-builder/runs/:runId`
-- `GET  /api/list-builder/api-key-status` — APIキーの有無のみ返す（値は返さない）
+- `GET  /api/list-builder/api-key-status` — returns only whether keys are
+  set (never the values)
 
-### 必要な API キー (`data/settings.json::apiKeys`)
-- `serpApi` (NLQ/カテゴリモード必須)
-- `houjinBangou` (国税庁、無料、推奨)
-- `gBizInfo` (gBizINFO、無料、推奨)
-- `edinet` (上場企業の売上推移厳密判定用、任意)
+### Required API keys (`data/settings.json::apiKeys`)
+- `serpApi` (required for NLQ / category mode)
+- `houjinBangou` (Japan NTA Corporate Number API, free, recommended)
+- `gBizInfo` (gBizINFO, free, recommended)
+- `edinet` (EDINET, optional, used for strict revenue-trend evaluation of
+  listed companies)
 
-### ファイル構成
+### File layout
 ```
 src/list-builder/
-├ orchestrator.cjs          # 8-stage パイプライン実行
-├ run-manager.cjs           # run の永続化・cancel・retry
-├ extractor.cjs             # HTTP fetch + コンプライアンスチェック連携
-├ enricher.cjs              # 業種/従業員/売上/フォーム抽出
-├ identity-resolver.cjs     # 法人番号API + gBizINFO で同一性解決
-├ qualification-scorer.cjs  # fitScore 0-100 を算出
-├ compliance-precheck.cjs   # robots.txt + フォーム種別 + CAPTCHA検出
-├ dedupe.cjs                # 4層 + Suppression による重複検出
-├ suppression.cjs           # 除外リスト管理
-├ url-normalizer.cjs        # URL 正規化 (eTLD+1 / UTM 除去 / etc)
-├ name-normalizer.cjs       # 会社名正規化 (法人格 / 全角半角)
-├ discovery/                # 3 モード discovery
+├ orchestrator.cjs          # 8-stage pipeline execution
+├ run-manager.cjs           # run persistence / cancel / retry
+├ extractor.cjs             # HTTP fetch + compliance check integration
+├ enricher.cjs              # industry / headcount / revenue / form extraction
+├ identity-resolver.cjs     # identity resolution via Corporate Number API + gBizINFO
+├ qualification-scorer.cjs  # fitScore 0-100
+├ compliance-precheck.cjs   # robots.txt + form-type + CAPTCHA detection
+├ dedupe.cjs                # 4-layer + suppression-based dedup
+├ suppression.cjs           # exclusion-list management
+├ url-normalizer.cjs        # URL normalization (eTLD+1 / UTM strip / etc.)
+├ name-normalizer.cjs       # company-name normalization (legal forms / fullwidth-halfwidth)
+├ discovery/                # 3-mode discovery
 │  ├ list-page.cjs / pagination.cjs / nlq.cjs / category.cjs
-├ enrichers/                # 個別フィールド抽出
+├ enrichers/                # individual-field extractors
 │  ├ employee-count.cjs / revenue.cjs / growth-trend.cjs
-└ official-clients/         # 公式 API ラッパ
+└ official-clients/         # official API wrappers
    ├ http-client.cjs / houjin-bangou-client.cjs / gbizinfo-client.cjs / edinet-client.cjs
 
-src/list-builder-page.cjs   # UI レンダラ
-src/routes/list-builder-api.cjs  # REST + SSE エンドポイント
+src/list-builder-page.cjs   # UI renderer
+src/routes/list-builder-api.cjs  # REST + SSE endpoints
 
 data/list-builder/
-├ runs/{runId}/             # run ごとの永続化データ
+├ runs/{runId}/             # per-run persisted data
 └ ...
-data/suppression-list.json  # Suppression List
+data/suppression-list.json  # suppression list
 ```
 
-### 設計原則 (要件§1.2) — **List Builder (リスト発見) フェーズのみ適用**
-- 公開情報のみを取得 (Cloudflare突破・CAPTCHA回避は行わない、検出時は停止)
-- 公式データソース優先 (法人番号API → gBizINFO → EDINET → 検索API → スクレイピング)
-- 説明可能性: 各レコードに evidence (取得元・取得日時・confidence) を保存
-- 人間確認型: 自動で targets.xlsx に追加せず、必ずプレビュー → commit を経由
-- 安全側デフォルト: 個人メール/個人名抽出は無効、CAPTCHA/403/429 検出時は停止
+### Design principles (spec §1.2) — **List Builder (discovery) phase only**
+- Public information only (no Cloudflare bypass, no CAPTCHA evasion; stop on
+  detection).
+- Prefer official sources (Corporate Number API → gBizINFO → EDINET →
+  search API → scraping).
+- Explainability: every record stores `evidence` (source, fetched-at,
+  confidence).
+- Human-confirmed: never auto-add to `targets.xlsx`; always require
+  preview → commit.
+- Safe defaults: personal-email / personal-name extraction is off; on
+  CAPTCHA / 403 / 429 detection, stop.
 
-**注意**: フォーム入力 (Workflow Step 4-7) では CAPTCHA 検出時の挙動が異なる。フォーム入力までは実施 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)。詳細は Workflow セクション参照。
+**Note**: form filling (Workflow Steps 4-7) treats CAPTCHA differently — it
+fills the form as far as possible → takes `ss-{No}-input.png` →
+`awaiting_approval` (the human solves the CAPTCHA and submits). See the
+Workflow section for details.
 
-### Scrapling 補助フェッチャ (オプション、1.2.43+)
+### Scrapling auxiliary fetcher (optional, 1.2.43+)
 
-**位置づけ**: 通常の HTTP fetch + Playwright で取得が難しい公開ページの補助。
-突破系の用途ではなく「公開情報を確実に取得する」ためのフォールバック。
+**Positioning**: an auxiliary path for public pages that are hard to fetch
+with plain HTTP + Playwright. Not for bypassing protections — for "reliably
+fetching public information".
 
-**有効化:**
-1. `pip install "scrapling[all]"` (ユーザー側で実施、Sales Claw は同梱しない)
-2. `scrapling install` (ブラウザバイナリ)
+**Enable:**
+1. `pip install "scrapling[all]"` (user installs; Sales Claw does not ship
+   it)
+2. `scrapling install` (browser binaries)
 3. `data/settings.json::listBuilder.scraplingMcpEnabled = true`
-4. 必要なら `scraplingPythonPath` で Python の場所を指定 (default `python`)
+4. Optionally set `scraplingPythonPath` to locate Python (default `python`)
 
-**動作:**
-- `extractor.cjs::extract` が settings で有効化されている時、まず Scrapling で取得を試みる
-- Scrapling が `blocked` (403/CAPTCHA等) を返したら **そこで停止**（フォールバックしない）
-- Scrapling が「未インストール」「タイムアウト」「spawn 失敗」のみ defaultHttpFetch にフォールバック
-- 結果には `fetcherKind: 'scrapling' | 'http'` が付与される
+**Behavior:**
+- When enabled in settings, `extractor.cjs::extract` tries Scrapling first.
+- If Scrapling returns `blocked` (403 / CAPTCHA / etc.), **stop there**
+  (do not fall back).
+- Only "not installed" / "timeout" / "spawn failed" cause a fallback to
+  `defaultHttpFetch`.
+- Results carry a `fetcherKind: 'scrapling' | 'http'` field.
 
-**ファイル:**
-- `scripts/scrapling-fetch.py` — Python ワーカースクリプト
-- `src/list-builder/scrapling-client.cjs` — spawn ラッパ + 可用性キャッシュ
+**Files:**
+- `scripts/scrapling-fetch.py` — Python worker script
+- `src/list-builder/scrapling-client.cjs` — spawn wrapper + availability
+  cache
 
 ## Workflow
 
-**1社あたりの必須フロー（省略不可）:**
+**Per-company required flow (no step may be skipped):**
 ```
-Step 0: MCP Playwright の利用前提
-  → このバッチは Claude Code CLI managed session から実行される
-  → フォーム探索・入力は MCP Playwright の browser_* ツールで行う
-  → Electron Form Session API の疎通確認は不要。/api/form-session/* には切り替えない
-  → MCP Playwright が見えない場合は、接続不備として error ログを残し、Sales Claw 側の MCP 再登録/再起動を促す
+Step 0: MCP Playwright prerequisites
+  → This batch runs inside a Claude Code CLI managed session
+  → Form discovery / filling MUST use MCP Playwright browser_* tools
+  → No need to check the Electron Form Session API. Do not switch to /api/form-session/*
+  → If MCP Playwright is not visible, log an error attributing it to a connection problem and prompt the user to re-register / restart MCP on the Sales Claw side
+```
 
-**重要**: 1.2.91 から **logAction は curl POST /api/log-action 経由が必須** (旧 `node -e` shell 経路はシェル/プロンプトインジェクション RCE を許容したため廃止)。
+**Important**: from 1.2.91, **`logAction` MUST go through
+`curl POST /api/log-action`** (the legacy `node -e` shell path is removed
+because it allowed shell / prompt injection RCE).
 
-**v2.0.9 から: ダッシュボード URL は env で渡される**。`$SALES_CLAW_SESSION` (token) と `$SALES_CLAW_DASHBOARD_URL` (例: `http://127.0.0.1:3456`) はどちらも managed PTY 起動時に必ず注入済み。**ハードコードの 127.0.0.1:3765 はもう使わないこと** (過去にダッシュボードが別ポート 3456 で起動した時、curl が全て Connection refused になりログが消えた事故あり)。
+**From v2.0.9 the dashboard URL is passed via env vars**.
+`$SALES_CLAW_SESSION` (token) and `$SALES_CLAW_DASHBOARD_URL`
+(e.g. `http://127.0.0.1:3456`) are always injected when the managed PTY
+starts. **Stop hardcoding `127.0.0.1:3765`** (there was an incident where
+the dashboard started on port 3456 and every `curl` returned Connection
+refused, losing all log entries).
 
 ```
 curl -s -X POST -H "Content-Type: application/json" \
   -H "x-sales-claw-session: $SALES_CLAW_SESSION" \
-  -d '{"no":<No>,"name":"<会社名>","action":"<action>","details":"<詳細>"}' \
+  -d '{"no":<No>,"name":"<company name>","action":"<action>","details":"<details>"}' \
   "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
 ```
 
-許可 action: `awaiting_approval` `submitted` `skipped` `error` `confirm_reached` `form_fill`
+Allowed `action` values: `awaiting_approval` `submitted` `skipped` `error`
+`confirm_reached` `form_fill`
 
-**1.2.100 から `awaiting_approval` / `submitted` の details は object 形式 + sentMessage 必須**:
+**From 1.2.100: `details` for `awaiting_approval` / `submitted` must be an
+object and must include `sentMessage`**:
 
 ```
 curl -s -X POST -H "Content-Type: application/json" \
@@ -340,7 +465,7 @@ curl -s -X POST -H "Content-Type: application/json" \
     "name":"サンプル取引先株式会社",
     "action":"awaiting_approval",
     "details":{
-      "sentMessage":"お世話になります。サンプル株式会社の担当者と申します。\n貴社の取り組みを拝見し、お役に立てる場面があるかもしれずご連絡いたしました。...(実際にフォーム本文欄に入力した文字列そのもの)",
+      "sentMessage":"お世話になります。サンプル株式会社の担当者と申します。\n貴社の取り組みを拝見し、お役に立てる場面があるかもしれずご連絡いたしました。... (the exact string typed into the contact form body)",
       "screenshot":"ss-185-input.png",
       "tabKept":true,
       "finalFormTab":"https://contact.example.com/..."
@@ -349,319 +474,340 @@ curl -s -X POST -H "Content-Type: application/json" \
   "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
 ```
 
-ガード:
-- details.sentMessage 欠如 → 422 (記録されない)
-- sentMessage が 30 文字未満 → 422 (TEL/MAIL ダンプだけのような縮退本文を弾く)
-- placeholder 文言 (「【URL 不在のため、CLI 本体が公式サイト探索後に本文を最終化します】」等) を含む → 422
-- screenshot 欠如 / ファイル不存在 → 422
+Guards:
+- `details.sentMessage` missing → 422 (not recorded)
+- `sentMessage` shorter than 30 characters → 422 (rejects degenerate
+  TEL/MAIL-dump bodies)
+- contains placeholder phrasing (e.g. 「【URL 不在のため、CLI 本体が公式
+  サイト探索後に本文を最終化します】」) → 422
+- screenshot missing / file does not exist → 422
 
-Step 1: 企業サイト分析
-  → MCP Playwright で公式サイト・問い合わせ導線を確認する
-  → 必要に応じて company-analyzer.cjs / settings-manager.cjs を Bash で補助的に使ってよい
-  → curl POST /api/log-action で site_analysis を記録 (Phase A サブプロセスが既に記録済の場合あり)
+```
+Step 1: Company-site analysis
+  → Use MCP Playwright to confirm the official site and the contact-form path
+  → As needed, you may use company-analyzer.cjs / settings-manager.cjs from Bash as a helper
+  → Record a site_analysis action via curl POST /api/log-action (the Phase A subprocess may have already recorded it)
 
-Step 2: メッセージ生成
-  → settings-manager.cjs から送信者情報・強み・テンプレートを読み取る
-  → 対象サイトで確認した事実だけを使い、企業ごとに本文を作成
-  → message_draft も Phase A サブプロセスが先に記録済 (再記録不要)
+Step 2: Message generation
+  → Read sender info / strengths / templates from settings-manager.cjs
+  → Use only facts confirmed on the target site, and craft the body per company
+  → message_draft is also pre-recorded by the Phase A subprocess (no re-record needed)
 
-Step 3: フォームURL探索
-  → 1社目: browser_navigate で公式サイトまたは既知フォーム候補を開く
-  → 2社目以降: browser_evaluate で window.open(url,'_blank') → browser_tabs
-  → 既知 formUrl がない/不正なら、companyUrl 公式サイト内の「お問い合わせ」「Contact」「資料請求」「パートナー」等を Playwright で探索
-  → companyUrl 自体が空の場合 (urlMissing=true)、WebSearch で「会社名 + 公式」検索 → 公式ドメイン特定 → お問い合わせフォーム発見
-  → 検索結果を使う場合も公式ドメインか確認する
+Step 3: Form-URL discovery
+  → First company: browser_navigate to the official site or a known form candidate
+  → Subsequent companies: browser_evaluate window.open(url,'_blank') → browser_tabs
+  → If formUrl is absent or invalid, explore inside the official site for "Contact" / "お問い合わせ" / "Contact" / "資料請求" / "パートナー" via Playwright
+  → If companyUrl itself is empty (urlMissing=true), use WebSearch to query "company name + 公式", identify the official domain, find the contact form
+  → When using search results, always re-verify the official domain
 
-Step 4: フォーム構造解析
-  → browser_snapshot でフォーム構造を解析
-  → 営業NG/対象外/既存顧客専用/採用専用/IR専用/報道専用 → 入力せず skipped (curl POST)
-  → CAPTCHA 検出 → ★ 入力までは実施 (Step 5-7 進行)、最終送信は人間に委ねる (awaiting_approval)
-  → フォーム自体が表示されない / ページゲートで到達不可 → error (curl POST)
+Step 4: Form-structure analysis
+  → browser_snapshot to parse the form
+  → "no solicitation" / out-of-scope / existing-customers-only / hiring-only / IR-only / press-only → do not fill, mark as skipped (curl POST)
+  → CAPTCHA detected → ★ KEEP filling (continue Step 5-7), leave final submit to the human (awaiting_approval)
+  → Form not rendered / blocked by page gate → error (curl POST)
 
-Step 5: フォームに入力 ★ 絶対省略するな
-  → browser_fill_form / browser_type / browser_select_option / browser_click で実入力
-  → 会社名・氏名・メール・電話・問い合わせ本文を最低限入力する
-  → curl POST で form_fill action を記録
+Step 5: Fill the form ★ NEVER SKIP
+  → Actually input via browser_fill_form / browser_type / browser_select_option / browser_click
+  → At minimum: company name / contact name / email / phone / inquiry body
+  → Record a form_fill action via curl POST
 
-Step 6: スクリーンショット ★ 絶対省略するな
-  → browser_take_screenshot で screenshots/ss-{No}-input.png に保存（必須）
-  → 確認画面がある場合は screenshots/ss-{No}-confirm.png も保存してよい
-  → curl POST で confirm_reached action を記録
+Step 6: Screenshot ★ NEVER SKIP
+  → browser_take_screenshot to screenshots/ss-{No}-input.png (required)
+  → If a confirmation screen exists, screenshots/ss-{No}-confirm.png is also fine
+  → Record a confirm_reached action via curl POST
 
-Step 7: 確認待ちに登録
-  → curl POST /api/log-action で awaiting_approval action を記録
-  → ★ Step 5, 6 が完了していない場合、このステップに進んではいけない
-  → awaiting_approval 前にタブ管理契約を実行し、入力済みフォーム/確認画面の finalFormTab だけを保持する
+Step 7: Register awaiting_approval
+  → Record an awaiting_approval action via curl POST /api/log-action
+  → ★ If Steps 5 and 6 are not complete, do NOT enter this step
+  → Before logging awaiting_approval, execute the Tab management contract: keep only the finalFormTab for the filled form / confirmation screen
 ```
 
-**複数社の場合（2フェーズ並列処理）:**
+**Multi-company case (two-phase parallel processing):**
 ```
-「3社確認待ちまで」と指示された場合:
-→ 一気に最後まで進める。途中でメッセージ承認を求めて止まらない。
+"Process up to 3 awaiting_approval" → keep going to the end. Do NOT stop mid-flight to ask for message approval.
 
-フェーズA（並列実行 — MCP不使用）:
-→ 各社の「サイト分析 + メッセージ生成プロンプト構築」を並列サブエージェントで同時処理
-→ 方法: Agent ツールで haiku サブエージェントを並列起動:
-    node src/parallel-analysis.cjs '{"no":1,"companyName":"会社名","url":"URL","type":"種別","formUrl":"フォームURL"}'
-→ サブエージェント内で company-analyzer + message-builder を使用
-→ 出力: analysis + messagePrompt（CLI用プロンプト）+ templateDraft（フォールバック）
-→ MCP Playwright は使わない（直接 HTTP フェッチのみ）
-→ thinking() + updateLiveMonitor() で進行状況をダッシュボードに通知
-→ 全社のフェーズAが完了するまでフェーズA.5に進まない
+Phase A (parallel — no MCP):
+→ Process "site analysis + message-generation prompt construction" for every company in parallel sub-agents
+→ How: spin up haiku sub-agents in parallel via the Agent tool:
+    node src/parallel-analysis.cjs '{"no":1,"companyName":"<name>","url":"<URL>","type":"<type>","formUrl":"<form URL>"}'
+→ Sub-agent internally uses company-analyzer + message-builder
+→ Output: analysis + messagePrompt (CLI prompt) + templateDraft (fallback)
+→ Do NOT use MCP Playwright (plain HTTP fetch only)
+→ Notify dashboard progress via thinking() + updateLiveMonitor()
+→ Do not advance to Phase A.5 until every company's Phase A is complete
 
-フェーズA.5（メッセージ生成 — CLI言語能力を活用）:
-→ フェーズAの分析結果 + messagePrompt をフォーム入力用 batch payload に載せる
-→ CLIは messagePrompt を使って企業ごとに本文を最終化し、templateDraft はフォールバックとして扱う
-→ messagePrompt には approachObjective / approachGuardrails / サイト抜粋 / ギャップ分析が含まれる
-→ CLIが自然な日本語で、テンプレート感のない「この会社だけに書いた」文面を生成する
-→ templateDraft はCLI生成に失敗した場合のフォールバック
+Phase A.5 (message generation — leverage CLI's language ability):
+→ Load each company's Phase A analysis + messagePrompt into the form-fill batch payload
+→ The CLI uses messagePrompt to finalize the body per company; treat templateDraft only as fallback
+→ messagePrompt includes approachObjective / approachGuardrails / site excerpts / gap analysis
+→ The CLI writes natural Japanese (or English) that feels "written for this company only" — avoid template feel
+→ templateDraft is used only when CLI generation fails
 
-フェーズB（順次実行 — フォーム入力）:
-→ 1社ずつ MCP Playwright でフォーム探索・構造解析・入力・スクショを実行
-→ 各社: browser_navigate / browser_tabs → browser_snapshot → browser_fill_form
+Phase B (sequential — form filling):
+→ Run form discovery / structure analysis / filling / screenshot one company at a time via MCP Playwright
+→ Per company: browser_navigate / browser_tabs → browser_snapshot → browser_fill_form
          → browser_take_screenshot → logAction(awaiting_approval)
-→ 各社ごとに finalFormTab だけ残し、探索残骸タブは閉じる
+→ Per company, keep only the finalFormTab; close exploration leftovers
 
-→ thinking() + updateLiveMonitor() で進行状況をダッシュボードに通知
+→ Notify dashboard progress via thinking() + updateLiveMonitor()
 
-全社完了後、結果を集約してユーザーに報告
-→ 送信判断はダッシュボードの確認待ちタブで人間が行う
+When all companies are done, summarize the results for the user
+→ The actual send decision happens in the dashboard's Awaiting Approval tab (human in the loop)
 
-「〇〇に送って」の場合:
-→ メッセージ案をユーザーに提示 → 承認されたら入力→スクショまで進める
+"Send to <company>" case:
+→ Show the draft to the user → on approval, proceed up to fill + screenshot
 ```
 
-**進行状況通知（必須）:**
+**Progress notification (required):**
 ```
-各ステップで cli-logger.cjs を呼んで進行状況をダッシュボードに反映する:
+At every step, call cli-logger.cjs so the dashboard reflects progress:
 
 const { thinking, log } = require('./src/cli-logger.cjs');
 
-フェーズA開始: thinking('フェーズA開始: N社の並列分析')
-各社分析開始: thinking('[No.X] 会社名: サイト分析開始')
-各社プロンプト: thinking('[No.X] 会社名: メッセージプロンプト生成中')
-フェーズA.5開始: thinking('フェーズA.5開始: CLIメッセージ生成')
-各社CLI生成: thinking('[No.X] 会社名: CLIでパーソナライズ文面生成中')
-フェーズB開始: thinking('フェーズB開始: フォーム入力（順次処理）')
-各社フォーム入力: thinking('[No.X] 会社名: フォーム入力中')
-各社完了: log('[No.X] 会社名: 確認待ち登録完了', 'action')
+Phase A start: thinking('Phase A start: parallel analysis of N companies')
+Each company analysis start: thinking('[No.X] <name>: site analysis start')
+Each company prompt: thinking('[No.X] <name>: building message prompt')
+Phase A.5 start: thinking('Phase A.5 start: CLI message generation')
+Each company CLI generation: thinking('[No.X] <name>: CLI personalizing message')
+Phase B start: thinking('Phase B start: form filling (sequential)')
+Each company form filling: thinking('[No.X] <name>: filling form')
+Each company complete: log('[No.X] <name>: awaiting_approval registered', 'action')
 ```
 
 ## Message Generation
 
-メッセージはCLIの言語能力を活用して企業ごとにパーソナライズ生成する。
+Messages are personalized per company by leveraging the CLI's language
+ability.
 
-### 生成フロー
-1. `parallel-analysis.cjs` が企業サイトを分析 → analysis（事業領域・ギャップ・注力分野・サイト抜粋）
-2. `message-builder.cjs` の `buildMessagePrompt(analysis)` がCLI用プロンプトを構築
-3. CLIエージェントがプロンプトに基づき、相手企業に刺さる文面を生成
-4. フォールバック: `buildCustomMessage(analysis)` のテンプレート文面
+### Generation flow
+1. `parallel-analysis.cjs` analyzes the company site → `analysis` (business
+   domain, gaps, focus areas, site excerpts).
+2. `message-builder.cjs`'s `buildMessagePrompt(analysis)` builds the CLI
+   prompt.
+3. The CLI agent uses the prompt to craft a body that resonates with the
+   target.
+4. Fallback: `buildCustomMessage(analysis)`'s template body.
 
-### 設定参照先
-- `companyProfile` — 送信者情報
-- `valuePropositions.strengths` — 自社の強み（ギャップ分析に使用）
-- `valuePropositions.successPatterns` — 協業実績
-- `valuePropositions.industryProfiles` — 業種別テンプレート（フォールバック用）
-- `messageTemplates` — 文面のトーン・署名・CTA
-- `messageTemplates.approachObjective` — 営業方針（CLIプロンプトに自動反映）
-- `messageTemplates.approachGuardrails` — 禁止事項（CLIプロンプトに自動反映）
+### Settings references
+- `companyProfile` — sender info
+- `valuePropositions.strengths` — our strengths (used in gap analysis)
+- `valuePropositions.successPatterns` — collaboration record
+- `valuePropositions.industryProfiles` — per-industry template (fallback)
+- `messageTemplates` — tone / signature / CTA
+- `messageTemplates.approachObjective` — outreach objective (auto-injected
+  into the CLI prompt)
+- `messageTemplates.approachGuardrails` — prohibited content (auto-injected
+  into the CLI prompt)
 
-### メッセージ作成方針（CLIプロンプトに組み込み済み）
-- 相手がやりたいことから入る（自社紹介から始めない）
-- この会社だけに書いた感を出す（テンプレート感を排除）
-- 全部伝えようとしない（尖った強み1-2個に集中）
-- Win-Winは匂わせ程度（押し売り感を排除）
-- 実績は控えめに（企業名を全面に出さない。数字は使ってOK）
-- **相手に何を提供できるかを前面に**
-- 相手の事業に触れる（「貴社の〇〇事業を拝見」）
-- 相手の強み × 自社の強みの組み合わせ提案
-- 相手の課題を決めつけない
+### Message authoring guidelines (already embedded in the CLI prompt)
+- Lead with what the other party wants to achieve (do not open with self-intro).
+- Make it feel written only for this company (avoid template feel).
+- Don't try to communicate everything (focus on 1-2 sharp strengths).
+- Keep Win-Win subtle (no hard sell).
+- Keep results understated (don't lead with named clients; numbers are OK).
+- **Foreground what you can do for the other party.**
+- Touch the other party's business explicitly ("貴社の〇〇事業を拝見").
+- Propose combinations of their strengths × our strengths.
+- Don't assume their problems.
 
-## OMC（oh-my-claudecode）モデルルーティング — トークン節約
+## OMC (oh-my-claudecode) model routing — token savings
 
-このプロジェクトはOMCのモデルルーティングに対応。
-各ステップで最適なモデルを使い分けることで、**トークンコストを60-70%削減**できる。
+This project is integrated with OMC's model routing. By assigning the most
+appropriate model to each step, you can reduce token cost by **60-70%**.
 
-### インストール（初回のみ）
+### Install (one-time)
 ```bash
 claude /install oh-my-claudecode
 ```
 
-### ステップ別モデル割り当て
+### Per-step model assignment
 
-| ステップ | 処理内容 | モデル | 理由 |
+| Step | Processing | Model | Reason |
 |---------|---------|--------|------|
-| 企業サイト分析 | URL巡回→テキスト抽出→事業領域検出 | **haiku** | パターンマッチング。深い推論不要 |
-| フォーム探索 | リンク辿り→フォームURL特定 | **haiku** | 単純なWeb巡回 |
-| フォーム検証 | フォーム構造解析→入力可否判定 | **haiku** | 構造チェックのみ |
-| メッセージ生成 | ギャップ分析→カスタム文面作成 | **sonnet** | 自然な日本語の文章生成が必要 |
-| フォーム入力 | MCP Playwright操作→フィールド入力 | **sonnet** | フォーム構造の理解+正確な操作 |
-| ダッシュボード設定変更 | settings.json読み書き | **haiku** | CRUD操作のみ |
-| 除外判定・企業選定 | リスト走査→条件マッチ | **haiku** | ルールベース判定 |
-| エラー対応・デバッグ | フォーム入力失敗の原因調査 | **opus** | 複雑な問題解決 |
-| ワークフロー全体指揮 | 複数社の並列処理オーケストレーション | **sonnet** | メイン制御 |
+| Company site analysis | URL crawl → text extraction → domain detection | **haiku** | Pattern matching. Deep reasoning not needed |
+| Form discovery | Link traversal → form URL identification | **haiku** | Simple web crawl |
+| Form validation | Form structure analysis → fillability check | **haiku** | Structure check only |
+| Message generation | Gap analysis → custom body | **sonnet** | Natural-language quality matters |
+| Form filling | MCP Playwright ops → field input | **sonnet** | Form structure understanding + precision |
+| Dashboard settings change | settings.json read/write | **haiku** | Simple CRUD |
+| Exclusion / target selection | List scan → rule match | **haiku** | Rule-based |
+| Error handling / debugging | Investigate form-fill failure root cause | **opus** | Complex problem solving |
+| Whole-workflow orchestration | Multi-company parallel orchestration | **sonnet** | Main control |
 
-### OMCエージェント活用マッピング
-
-```
-企業分析（並列）  → explore (haiku) × N社同時
-メッセージ生成     → executor (sonnet) — 文章品質が重要
-フォーム入力       → メインが直接MCP操作 (sonnet)
-設定変更          → executor-low (haiku) — 単純なJSON操作
-エラー調査        → architect (opus) — 複雑なデバッグのみ
-```
-
-### 典型的な「3社確認待ちまで」のトークン配分
+### OMC agent mapping
 
 ```
-従来（全てopusで実行した場合）:
-  3社 × (分析 + メッセージ + フォーム入力) ≈ 150K tokens @ opus
-
-OMCルーティング適用後:
-  分析:     3社 × 10K tokens @ haiku  = 30K (コスト: opus比 1/10)
-  メッセージ: 3社 × 8K tokens @ sonnet = 24K (コスト: opus比 1/5)
-  フォーム:   3社 × 15K tokens @ sonnet = 45K (コスト: opus比 1/5)
-  合計: 99K tokens, 実効コスト ≈ 従来の 25-30%
+Company analysis (parallel) → explore (haiku) × N companies
+Message generation          → executor (sonnet) — message quality matters
+Form filling                → main directly drives MCP (sonnet)
+Settings change             → executor-low (haiku) — simple JSON ops
+Error investigation         → architect (opus) — complex debugging only
 ```
 
-### 使い方
-
-OMCインストール済みなら、自動的にモデルルーティングが適用される。
-手動でモデルを指定する場合:
+### Typical "up to 3 awaiting_approval" token budget
 
 ```
-# 企業分析を haiku で実行
-Agent(model: "haiku", prompt: "企業分析して")
+All Opus (legacy):
+  3 × (analysis + message + form fill) ≈ 150K tokens @ opus
 
-# メッセージ生成を sonnet で実行
-Agent(model: "sonnet", prompt: "メッセージ生成して")
+With OMC routing:
+  Analysis: 3 × 10K tokens @ haiku  = 30K (cost: 1/10 of opus)
+  Message:  3 × 8K tokens @ sonnet = 24K (cost: 1/5 of opus)
+  Form:     3 × 15K tokens @ sonnet = 45K (cost: 1/5 of opus)
+  Total: 99K tokens, effective cost ≈ 25-30% of legacy
 ```
 
-OMCのultraworkモードで並列実行する場合:
+### Usage
+
+If OMC is installed, model routing is applied automatically. To specify a
+model manually:
+
+```
+# Run company analysis with haiku
+Agent(model: "haiku", prompt: "Analyze the company")
+
+# Run message generation with sonnet
+Agent(model: "sonnet", prompt: "Generate the message")
+```
+
+To run in parallel via OMC's ultrawork mode:
 ```
 /ultrawork
-→ 3社の企業分析を haiku エージェント3つで同時実行
-→ 完了後、sonnet でメッセージ生成
-→ メインがMCP Playwrightでフォーム入力
+→ 3 company analyses run in parallel via 3 haiku agents
+→ Then sonnet generates the messages
+→ The main agent drives MCP Playwright for form filling
 ```
 
 ## File Structure
 
 ```
 sales-claw/
-├── CLAUDE.md                   # このファイル（プロジェクト説明）
-├── settings-manager.cjs        # 設定管理（全設定のSingle Source of Truth）
-├── config.cjs                  # 設定読み取りインターフェース
-├── electron-main.js            # Electron メインプロセス
+├── CLAUDE.md                   # This file (project description)
+├── settings-manager.cjs        # Settings management (single source of truth)
+├── config.cjs                  # Settings reader interface
+├── electron-main.js            # Electron main process
 ├── src/
-│   ├── dashboard-server.cjs    # ダッシュボード + 設定UI
-│   ├── action-logger.cjs       # 操作ログ管理
-│   ├── contact-history.cjs     # 連絡履歴管理
-│   ├── company-analyzer.cjs    # 企業サイト分析
-│   ├── form-validator.cjs      # フォーム事前検証
-│   ├── form-finder.cjs         # フォームURL探索
-│   ├── form-helpers.cjs        # フォーム操作ヘルパー
-│   ├── live-monitor.cjs        # 進行状況モニター管理
-│   ├── message-builder.cjs     # メッセージ生成
-│   ├── parallel-analysis.cjs   # 並列サブエージェント用 分析+メッセージ生成
-│   ├── email-fetcher.cjs       # Outlookメール取得
-│   └── cli-logger.cjs          # ダッシュボードCLI Activity通知
+│   ├── dashboard-server.cjs    # Dashboard + settings UI
+│   ├── action-logger.cjs       # Action log management
+│   ├── contact-history.cjs     # Contact history management
+│   ├── company-analyzer.cjs    # Company-site analysis
+│   ├── form-validator.cjs      # Form pre-validation
+│   ├── form-finder.cjs         # Form URL discovery
+│   ├── form-helpers.cjs        # Form operation helpers
+│   ├── live-monitor.cjs        # Progress monitor management
+│   ├── message-builder.cjs     # Message generation
+│   ├── parallel-analysis.cjs   # Parallel sub-agent analysis + message gen
+│   ├── email-fetcher.cjs       # Outlook email fetch
+│   └── cli-logger.cjs          # Dashboard CLI Activity notifier
 ├── data/
-│   ├── settings.json           # 全設定（.gitignore対象）
-│   ├── sample-settings.json    # 設定サンプル
-│   ├── sample-targets.csv      # 公開用サンプルターゲット
-│   ├── action-log.json         # 全操作ログ
-│   └── contact-history.json    # 連絡履歴
-└── screenshots/                # フォーム入力・確認画面のスクショ
+│   ├── settings.json           # All settings (gitignored)
+│   ├── sample-settings.json    # Settings sample
+│   ├── sample-targets.csv      # Public sample targets
+│   ├── action-log.json         # Full action log
+│   └── contact-history.json    # Contact history
+└── screenshots/                # Form-fill / confirmation screenshots
 ```
 
 ## Agent Orchestration
 
-このプロジェクトは **Claude（オーケストラ）+ CODEX（バックエンド実装）** の2エージェント体制で開発する。
+This project is developed with a two-agent setup: **Claude (orchestrator) +
+CODEX (backend implementation)**.
 
-| 担当 | エージェント | 対象 |
+| Role | Agent | Scope |
 |------|------------|------|
-| フロントエンド・UI設計・統合 | **Claude** | HTML/CSS/i18n/ダッシュボードUI |
-| バックエンド実装 | **CODEX** | .cjs サーバーロジック・データ処理・ファイル操作 |
+| Frontend / UI design / integration | **Claude** | HTML/CSS/i18n/dashboard UI |
+| Backend implementation | **CODEX** | .cjs server logic / data processing / file ops |
 
-### CODEX 呼び出し
+### Invoking CODEX
 
 ```bash
-codex exec -m gpt-5.4 -s workspace-write "タスク内容"
+codex exec -m gpt-5.4 -s workspace-write "<task>"
 ```
 
-- モデル: `gpt-5.4`（最高モデル。`o3`はChatGPTアカウントで未対応）
-- 作業ディレクトリ: `C:\bp-outreach`
+- Model: `gpt-5.4` (top model; `o3` is not available on the ChatGPT account)
+- Working directory: `C:\bp-outreach`
 
-## AI 作業時のお作法（プリフライト + 片付け）
+## AI session etiquette (preflight + cleanup)
 
-**新セッション開始時、コードに触る前に必ず実行する。**
+**Run before touching any code at the start of a new session.**
 
-### 1. プリフライト
+### 1. Preflight
 
 ```bash
 npm run preflight
 ```
 
-これは `scripts/preflight-ai.ps1` を呼んで以下を一括チェックする:
+This calls `scripts/preflight-ai.ps1`, which checks:
 
-- `pwd` が `C:\bp-outreach` ルート (≠ `.claude/worktrees/*` の中)
-- `git worktree list` で main 以外の worktree が無い (孤児サンドボックス検出)
-- `git status` がクリーン or 把握済みの作業のみ
-- 1 時間以上前から残っている `cmd.exe` / `node.exe` の孤児プロセスが無い
-- 別の Claude Code セッションが `--add-dir` で worktree を握っていない
-- 直近の Sales Claw インストール先 (`%LOCALAPPDATA%\Programs\Sales Claw`) が現在のソースと version 一致
+- `pwd` is the `C:\bp-outreach` root (not inside `.claude/worktrees/*`).
+- `git worktree list` has no non-`main` worktrees (detects orphaned
+  sandboxes).
+- `git status` is clean or only contains known work-in-progress.
+- No `cmd.exe` / `node.exe` orphans older than 1 hour.
+- No other Claude Code session is holding a worktree via `--add-dir`.
+- The most recently installed Sales Claw
+  (`%LOCALAPPDATA%\Programs\Sales Claw`) matches the current source version.
 
-問題があれば赤い WARN を出す。直す前に手を動かさない。
+If anything is wrong, it emits a red WARN. Do not start working until it's
+fixed.
 
-### 2. 禁止事項
+### 2. Forbidden
 
-- ❌ `.claude/worktrees/*` を作業ディレクトリにしない (Agent isolation 用、人間が編集する場所ではない)
-- ❌ ルート直下に `*.png` `.tmp-*` を残さない (テストスクショは `screenshots/`、一時スクリプトは作ったら必ず削除)
-- ❌ 別の Claude Code セッションが `--add-dir` で worktree を開いている場合、その worktree のプロセスを kill しない (相手のセッションが壊れる)
-- ❌ `npm run dist:win` する時は **必ず** `-- --publish never` を付ける (誤って GitHub Releases に publish しないため)
-- ❌ Sales Claw 自身を「Claude を起動」した後、ダッシュボードからの操作以外で Claude PTY を kill しない (5 分の watchdog で勝手に止まる前に手を出さない)
+- ❌ Do not use `.claude/worktrees/*` as a working directory (it's for agent
+  isolation, not human edits).
+- ❌ Do not leave `*.png` / `.tmp-*` at the project root (test screenshots
+  go in `screenshots/`; temporary scripts must be deleted after use).
+- ❌ If another Claude Code session has a worktree open via `--add-dir`, do
+  NOT kill its processes (you'll break the other session).
+- ❌ When running `npm run dist:win`, **always** add `-- --publish never`
+  (so you don't accidentally publish to GitHub Releases).
+- ❌ After launching Sales Claw and clicking "Launch Claude", do not kill
+  the Claude PTY from outside the dashboard (a 5-minute watchdog will
+  reap it on its own).
 
-### 3. テスト終了時の片付け（必ず実行）
+### 3. Cleanup after tests (always run)
 
 ```bash
 npm run clean:workspace
 ```
 
-`scripts/clean-workspace.ps1` が以下を行う:
+`scripts/clean-workspace.ps1` will:
 
-- ルート直下の `*.png` `*.tmp` `.tmp-*.ps1` を削除 (`screenshots/`, `assets/`, `sample/` 配下は対象外)
-- `.claude/worktrees/*` で `git worktree list` に存在しないゴミディレクトリを削除
-- 1 時間以上前から残っている孤児 `cmd.exe` を停止 (現在の Claude Code セッションに紐付いていないもののみ)
-- `git status` を表示して残骸を可視化
+- Delete `*.png` / `*.tmp` / `.tmp-*.ps1` at the project root
+  (`screenshots/`, `assets/`, `sample/` subtrees are not touched).
+- Delete `.claude/worktrees/*` directories that are not listed by
+  `git worktree list`.
+- Stop orphan `cmd.exe` processes older than 1 hour (only those not bound
+  to the current Claude Code session).
+- Print `git status` so any leftovers are visible.
 
-### 4. Sales Claw 固有の注意点
+### 4. Sales Claw specifics
 
-| 項目 | 値 |
+| Item | Value |
 |------|-----|
-| ダッシュボード URL | `$SALES_CLAW_DASHBOARD_URL` (managed PTY) / 既定 `http://127.0.0.1:3765` (空きが無ければ自動で 3766 / 3767 / ... ) |
-| セッショントークン | `%APPDATA%\sales-claw\runtime\data\dashboard-session.json` |
-| ランタイム情報 | `%APPDATA%\sales-claw\runtime\data\dashboard-runtime.json` |
-| インストール済みアプリ | `%LOCALAPPDATA%\Programs\Sales Claw\` (per-user。`Program Files` ではない) |
-| 設定 / 各種データ | `%APPDATA%\sales-claw\runtime\data\` |
-| ビルド出力 | `dist/Sales-Claw-Setup-<version>.exe` |
-| 配布物検証 | `npm run verify:dist` |
+| Dashboard URL | `$SALES_CLAW_DASHBOARD_URL` (managed PTY) / default `http://127.0.0.1:3765` (falls back to 3766 / 3767 / ... if taken) |
+| Session token | `%APPDATA%\sales-claw\runtime\data\dashboard-session.json` |
+| Runtime info | `%APPDATA%\sales-claw\runtime\data\dashboard-runtime.json` |
+| Installed app | `%LOCALAPPDATA%\Programs\Sales Claw\` (per-user; not `Program Files`) |
+| Settings / runtime data | `%APPDATA%\sales-claw\runtime\data\` |
+| Build output | `dist/Sales-Claw-Setup-<version>.exe` |
+| Distributable verifier | `npm run verify:dist` |
 
-### 5. 既知のトラップ
+### 5. Known traps
 
-| 症状 | 原因 | 対処 |
+| Symptom | Cause | Fix |
 |------|------|------|
-| worktree が削除できない (`Permission denied`) | 古い `cmd.exe` / `node.exe` が cwd を握っている | `npm run clean:workspace` (古い孤児だけ kill) |
-| MCP `2 servers failed` | claude.ai cloud MCP で auth 必要なもの (Microsoft 365 / Google Drive 等) | ローカル `playwright` は別物。`claude mcp list` で `playwright: ✓ Connected` を確認 |
-| `'\"...\\.bin\\claude.cmd\"' is not recognized` | 1.2.27 未満の cmd.exe 引用符バグ | 1.2.28+ にアップデート |
-| Electron が「Claude を起動」で消える | 1.2.26 未満の PTY uncaughtException バグ | 1.2.28+ にアップデート |
-| paste banner で停止 (>49 行) | Claude UI の 2nd Enter 要求 | 1.2.28+ で対応済み |
-| `auto mode unavailable for this model` | モデルが auto モード非対応 | `bypassPermissions` で起動 (Workflow Step 0 参照) |
+| Cannot delete worktree (`Permission denied`) | Old `cmd.exe` / `node.exe` still holds the cwd | `npm run clean:workspace` (only kills old orphans) |
+| MCP `2 servers failed` | claude.ai cloud MCP servers needing auth (Microsoft 365 / Google Drive etc.) | Local `playwright` is a separate server; check with `claude mcp list` that `playwright: ✓ Connected` |
+| `'\"...\\.bin\\claude.cmd\"' is not recognized` | cmd.exe quoting bug in <1.2.27 | Upgrade to 1.2.28+ |
+| Electron disappears on "Launch Claude" | PTY uncaughtException bug in <1.2.26 | Upgrade to 1.2.28+ |
+| Stuck on paste banner (>49 lines) | Claude UI requires a 2nd Enter | Fixed in 1.2.28+ |
+| `auto mode unavailable for this model` | Model does not support auto mode | Launch via `bypassPermissions` (see Workflow Step 0) |
 
 ## Session Quick Start
 
-1. **`npm run preflight`** でプリフライト (上記「AI 作業時のお作法」)
-2. `npm start` または Electron アプリでダッシュボード起動
-3. ユーザーの指示に従って営業アプローチを実行
-4. 設定が未完了の場合はダッシュボードのSettingsタブで設定を促す
-5. 終了時に **`npm run clean:workspace`** で片付け
+1. **`npm run preflight`** for preflight (see "AI session etiquette" above).
+2. Launch the dashboard via `npm start` or the Electron app.
+3. Follow user instructions to execute outreach.
+4. If settings are incomplete, encourage configuration via the Settings tab.
+5. On exit, **`npm run clean:workspace`** to clean up.

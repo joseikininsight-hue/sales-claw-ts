@@ -7,6 +7,33 @@
 //   5. 相手の事業内容に触れ「ちゃんと見ている」感を出す
 
 const settings = require('./settings-manager');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getLocalePack } = require('./locale-pack');
+
+/**
+ * locale 引数を 'ja' | 'en' に正規化する。未指定や不正値は 'ja' に倒す。
+ * 既存ユーザーが locale を渡さない場合の挙動を変えないための保険。
+ */
+function normalizeLocale(locale) {
+  return locale === 'en' ? 'en' : 'ja';
+}
+
+/**
+ * locale に対応する messageTemplates Locale Pack を返す。
+ * Locale Pack ロード失敗時は ja 互換へ fallback する。
+ */
+function getMessageTemplatesPack(locale) {
+  const normalized = normalizeLocale(locale);
+  try {
+    const pack = getLocalePack(normalized);
+    if (pack && pack.messageTemplates) return pack.messageTemplates;
+  } catch (_) { /* fall through */ }
+  try {
+    const ja = getLocalePack('ja');
+    if (ja && ja.messageTemplates) return ja.messageTemplates;
+  } catch (_) { /* ignore */ }
+  return null;
+}
 
 function truncateMessage(text, maxLength) {
   const limit = Number.isFinite(maxLength) && maxLength > 0 ? maxLength : 2000;
@@ -17,17 +44,20 @@ function truncateMessage(text, maxLength) {
 
 function finalizeWithComplianceFooter(message, profile, maxLength) {
   const compliance = require('./compliance');
-  let withCompliance = compliance.injectRequiredFooter(message, profile);
+  // Phase 4: profile.country を locale として compliance に委譲する。
+  // 未設定なら ja-jp 互換 (compliance.ts 側で default 解決)。
+  const locale = (profile && profile.country) || undefined;
+  let withCompliance = compliance.injectRequiredFooter(message, profile, locale ? { locale } : {});
   const limit = Number(maxLength);
   if (!Number.isFinite(limit) || limit <= 0 || withCompliance.length <= limit) {
     return withCompliance;
   }
 
-  const requiredFooter = compliance.buildRequiredFooter(profile);
+  const requiredFooter = compliance.buildRequiredFooter(profile, locale ? { locale } : {});
   const bodyLimit = limit - (requiredFooter ? requiredFooter.length + 2 : 0);
   if (bodyLimit >= 240) {
     const shortenedBody = truncateMessage(message, bodyLimit).trimEnd();
-    withCompliance = compliance.injectRequiredFooter(shortenedBody, profile);
+    withCompliance = compliance.injectRequiredFooter(shortenedBody, profile, locale ? { locale } : {});
   }
 
   // 法令フッターは maxLength より優先する。ここで再 truncate すると、
@@ -122,43 +152,49 @@ function getSecondaryStrength(gaps, primaryKey) {
   }) || null;
 }
 
-function buildObservationPoints(companyName, companyType, businessAreas, focusAreas) {
+function buildObservationPoints(companyName, companyType, businessAreas, focusAreas, locale = 'ja') {
+  const pack = getMessageTemplatesPack(locale);
+  const obs = (pack && pack.observation) || null;
   const observations: unknown[] = [];
   const focuses = uniqueStrings(focusAreas);
   const areaLabel = formatAreaList((businessAreas || []).map((area: any) => area && area.label), 2);
 
-  if (focuses.includes('パートナーを募集中')) {
-    observations.push('貴社サイトで外部連携や募集に関する記載を拝見しました。');
+  // 'パートナーを募集中' は Phase A の analyzeCompanyLite が日本語ラベルで生成する
+  // ため locale に依らない判定を維持する。
+  if (focuses.includes('パートナーを募集中') && obs) {
+    observations.push(obs.partnerNote);
   }
 
   const prioritizedFocuses = focuses
     .filter((focus: any) => focus !== 'パートナーを募集中')
     .map((focus: any) => focus.replace(/を.+$/, ''));
-  if (prioritizedFocuses.length > 0) {
-    observations.push(`特に${formatAreaList(prioritizedFocuses, 2)}を継続テーマとして進めておられる点が印象に残りました。`);
+  if (prioritizedFocuses.length > 0 && obs) {
+    observations.push(obs.focusNote(formatAreaList(prioritizedFocuses, 2)));
   }
 
-  if (areaLabel) {
-    observations.push(`また、${areaLabel}を軸に事業展開されており、案件によって周辺領域まで含めた体制づくりが必要になるのではないかと感じました。`);
+  if (areaLabel && obs) {
+    observations.push(obs.areaNote(areaLabel));
   }
 
-  if (observations.length < 2 && companyType) {
-    observations.push(`貴社が${companyType}として幅広い案件対応を担われている前提で拝見しました。`);
+  if (observations.length < 2 && companyType && obs) {
+    observations.push(obs.typeNote(companyType));
   }
 
-  if (observations.length < 2 && companyName) {
-    observations.push(`${companyName}様の公開情報を拝見し、汎用的な売り込みではなく実務面で補完できる余地を考えてご連絡しています。`);
+  if (observations.length < 2 && companyName && obs) {
+    observations.push(obs.fallbackNote(companyName));
   }
 
   return uniqueStrings(observations).slice(0, 2).map((point: any) => truncateSoft(point, 88));
 }
 
-function buildProposalPoint(gaps, businessAreas, companyType) {
+function buildProposalPoint(gaps, businessAreas, companyType, locale = 'ja') {
+  const pack = getMessageTemplatesPack(locale);
+  const prop = (pack && pack.proposal) || null;
   const profile = getProfile(companyType);
   const topGap = (gaps || []).find((gap: any) => gap && gap.strength && compactText(gap.strength.label)) || null;
   const areaLabel = getPrimaryAreaLabel(businessAreas, companyType);
 
-  if (topGap) {
+  if (topGap && prop) {
     const strength = topGap.strength;
     const strengthLabel = compactText(strength.label);
     // 1.2.89 fix: strength.detail を 84 字で truncate すると "…" が混入し
@@ -171,13 +207,13 @@ function buildProposalPoint(gaps, businessAreas, companyType) {
       ? compactText(secondaryGap.strength.label)
       : '';
     const secondaryText = secondaryLabel && secondaryLabel !== strengthLabel
-      ? `必要に応じて${secondaryLabel}周辺まで含めて柔軟に支援できます。`
+      ? prop.secondaryComplement(secondaryLabel)
       : '';
 
     // 全体は 280 字に拡張 (元 168 では capability が必ず切れた)。
     // 最終整形は finalizeMessage で全体長制限する。
     return truncateSoft(
-      `弊社では${strengthLabel}を主な対応領域としており、${capability}貴社の${areaLabel}領域でも、要件整理後の実装や不足しやすい専門工程の補完役としてご一緒できる余地があると考えております。${secondaryText}`,
+      prop.withGap(strengthLabel, capability, areaLabel, secondaryText),
       280
     );
   }
@@ -185,12 +221,12 @@ function buildProposalPoint(gaps, businessAreas, companyType) {
   if (profile.point) return truncateSoft(profile.point, 148);
 
   const strengths = settings.getStrengths();
-  if (strengths.length > 0) {
+  if (strengths.length > 0 && prop) {
     const primary = strengths[0];
     const label = compactText(primary.label);
     const detail = ensureSentence(truncateSoft(primary.detail || `${label}領域の支援が可能です`, 82));
     return truncateSoft(
-      `弊社では${label}を主な対応領域としており、${detail}必要な工程だけを補完する形でもご一緒できます。`,
+      prop.fallbackStrength(label, detail),
       150
     );
   }
@@ -198,26 +234,27 @@ function buildProposalPoint(gaps, businessAreas, companyType) {
   return '';
 }
 
-function buildProofPoint(patterns, companyType) {
+function buildProofPoint(patterns, companyType, locale = 'ja') {
+  const pack = getMessageTemplatesPack(locale);
+  const proofStrings = (pack && pack.proof) || null;
   const relevant = Array.isArray(patterns) ? patterns : [];
-  if (relevant.length > 0) {
+  if (relevant.length > 0 && proofStrings) {
     const best = relevant[0];
     const partner = compactText(best.partner);
     const proof = truncateSoft(best.proof, 86);
     const matchedType = compactText(best.type || companyType);
     return truncateSoft(
-      `${partner ? `実際に${partner}様では、` : '実際の支援では、'}${proof}${proof.endsWith('。') ? '' : '。'}${matchedType ? `${matchedType}に近い文脈でも、必要な工程だけを補完する進め方に対応できます。` : '必要な工程だけを切り出して進める形にも対応できます。'}`
-      ,
+      proofStrings.partnerProof(partner, proof, matchedType),
       150
     );
   }
 
   const allPatterns = settings.getSuccessPatterns();
-  if (allPatterns.length > 0) {
+  if (allPatterns.length > 0 && proofStrings) {
     const sample = allPatterns[0];
     const proof = truncateSoft(sample.proof, 82);
     return truncateSoft(
-      `${proof}${proof.endsWith('。') ? '' : '。'}要件整理後の実装や追加開発の補完といった進め方でご一緒することが多いです。`,
+      proofStrings.fallbackProof(proof),
       140
     );
   }
@@ -257,14 +294,18 @@ function getProfile(companyType) {
  * @returns {string} 組み立て・整形済みのメッセージ本文
  */
 // 問い合わせ本文を生成（テンプレートベース）
-function buildMessage(companyName, companyType) {
+function buildMessage(companyName, companyType, locale = 'ja') {
   const sender = settings.getSender();
   const tmpl = settings.getSection('messageTemplates');
   const p = getProfile(companyType);
+  const pack = getMessageTemplatesPack(locale);
+  const defaults = (pack && pack.defaults) || null;
 
-  const greeting = tmpl.greetingLine || 'お世話になります。';
+  const greeting = tmpl.greetingLine || (defaults ? defaults.greetingLine : 'お世話になります。');
   const name = sender.name ? sender.name.split(' ')[0] : '';
-  const intro = sender.companyName && name ? `${sender.companyName}の${name}と申します。` : '';
+  const intro = sender.companyName && name && defaults
+    ? defaults.introWithName(sender.companyName, name)
+    : '';
 
   const parts = [greeting];
   if (intro) parts.push(intro);
@@ -323,39 +364,66 @@ function buildMessage(companyName, companyType) {
  * @param {CompanyAnalysis} analysis - company-analyzer.cjs の analyzeCompany() の結果
  * @returns {string} 組み立て・整形済みのカスタムメッセージ本文
  */
-function buildCustomMessage(analysis) {
+function buildCustomMessage(analysis, locale = 'ja') {
   const sender = settings.getSender();
   const tmpl = settings.getSection('messageTemplates');
   const { companyName, companyType, businessAreas, gaps, focusAreas, relevantPatterns } = analysis;
+  const pack = getMessageTemplatesPack(locale);
+  const urlMissingPack = (pack && pack.urlMissing) || null;
+  const defaultsPack = (pack && pack.defaults) || null;
 
   // 1.2.90: URL 不在時 (Phase B = CLI 本体が公式サイトを WebSearch で探索する) は、
   // Phase A の draft を **CLI 委譲用 placeholder** にする。
   // 「拝見しました」のような嘘を避け、CLI が実 URL 探索 + 本文生成を実行する旨を
   // 自社情報と最低限の挨拶だけで構成する。
   if (analysis.urlMissing === true) {
-    const greeting = tmpl.greetingLine || 'お世話になります。';
+    const greeting = tmpl.greetingLine || (urlMissingPack ? urlMissingPack.defaultGreeting : 'お世話になります。');
     const name = sender.name ? sender.name.split(' ')[0] : '';
-    const intro = sender.companyName && name ? `${sender.companyName}の${name}と申します。` : `${sender.companyName || ''}より失礼いたします。`;
-    const ownStrengths = (settings.getStrengths() || []).slice(0, 2).map((s: any) => s.label || s.key).filter(Boolean).join('・');
-    const proposalLine = ownStrengths
-      ? `弊社では${ownStrengths}を中心にご支援しております。${companyName}様のお取り組みを拝見し、お役に立てる場面があるかもしれずご連絡しました。`
-      : `${companyName}様のお取り組みを拝見し、ご連絡しました。`;
-    const closing = '【URL 不在のため、CLI 本体が公式サイト探索後に本文を最終化します】';
-    return [greeting, intro, '', proposalLine, '', tmpl.closingLine || 'もしご関心いただけましたら、30分程度の情報交換のお時間をいただけますと幸いです。', '', '不要であれば本メッセージへのご返信は不要です。', '', closing].join('\n');
+    let intro = '';
+    if (sender.companyName && name && urlMissingPack) {
+      intro = urlMissingPack.introWithName(sender.companyName, name);
+    } else if (urlMissingPack) {
+      intro = urlMissingPack.introNameless(sender.companyName);
+    }
+    const strengthsList = (settings.getStrengths() || []).slice(0, 2).map((s: any) => s.label || s.key).filter(Boolean);
+    // ja は '・' で連結、en は ' and ' で連結する。Locale Pack の小さな差異。
+    const joiner = normalizeLocale(locale) === 'en' ? ' and ' : '・';
+    const ownStrengths = strengthsList.join(joiner);
+    let proposalLine = '';
+    if (urlMissingPack) {
+      proposalLine = ownStrengths
+        ? urlMissingPack.proposalWithStrengths(companyName, ownStrengths)
+        : urlMissingPack.proposalWithoutStrengths(companyName);
+    }
+    const closing = urlMissingPack ? urlMissingPack.cliPlaceholder : '【URL 不在のため、CLI 本体が公式サイト探索後に本文を最終化します】';
+    return [
+      greeting,
+      intro,
+      '',
+      proposalLine,
+      '',
+      tmpl.closingLine || (urlMissingPack ? urlMissingPack.defaultClosing : 'もしご関心いただけましたら、30分程度の情報交換のお時間をいただけますと幸いです。'),
+      '',
+      urlMissingPack ? urlMissingPack.optOutLine : '不要であれば本メッセージへのご返信は不要です。',
+      '',
+      closing,
+    ].join('\n');
   }
 
-  const greeting = tmpl.greetingLine || 'お世話になります。';
+  const greeting = tmpl.greetingLine || (defaultsPack ? defaultsPack.greetingLine : 'お世話になります。');
   const name = sender.name ? sender.name.split(' ')[0] : '';
-  const intro = sender.companyName && name ? `${sender.companyName}の${name}と申します。` : '';
+  const intro = sender.companyName && name && defaultsPack
+    ? defaultsPack.introWithName(sender.companyName, name)
+    : '';
 
-  const observations = buildObservationPoints(companyName, companyType, businessAreas, focusAreas);
-  const proposal = buildProposalPoint(gaps, businessAreas, companyType);
-  const proof = buildProofPoint(relevantPatterns, companyType);
-  const fallbackOpener = generateOpener(companyName, companyType, businessAreas, focusAreas);
-  const fallbackHook = generateHook(gaps, businessAreas, companyType);
+  const observations = buildObservationPoints(companyName, companyType, businessAreas, focusAreas, locale);
+  const proposal = buildProposalPoint(gaps, businessAreas, companyType, locale);
+  const proof = buildProofPoint(relevantPatterns, companyType, locale);
+  const fallbackOpener = generateOpener(companyName, companyType, businessAreas, focusAreas, locale);
+  const fallbackHook = generateHook(gaps, businessAreas, companyType, locale);
 
   if (observations.length === 0 && !proposal && !proof && !fallbackOpener && !fallbackHook) {
-    return buildMessage(companyName, companyType);
+    return buildMessage(companyName, companyType, locale);
   }
 
   const parts = [greeting];
@@ -405,44 +473,52 @@ function buildCustomMessage(analysis) {
 /**
  * 相手の事業に触れた書き出しを生成
  */
-function generateOpener(companyName, companyType, businessAreas, focusAreas) {
+function generateOpener(companyName, companyType, businessAreas, focusAreas, locale = 'ja') {
   const strengths = settings.getStrengths();
   const mainStrength = strengths.length > 0 ? strengths[0].label : '';
+  const pack = getMessageTemplatesPack(locale);
+  const op = (pack && pack.opener) || null;
 
   // 相手が注力している分野があれば言及
-  if (focusAreas.length > 0) {
+  if (focusAreas.length > 0 && op) {
     if (focusAreas.includes('パートナーを募集中') && mainStrength) {
-      return `貴社のパートナー募集を拝見し、${mainStrength}の専門チームとして協業の可能性があるのではないかと思い、ご連絡いたしました。`;
+      return op.partnerOpener(mainStrength);
     }
-    return `貴社の${focusAreas[0].replace(/を.+$/, '')}への取り組みを拝見し、お力添えできることがあるのではないかと思い、ご連絡いたしました。`;
+    return op.focusOpener(focusAreas[0].replace(/を.+$/, ''));
   }
 
   // 事業領域に基づく書き出し
   const topAreas = businessAreas.slice(0, 2).map(a => a.label);
-  if (topAreas.length > 0) {
-    const areaStr = topAreas.join('・');
-    return `貴社の${areaStr}事業を拝見いたしました。顧客案件の中で、専門パートナーが必要になることはございませんでしょうか。`;
+  if (topAreas.length > 0 && op) {
+    // ja は '・' で、en は ' / ' で連結する
+    const joiner = normalizeLocale(locale) === 'en' ? ' / ' : '・';
+    const areaStr = topAreas.join(joiner);
+    return op.areaOpener(areaStr);
   }
 
   // フォールバック（種別ベース）
   const p = getProfile(companyType);
-  return p.opener || '貴社の事業について拝見し、ご連絡いたしました。';
+  if (p.opener) return p.opener;
+  return op ? op.defaultOpener : '貴社の事業について拝見し、ご連絡いたしました。';
 }
 
 /**
  * ギャップ分析に基づく具体的な提案ポイントを生成
  */
-function generateHook(gaps, businessAreas, companyType) {
-  if (gaps.length > 0) {
+function generateHook(gaps, businessAreas, companyType, locale = 'ja') {
+  const pack = getMessageTemplatesPack(locale);
+  const hook = (pack && pack.hook) || null;
+
+  if (gaps.length > 0 && hook) {
     const topGap = gaps[0];
     const strength = topGap.strength;
     const partnerArea = businessAreas.length > 0 ? businessAreas[0].label : '';
 
     if (partnerArea && strength.detail) {
-      return `弊社は${strength.label}を専門としており、${strength.detail}。貴社の${partnerArea}の知見と、弊社の技術力を組み合わせることで、顧客への提案の幅を広げるお手伝いができるのではないかと考えております。`;
+      return hook.withPartnerArea(strength.label, strength.detail, partnerArea);
     }
     if (strength.detail) {
-      return `弊社は${strength.label}を専門としており、${strength.detail}。お力添えできるかと存じます。`;
+      return hook.withDetailOnly(strength.label, strength.detail);
     }
   }
 
@@ -452,8 +528,8 @@ function generateHook(gaps, businessAreas, companyType) {
 
   // 最終フォールバック: 自社の強みの1つ目を使う
   const strengths = settings.getStrengths();
-  if (strengths.length > 0) {
-    return `弊社は${strengths[0].label}を専門としております。${strengths[0].detail || ''}`;
+  if (strengths.length > 0 && hook) {
+    return hook.fallbackStrength(strengths[0].label, strengths[0].detail || '');
   }
   return '';
 }
@@ -561,7 +637,9 @@ function buildMessagePrompt(analysis) {
           const prefs = settings.getSection('preferences') || {};
           if (prefs.complianceFooter === false) return '';
           const compliance = require('./compliance');
-          return compliance.buildRequiredFooter(settings.getSection('companyProfile') || {});
+          const profile = settings.getSection('companyProfile') || {};
+          const locale = profile.country ? { locale: profile.country } : {};
+          return compliance.buildRequiredFooter(profile, locale);
         } catch (_) {
           return '';
         }

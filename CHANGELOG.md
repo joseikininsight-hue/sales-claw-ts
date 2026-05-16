@@ -1,5 +1,59 @@
 # Changelog
 
+## 2.0.35 - 2026-05-16 — i18n フル対応 完遂 (Phase 2-5 全完了)
+
+OSS 公開水準の bilingual 対応が全 Phase 完遂。
+
+### Phase 2: Locale Pack 基盤 + 言語自動判定 (10 ファイル新規)
+- `src/types/locale.ts` - Locale / Country / LanguageDetectionResult 型
+- `src/language-detector.ts` - HTML→言語判定 (html-lang→meta→CJK 比率→default の 4 段)
+- `src/locale-pack/index.ts` - LocalePack インターフェース + getLocalePack(locale)
+- `src/locale-pack/{ja,en}/{form-finder-hints,sendability-exclusions,keyword-dict}.ts`
+- 言語判定テスト 5/5 pass
+
+### Phase 3: CLI prompt + メッセージ生成 双言語化 (8 変更 + 6 新規)
+- `messageTemplates.language: 'auto' | 'ja' | 'en'` を追加 (default 'auto')
+- parallel-analysis.ts: Accept-Language を URL TLD で動的化、analysis.detectedLanguage 追加
+- `src/locale-pack/{ja,en}/cli-prompts.ts` - buildBatchRules({autoSendSafe, parallelTabs})
+- `src/locale-pack/{ja,en}/llm-prompts.ts` - buildGeneratorPrompt (en は CAN-SPAM 親和)
+- `src/locale-pack/{ja,en}/message-templates.ts` - observation/proposal/proof/opener/hook
+- dashboard-server.ts: per-company resolveCompanyLocale + batchLocale (多数決) + targetLanguage payload
+- 単一 en 企業 → batch_rules 英語、targetLanguage='en'
+- 混在 [ja, en] → 多数決でbatch_rules、各社 targetLanguage 区別
+- 既存日本語ユーザー完全互換 (default 'ja' で挙動同じ)
+
+### Phase 4: Compliance Registry (4 locale 法令対応) (6 変更 + 2 新規)
+- `companyProfile.country: 'ja-jp' | 'en-us' | 'en-eu' | 'other'` 追加 (default 'ja-jp')
+- `src/locale-pack/{ja,en}/compliance-rules.ts`:
+  - ja-jp: 特定電子メール法 4 項 (companyName/contactName/email/opt-out)
+  - en-us: CAN-SPAM (sender / **postal address REQUIRED** / opt-out / commercial purpose)
+  - en-eu: GDPR Art.6/13 (lawful basis / data controller / opt-out + withdraw consent)
+  - other: 最小要件 (sender + opt-out)
+- evaluate(message, { locale?, profile? }) - missing は i18n キー配列
+- finalizeMessage / injectRequiredFooter が locale 別に footer 生成
+- 既存 checkCompliance / evaluateForUi API は signature 維持
+- 既存 11 テスト pass
+
+### Phase 5: ドキュメント英訳 + OSS メタ (5 変更/新規)
+- `README.md` (新規、247 行): Disclaimer + Quick Start + Architecture + License
+- `CLAUDE.md` (英訳、813 行): "ABSOLUTE RULE" / Forbidden actions / Workflow Step 0-7 全翻訳
+- `CONTRIBUTING.md` (英訳、266 行): Dev setup / branch / PR checklist / locale 追加方法
+- `SECURITY.md` / `CODE_OF_CONDUCT.md` 既存英語 (Contributor Covenant 2.1)
+- 日本語版を `docs/ja/` 配下に保管 (CLAUDE.md / README.md / CONTRIBUTING.md)
+- LICENSE: MIT (既存)
+
+### 検証
+
+- `npm run build` ✓ (TypeScript 0 errors)
+- `npm run test:unit` ✓ (corruption-resilience 42/42 + bulk-delete 17/17 + load-data-perf 1/1 + bulk-select-pagination 14/14 + stop-clears-queue 1/1 + compliance 11/11 + 全 pass)
+- 実機 Playwright で ja↔en 双方向切替成功
+
+### 既存ユーザー影響
+
+- すべて default 値で既存挙動を維持
+- `git pull` 後の動作変化なし
+- migration 不要
+
 ## 2.0.34 - 2026-05-16 — i18n Phase 1 大半完了 (UI ほぼ完全英語化)
 
 ### 追加翻訳カバレッジ

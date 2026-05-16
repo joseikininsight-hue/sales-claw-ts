@@ -5019,6 +5019,31 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     : getManagedAiAutoSendSafe();
   const phaseAByCompany = options.phaseAByCompany instanceof Map ? options.phaseAByCompany : new Map<any, any>();
   const phaseACompleted = phaseAByCompany.size > 0;
+
+  // Phase 3: 各社の targetLanguage を決定する。
+  //   - messageTemplates.language が 'ja' or 'en' で明示されていれば全社をその言語に固定
+  //   - 'auto' (default) なら Phase A の analysis.detectedLanguage を採用
+  //   - detected が無い / confidence が低い場合は 'ja' に倒す (既存ユーザー互換)
+  const messageTemplatesSetting = settings.getSection('messageTemplates') || {};
+  const localeOverride: 'auto' | 'ja' | 'en' = (messageTemplatesSetting.language === 'ja' || messageTemplatesSetting.language === 'en')
+    ? messageTemplatesSetting.language
+    : 'auto';
+  const resolveCompanyLocale = (company: any): 'ja' | 'en' => {
+    if (localeOverride !== 'auto') return localeOverride;
+    const phaseA = phaseAByCompany.get(String(company.no)) || null;
+    const det = phaseA && phaseA.analysis && phaseA.analysis.detectedLanguage;
+    if (det && (det.language === 'en' || det.language === 'ja') && (det.confidence || 0) >= 0.5) {
+      return det.language;
+    }
+    return 'ja';
+  };
+  // バッチ全体の代表 locale (batch_rules の言語選択に使う)。多数決で決める。
+  const localeCounts: { ja: number; en: number } = { ja: 0, en: 0 };
+  (companies || []).forEach((company: any) => {
+    const loc = resolveCompanyLocale(company);
+    localeCounts[loc] += 1;
+  });
+  const batchLocale: 'ja' | 'en' = localeCounts.en > localeCounts.ja ? 'en' : 'ja';
   const parallelFastPrompt = options.promptProfile === 'parallel-fast';
   const promptLimits = {
     note: parallelFastPrompt ? 80 : 120,
@@ -5052,6 +5077,10 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
       name: company.companyName || '(不明)',
       type: String(company.type || '').trim() || undefined,
       site: String(company.url || '').trim() || undefined,
+      // Phase 3: 各社で使う出力言語 ('ja' | 'en')。CLI が messageDraft を書き換える時の
+      // 言語選択に使う。messageTemplates.language='auto' なら detectedLanguage、
+      // 明示指定なら固定値。
+      targetLanguage: resolveCompanyLocale(company),
       // 1.2.90: ★ URL 不在マーカー — CLI が会社名で公式サイトを WebSearch する必要がある
       urlMissing: (siteEmpty || phaseAUrlMissing) ? true : undefined,
       form: String(company.formUrl || '').trim() || undefined,
@@ -5086,6 +5115,34 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
   const senderPayload = JSON.stringify(buildCompactSenderPayload(sender));
   const approachPayload = JSON.stringify(buildCompactApproachPayload(approachObjective, approachGuardrails));
 
+  // Phase 3: batch_rules を Locale Pack から取得する。
+  // 多数決で決まった batchLocale を採用する (バッチ内の社数比率で ja/en 切替)。
+  let batchRuleLines: string[] = [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getLocalePack } = require('./locale-pack');
+    const pack = getLocalePack(batchLocale);
+    if (pack && pack.cliPrompts && typeof pack.cliPrompts.buildBatchRules === 'function') {
+      batchRuleLines = pack.cliPrompts.buildBatchRules({
+        autoSendSafe,
+        parallelTabs: getPhaseBParallelTabs(),
+      });
+    }
+  } catch (_) { /* Locale Pack 不在時は ja パックを再試行する */ }
+  if (batchRuleLines.length === 0) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getLocalePack } = require('./locale-pack');
+      const pack = getLocalePack('ja');
+      if (pack && pack.cliPrompts && typeof pack.cliPrompts.buildBatchRules === 'function') {
+        batchRuleLines = pack.cliPrompts.buildBatchRules({
+          autoSendSafe,
+          parallelTabs: getPhaseBParallelTabs(),
+        });
+      }
+    } catch (_) { /* 最終 fallback は空配列 */ }
+  }
+
   return [
     'SALES_CLAW_BATCH_PAYLOAD',
     JSON.stringify({
@@ -5096,6 +5153,11 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
       missingFormUrlCount,
       screenshotDir: promptScreenshotDir,
       configuredScreenshotDir,
+      // Phase 3: バッチ全体の locale 情報。CLI 側で「ja サイトと en サイトが混在する」場合を
+      // 把握できるよう、各社の targetLanguage は companies_jsonl にも入れている。
+      batchLocale,
+      localeOverride,
+      localeCounts,
     }),
     '',
     'sender_json:',
@@ -5105,30 +5167,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     approachPayload,
     '',
     'batch_rules:',
-    '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
-    '- ★ urlMissing=true の会社は WebSearch で「会社名 公式サイト」を検索して公式ドメインを特定→サイト分析→本文生成→フォーム入力と進む。公式サイトが見つからなければ error にする',
-    '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
-    '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
-    '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',
-    '- messageDraft は Phase A の草案、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
-    '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
-    '- sender_json にない送信者情報は追加しない',
-    '- 本文末尾には sender_json の会社名/担当者/連絡先/住所(ある場合)と送信停止案内を必ず含める。住所が無い場合は推測しない',
-    '- unresolved form は site から Contact/お問い合わせ または common path を浅く確認する',
-    '- awaiting_approval はフォーム入力済み + ss-{No}-input.png 作成済みの場合だけ許可',
-    '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',
-    '- visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は browser_click で 1 回だけ試行可。画像チャレンジが出たら諦めて awaiting_approval',
-    '- CAPTCHA を理由に error にするのは「フォームが表示されない」「Cloudflare 等のページゲートで本体に到達できない」場合だけ',
-    (() => {
-      const tabs = getPhaseBParallelTabs();
-      if (tabs <= 1) return '- 1社ずつ処理し、結果報告は簡潔にする';
-      return `- ★ タブ並列 pipeline 許可 (最大 ${tabs} 並列): browser_navigate を発行したら snapshot を待たずに、次の会社のタブを window.open / browser_tabs で開いてさらに navigate を発行してよい。両方の navigate 完了を待ってから browser_snapshot → browser_fill_form の順で進める。同時に 4 社以上のタブを開いてはいけない (Claude の状態管理が混乱する)。各社の入力・スクショ・ログ記録は会社単位で完結させ、混同しない。会社ごとの awaiting_approval / submitted ログには finalFormTab URL を含める。\n- pipeline で進めるのはサイト到達 / form 発見 / form_fill の navigation 待ち局面のみ。CAPTCHA 解析・本文生成は 1 社ずつ集中する`;
-    })(),
-    autoSendSafe
-      ? '- CAPTCHA / 手動必須項目 / 営業NG / 不確実ケースを除き、確認画面が取れたら最終送信まで進めて submitted にする'
-      : '- 送信は行わず awaiting_approval で止める',
-    '- 送信完了時は sent スクリーンショットを残し、送信済みタブは閉じる',
-    '- 入力済みだが最終送信しない場合だけタブを残して awaiting_approval。未入力 (CAPTCHA 以外の理由) / フォーム無しは error / skipped',
+    ...batchRuleLines,
     '',
     'companies_jsonl:',
     companyPayloadLines,

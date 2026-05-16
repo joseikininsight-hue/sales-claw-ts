@@ -218,8 +218,34 @@ async function analyzeCompanyLite(url, companyName, companyType) {
 
   const https = require('https');
   const http = require('http');
+  // Phase 3: 言語検出 + locale 別 Accept-Language を切り替えるためのユーティリティ
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { detectLanguage } = require('./language-detector');
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  /**
+   * URL の TLD から優先言語を推定し、Accept-Language ヘッダ値を返す。
+   * - .co.jp / .jp / .ne.jp / .or.jp など → 日本語優先
+   * - 他 (.com / .io / .co.uk / .ai / .org 等) → 英語優先
+   * 推定が外れたサイトでも detectLanguage() で再判定するため過信しない。
+   */
+  function pickAcceptLanguageForUrl(targetUrl: string): string {
+    try {
+      const host = new URL(targetUrl).hostname.toLowerCase();
+      // Japanese TLDs / co.jp / ne.jp / or.jp / ac.jp / go.jp / lg.jp / ed.jp
+      if (
+        /\.jp$/.test(host) ||
+        /\.(co|ne|or|ac|go|lg|ed)\.jp$/.test(host)
+      ) {
+        return 'ja,en-US;q=0.5';
+      }
+      // gTLD / 他国コード TLD は英語優先
+      return 'en,ja;q=0.5';
+    } catch (_) {
+      return 'ja,en-US;q=0.9,en;q=0.8';
+    }
+  }
 
   // DNS rebinding対策: 解決済みIPがプライベート範囲でないか検証
   function isPrivateIP(ip) {
@@ -239,10 +265,12 @@ async function analyzeCompanyLite(url, companyName, companyType) {
   // 完全な Chrome UA + Accept-* ヘッダ + gzip/br 解凍 で大手サイトも取得可能にする
   const zlib = require('zlib');
   const FULL_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-  const BROWSER_HEADERS = {
+  // Phase 3: Accept-Language は URL TLD から動的に決める。
+  // BROWSER_HEADERS は Accept-Language を含まないテンプレートにし、
+  // fetchText() が targetUrl ごとに pickAcceptLanguageForUrl() で上書きする。
+  const BROWSER_HEADERS_BASE = {
     'User-Agent': FULL_CHROME_UA,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
     'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
     'Pragma': 'no-cache',
@@ -287,7 +315,12 @@ async function analyzeCompanyLite(url, companyName, companyType) {
     return new Promise<unknown>((resolve) => {
       if (redirects <= 0) { resolve(''); return; }
       const mod = targetUrl.startsWith('https') ? https : http;
-      const req = mod.get(targetUrl, { timeout: 15000, lookup: safeLookup, headers: BROWSER_HEADERS }, (res) => {
+      // Phase 3: TLD ベースの Accept-Language を毎リクエスト合成する
+      const headers = {
+        ...BROWSER_HEADERS_BASE,
+        'Accept-Language': pickAcceptLanguageForUrl(targetUrl),
+      };
+      const req = mod.get(targetUrl, { timeout: 15000, lookup: safeLookup, headers }, (res) => {
         // レート制限検知: 429/503 → 空文字を返す（バックオフはcaller側）
         if (res.statusCode === 429 || res.statusCode === 503) {
           res.resume();
@@ -522,6 +555,19 @@ async function analyzeCompanyLite(url, companyName, companyType) {
     return companyType && pType.includes(companyType.toLowerCase());
   });
 
+  // Phase 3: 取得した HTML から言語自動判定。
+  // topHtml が空なら 'other'/'default' に倒れるが、それでも detectLanguage の
+  // フォールバック (en, confidence 0.3) を使う。下流の Locale 切替は
+  // dashboard-server / message-builder 側で「auto かつ confidence>=0.5」のとき
+  // に採用するなどの判断ができるよう、source / confidence を持たせる。
+  let detectedLanguage: { language: 'ja' | 'en' | 'other'; confidence: number; source: string } | null = null;
+  try {
+    const det = detectLanguage(topHtml || '');
+    detectedLanguage = det;
+  } catch (_) {
+    detectedLanguage = null;
+  }
+
   const analysisResult = {
     companyName,
     companyType: companyType || '',
@@ -535,6 +581,7 @@ async function analyzeCompanyLite(url, companyName, companyType) {
     companyPhrases: structured.headings,
     metaDescription: structured.metaDescription,
     analysisMode: 'lite',
+    detectedLanguage,
   };
 
   // キャッシュへ書き込み: 次回の同じ会社分析を 0 token で済ませる
@@ -911,7 +958,25 @@ async function main() {
       step: 'メッセージ生成中',
     });
 
-    const templateDraft = messageBuilder.buildCustomMessage(analysis);
+    // Phase 3: テンプレ fallback の locale 解決 (LLM 経路と同じロジック)
+    let templateLocale: 'ja' | 'en' = 'ja';
+    try {
+      const settingsForTemplateLocale = require('./settings-manager');
+      const messageTemplatesForLocale = (typeof settingsForTemplateLocale.getSection === 'function'
+        ? settingsForTemplateLocale.getSection('messageTemplates')
+        : null) || {};
+      const langOverride = messageTemplatesForLocale.language;
+      if (langOverride === 'ja' || langOverride === 'en') {
+        templateLocale = langOverride;
+      } else {
+        const det = analysis && analysis.detectedLanguage;
+        if (det && (det.language === 'en' || det.language === 'ja') && (det.confidence || 0) >= 0.5) {
+          templateLocale = det.language;
+        }
+      }
+    } catch (_) { /* templateLocale は ja のまま */ }
+
+    const templateDraft = messageBuilder.buildCustomMessage(analysis, templateLocale);
     const { prompt: messagePrompt } = messageBuilder.buildMessagePrompt(analysis);
 
     // Step 2.5: LLM メッセージ生成 (Phase B, feature flag で制御)
@@ -958,6 +1023,23 @@ async function main() {
             ? settingsForB.getAiModelForPhase('message-generation', provider)
             : '';
           const providerHomeDir = resolveProviderHomeDir(provider);
+          // Phase 3: locale 解決
+          // - messageTemplates.language === 'ja' | 'en' なら明示固定
+          // - 'auto' (default) なら analysis.detectedLanguage を採用 (confidence>=0.5)
+          // - それ以外は 'ja' に倒す (既存ユーザー互換)
+          const messageTemplatesForLocale = (typeof settingsForB.getSection === 'function'
+            ? settingsForB.getSection('messageTemplates')
+            : null) || {};
+          const langOverride = messageTemplatesForLocale.language;
+          let resolvedLocale: 'ja' | 'en' = 'ja';
+          if (langOverride === 'ja' || langOverride === 'en') {
+            resolvedLocale = langOverride;
+          } else {
+            const det = analysis && analysis.detectedLanguage;
+            if (det && (det.language === 'en' || det.language === 'ja') && (det.confidence || 0) >= 0.5) {
+              resolvedLocale = det.language;
+            }
+          }
           const llmGenResult: any = await llmGen.generateMessageWithCli({
             targetProfile,
             ownContext,
@@ -968,6 +1050,7 @@ async function main() {
             timeoutMs: 60000,
             model: phaseModel,
             providerHomeDir,
+            locale: resolvedLocale,
           });
           if (llmGenResult.ok) {
             llmMessageMeta = {
