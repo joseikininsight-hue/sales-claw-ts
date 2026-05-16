@@ -277,7 +277,13 @@ module.exports = function createListBuilderRoutes(ctx) {
   function handlePage(req, res) {
     const sessionToken = (typeof getDashboardSessionToken === 'function')
       ? (getDashboardSessionToken() || '') : '';
-    const html = renderListBuilderPage({ sessionToken });
+    // v2.0.32+: preferences.language を見て ja/en を切替
+    let lang: 'ja' | 'en' = 'ja';
+    try {
+      const pref = (settings.getSection && settings.getSection('preferences')) || {};
+      lang = pref.language === 'en' ? 'en' : 'ja';
+    } catch (_) { /* keep default ja */ }
+    const html = renderListBuilderPage({ sessionToken, lang });
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',

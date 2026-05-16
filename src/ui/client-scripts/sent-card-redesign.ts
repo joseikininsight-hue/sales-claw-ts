@@ -36,6 +36,20 @@ const RESEND_STYLE = [
 ].join('\n');
 
 const SCRIPT = `(function(){
+  // i18n helper (uses the global I18N map injected by buildPage())
+  function sent2T(key, fallback, params) {
+    var text = fallback;
+    try {
+      if (typeof I18N === 'object' && I18N && typeof I18N[key] === 'string') text = I18N[key];
+    } catch (_) {}
+    if (params && typeof text === 'string') {
+      Object.keys(params).forEach(function(k){
+        text = text.replace('{' + k + '}', params[k]);
+      });
+    }
+    return text;
+  }
+
   function safeText(s) {
     s = (s == null ? '' : String(s));
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -118,11 +132,11 @@ const SCRIPT = `(function(){
 
   function renderShot(src) {
     if (!src) {
-      return '<div class="aw2-shot-frame"><div class="aw2-shot-empty">スクリーンショットがありません</div></div>';
+      return '<div class="aw2-shot-frame"><div class="aw2-shot-empty">' + safeText(sent2T('sentCard.shotEmpty', 'スクリーンショットがありません')) + '</div></div>';
     }
     return '<div class="aw2-shot-frame">'
       + '<div class="aw2-shot-scroll">'
-      + '<img class="aw2-shot-img" src="' + safeText(src) + '" alt="送信時スクリーンショット" data-zoom="1">'
+      + '<img class="aw2-shot-img" src="' + safeText(src) + '" alt="' + safeText(sent2T('sentCard.shotAlt', '送信時スクリーンショット')) + '" data-zoom="1">'
       + '</div>'
     + '</div>';
   }
@@ -131,18 +145,18 @@ const SCRIPT = `(function(){
     var history = Array.isArray(c.contactHistory) ? c.contactHistory : [];
     var latest = history.length ? history[history.length - 1] : null;
     var resp = latest ? String(latest.response || '') : '';
-    if (/replied|返信あり/i.test(resp)) return { kind: 'ok', icon: 'mark_email_read', label: '返信あり' };
-    if (/meeting|商談/i.test(resp)) return { kind: 'ok', icon: 'event_available', label: '商談設定' };
+    if (/replied|返信あり/i.test(resp)) return { kind: 'ok', icon: 'mark_email_read', label: sent2T('sentCard.status.replied', '返信あり') };
+    if (/meeting|商談/i.test(resp)) return { kind: 'ok', icon: 'event_available', label: sent2T('sentCard.status.meeting', '商談設定') };
     if (resp) return { kind: 'warn', icon: 'forum', label: resp };
-    return { kind: 'ok', icon: 'check_circle', label: '送信済み' };
+    return { kind: 'ok', icon: 'check_circle', label: sent2T('sentCard.status.sent', '送信済み') };
   }
 
   function renderHistoryTimeline(c) {
     var history = Array.isArray(c.contactHistory) ? c.contactHistory : [];
     if (history.length === 0) {
       return '<div class="aw2-log">'
-        + '<div class="aw2-section-title"><span class="material-symbols-outlined">timeline</span>連絡履歴</div>'
-        + '<div style="font-size:.74rem;color:var(--text-3);padding:6px 4px">この企業への連絡は本件のみです。</div>'
+        + '<div class="aw2-section-title"><span class="material-symbols-outlined">timeline</span>' + safeText(sent2T('sentCard.historyTitle', '連絡履歴')) + '</div>'
+        + '<div style="font-size:.74rem;color:var(--text-3);padding:6px 4px">' + safeText(sent2T('sentCard.historyEmpty', 'この企業への連絡は本件のみです。')) + '</div>'
       + '</div>';
     }
     var items = history.map(function(h){
@@ -165,7 +179,7 @@ const SCRIPT = `(function(){
       + '</li>';
     }).join('');
     return '<div class="aw2-log">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">timeline</span>連絡履歴 (' + history.length + ')</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">timeline</span>' + safeText(sent2T('sentCard.historyTitle', '連絡履歴')) + ' (' + history.length + ')</div>'
       + '<ul class="aw2-log-list">' + items + '</ul>'
     + '</div>';
   }
@@ -173,18 +187,18 @@ const SCRIPT = `(function(){
   function renderHeader(c, status, dateStr) {
     var count = c.contactCount || 1;
     var countBadge = count >= 2
-      ? '<span class="aw2-status warn" style="margin-left:6px"><span class="material-symbols-outlined">repeat</span>' + count + '回目の連絡</span>'
+      ? '<span class="aw2-status warn" style="margin-left:6px"><span class="material-symbols-outlined">repeat</span>' + safeText(sent2T('sentCard.repeatBadge', '{n}回目の連絡', { n: count })) + '</span>'
       : '';
     return '<div class="aw2-head">'
       + '<div class="aw2-head-left">'
       + '<div class="aw2-head-icon" style="background:var(--success-dim);color:var(--success)"><span class="material-symbols-outlined">mark_email_read</span></div>'
       + '<div>'
-      + '<h3 class="aw2-head-title">送信済みの内容</h3>'
-      + '<p class="aw2-head-sub">送信済みフォームの入力内容と連絡履歴を確認できます</p>'
+      + '<h3 class="aw2-head-title">' + safeText(sent2T('sentCard.title', '送信済みの内容')) + '</h3>'
+      + '<p class="aw2-head-sub">' + safeText(sent2T('sentCard.subtitle', '送信済みフォームの入力内容と連絡履歴を確認できます')) + '</p>'
       + '</div>'
       + '</div>'
       + '<div class="aw2-head-right">'
-      + '<span class="aw2-acquired"><span class="material-symbols-outlined">schedule</span>送信日時:&nbsp;' + safeText(dateStr) + '</span>'
+      + '<span class="aw2-acquired"><span class="material-symbols-outlined">schedule</span>' + safeText(sent2T('sentCard.sentAt', '送信日時:')) + '&nbsp;' + safeText(dateStr) + '</span>'
       + '<span class="aw2-status ' + (status.kind === 'ok' ? '' : (status.kind === 'warn' ? 'warn' : 'err')) + '"><span class="material-symbols-outlined">' + status.icon + '</span>' + safeText(status.label) + '</span>'
       + countBadge
       + '</div>'
@@ -193,16 +207,16 @@ const SCRIPT = `(function(){
 
   function renderLeft(c, src) {
     return '<section class="aw2-col-left">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">image</span>スクリーンショットプレビュー</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">image</span>' + safeText(sent2T('awaitingCard.shotTitle', 'スクリーンショットプレビュー')) + '</div>'
       + renderShot(src)
       + '<div class="aw2-shot-tools">'
       + '<div class="aw2-zoom" data-role="zoom">'
-      +   '<button type="button" data-zoom-action="out" title="縮小">−</button>'
+      +   '<button type="button" data-zoom-action="out" title="' + safeText(sent2T('awaitingCard.zoom.out', '縮小')) + '">−</button>'
       +   '<span class="aw2-zoom-val">100%</span>'
-      +   '<button type="button" data-zoom-action="in" title="拡大">+</button>'
-      +   '<button type="button" data-zoom-action="reset" title="リセット" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
+      +   '<button type="button" data-zoom-action="in" title="' + safeText(sent2T('awaitingCard.zoom.in', '拡大')) + '">+</button>'
+      +   '<button type="button" data-zoom-action="reset" title="' + safeText(sent2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
       + '</div>'
-      + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>別タブで開く</button>' : '')
+      + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>' + safeText(sent2T('awaitingCard.openTab', '別タブで開く')) + '</button>' : '')
       + '</div>'
       + renderHistoryTimeline(c)
     + '</section>';
@@ -211,24 +225,26 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || 'サービスについて');
+    var defaultInquiry = sent2T('awaitingCard.field.defaultInquiry', 'サービスについて');
+    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || defaultInquiry);
     var contactName = p ? (p.contactName || p.name || '') : '';
     var email = p ? (p.email || '') : '';
     var phone = p ? (p.phone || '') : '';
+    var settingsLoadingPh = sent2T('awaitingCard.field.settingsLoading', '— (settings 取得中)');
 
     var fields = [
-      renderField('help', 'お問い合わせ種別', inquiryType, { valueClass: 'aw2-fld-inquiry' }),
-      renderField('domain', '会社名', c.name, { valueClass: 'aw2-fld-company' }),
-      renderField('person', '担当者名', contactName, { valueClass: 'aw2-fld-contact', placeholder: '— (settings 取得中)' }),
-      renderField('mail', 'メールアドレス', email, { valueClass: 'aw2-fld-email', placeholder: '— (settings 取得中)' }),
-      renderField('call', '電話番号', phone, { valueClass: 'aw2-fld-phone', placeholder: '— (settings 取得中)' })
+      renderField('help', sent2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }),
+      renderField('domain', sent2T('awaitingCard.field.company', '会社名'), c.name, { valueClass: 'aw2-fld-company' }),
+      renderField('person', sent2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
+      renderField('mail', sent2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),
+      renderField('call', sent2T('awaitingCard.field.phone', '電話番号'), phone, { valueClass: 'aw2-fld-phone', placeholder: settingsLoadingPh })
     ].join('');
 
     var msg = c.sentMessage || '';
-    var msgField = renderField('article', '送信した本文', msg, { tall: true, valueClass: 'aw2-fld-message' });
+    var msgField = renderField('article', sent2T('sentCard.field.sentMessage', '送信した本文'), msg, { tall: true, valueClass: 'aw2-fld-message' });
 
     return '<section class="aw2-col-right">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">checklist</span>送信内容のサマリー</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">checklist</span>' + safeText(sent2T('sentCard.summaryTitle', '送信内容のサマリー')) + '</div>'
       + '<div class="aw2-fields">' + fields + msgField + '</div>'
     + '</section>';
   }
@@ -238,8 +254,8 @@ const SCRIPT = `(function(){
     return '<div class="aw2-foot">'
       + (formUrl ? '<a class="aw2-form-url" href="' + formUrl + '" target="_blank" rel="noopener" title="' + formUrl + '" style="text-decoration:none">' + formUrl + '</a>' : '<span></span>')
       + '<div class="aw2-foot-right">'
-      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="record-reply"><span class="material-symbols-outlined">forum</span>返信を記録</button>'
-      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="resend"><span class="material-symbols-outlined">replay</span>編集して再送</button>'
+      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="record-reply"><span class="material-symbols-outlined">forum</span>' + safeText(sent2T('sentCard.btn.recordReply', '返信を記録')) + '</button>'
+      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="resend"><span class="material-symbols-outlined">replay</span>' + safeText(sent2T('sentCard.btn.resend', '編集して再送')) + '</button>'
       + '</div>'
     + '</div>';
   }
@@ -286,23 +302,23 @@ const SCRIPT = `(function(){
       +   '<div class="aw2-modal-head">'
       +     '<div class="aw2-modal-icon"><span class="material-symbols-outlined">edit_note</span></div>'
       +     '<div>'
-      +       '<h3 class="aw2-modal-title">編集して再送</h3>'
-      +       '<p class="aw2-modal-sub">本文を編集して再送下書きを記録します</p>'
+      +       '<h3 class="aw2-modal-title">' + safeText(sent2T('sentCard.resend.title', '編集して再送')) + '</h3>'
+      +       '<p class="aw2-modal-sub">' + safeText(sent2T('sentCard.resend.subtitle', '本文を編集して再送下書きを記録します')) + '</p>'
       +     '</div>'
-      +     '<button type="button" class="aw2-modal-close" aria-label="閉じる" data-resend-close="1"><span class="material-symbols-outlined">close</span></button>'
+      +     '<button type="button" class="aw2-modal-close" aria-label="' + safeText(sent2T('sentCard.resend.close', '閉じる')) + '" data-resend-close="1"><span class="material-symbols-outlined">close</span></button>'
       +   '</div>'
       +   '<div class="aw2-modal-body">'
-      +     '<div class="aw2-modal-meta"><span><b>送信先:</b> ' + safeText(name) + ' (No.' + no + ')</span>'
-      +       (formUrl ? '<span><b>フォームURL:</b> ' + safeText(formUrl) + '</span>' : '')
+      +     '<div class="aw2-modal-meta"><span><b>' + safeText(sent2T('sentCard.resend.sentTo', '送信先:')) + '</b> ' + safeText(name) + ' (No.' + no + ')</span>'
+      +       (formUrl ? '<span><b>' + safeText(sent2T('sentCard.resend.formUrl', 'フォームURL:')) + '</b> ' + safeText(formUrl) + '</span>' : '')
       +     '</div>'
       +     '<div class="aw2-modal-error" data-resend-error="1"></div>'
-      +     '<label class="aw2-modal-label" for="aw2-resend-textarea">本文</label>'
-      +     '<textarea id="aw2-resend-textarea" data-resend-textarea="1" placeholder="送信する本文を入力してください"></textarea>'
-      +     '<div class="aw2-modal-counter" data-resend-counter="1">0 文字</div>'
+      +     '<label class="aw2-modal-label" for="aw2-resend-textarea">' + safeText(sent2T('sentCard.resend.bodyLabel', '本文')) + '</label>'
+      +     '<textarea id="aw2-resend-textarea" data-resend-textarea="1" placeholder="' + safeText(sent2T('sentCard.resend.placeholder', '送信する本文を入力してください')) + '"></textarea>'
+      +     '<div class="aw2-modal-counter" data-resend-counter="1">' + safeText(sent2T('sentCard.resend.charCount', '{n} 文字', { n: 0 })) + '</div>'
       +   '</div>'
       +   '<div class="aw2-modal-foot">'
-      +     '<button type="button" class="aw2-btn aw2-btn-cancel" data-resend-cancel="1">キャンセル</button>'
-      +     '<button type="button" class="aw2-btn aw2-btn-send" data-resend-submit="1"><span class="material-symbols-outlined">send</span>再送下書きを記録</button>'
+      +     '<button type="button" class="aw2-btn aw2-btn-cancel" data-resend-cancel="1">' + safeText(sent2T('sentCard.resend.cancel', 'キャンセル')) + '</button>'
+      +     '<button type="button" class="aw2-btn aw2-btn-send" data-resend-submit="1"><span class="material-symbols-outlined">send</span>' + safeText(sent2T('sentCard.resend.submit', '再送下書きを記録')) + '</button>'
       +   '</div>'
       + '</div>';
 
@@ -313,10 +329,10 @@ const SCRIPT = `(function(){
     var submitBtn = overlay.querySelector('[data-resend-submit]');
     if (ta) {
       ta.value = existingMessage || '';
-      counter.textContent = ta.value.length + ' 文字';
+      counter.textContent = sent2T('sentCard.resend.charCount', '{n} 文字', { n: ta.value.length });
       setTimeout(function(){ ta.focus(); }, 30);
       ta.addEventListener('input', function(){
-        counter.textContent = ta.value.length + ' 文字';
+        counter.textContent = sent2T('sentCard.resend.charCount', '{n} 文字', { n: ta.value.length });
       });
     }
 
@@ -359,11 +375,11 @@ const SCRIPT = `(function(){
       clearError();
       var msg = (ta && ta.value || '').trim();
       if (!msg) {
-        showError('本文を入力してください');
+        showError(sent2T('sentCard.resend.error.empty', '本文を入力してください'));
         return;
       }
       if (msg.length > 32 * 1024) {
-        showError('本文が長すぎます (32KB 以内)');
+        showError(sent2T('sentCard.resend.error.tooLong', '本文が長すぎます (32KB 以内)'));
         return;
       }
       submitBtn.setAttribute('data-busy', '1');
@@ -378,10 +394,11 @@ const SCRIPT = `(function(){
           var em = (result.body && result.body.error) || ('HTTP ' + result.status);
           throw new Error(em);
         }
+        var successMsg = sent2T('sentCard.resend.success', '再送リクエストを記録しました');
         if (typeof window.showToast === 'function') {
-          window.showToast(result.body.message || '再送リクエストを記録しました', 'success');
+          window.showToast(result.body.message || successMsg, 'success');
         } else if (typeof window.toast === 'function') {
-          window.toast(result.body.message || '再送リクエストを記録しました', 'success');
+          window.toast(result.body.message || successMsg, 'success');
         }
         closeModal();
         if (typeof window.refreshDashboard === 'function') window.refreshDashboard();
@@ -396,7 +413,7 @@ const SCRIPT = `(function(){
         }
       }).catch(function(err){
         submitBtn.removeAttribute('data-busy');
-        showError('再送リクエストの送信に失敗しました: ' + (err && err.message ? err.message : String(err)));
+        showError(sent2T('sentCard.resend.failPrefix', '再送リクエストの送信に失敗しました: ') + (err && err.message ? err.message : String(err)));
       });
     }
   }
@@ -417,9 +434,9 @@ const SCRIPT = `(function(){
           var no = parseInt(card.getAttribute('data-no'), 10);
           window.openReplyRecorder(no, card.getAttribute('data-name') || '');
         } else if (typeof window.toast === 'function') {
-          window.toast('返信記録機能は近日対応', 'info');
+          window.toast(sent2T('sentCard.reply.comingSoon', '返信記録機能は近日対応'), 'info');
         } else {
-          alert('返信記録機能は近日対応');
+          alert(sent2T('sentCard.reply.comingSoon', '返信記録機能は近日対応'));
         }
       } else if (action === 'resend') {
         ev.preventDefault();

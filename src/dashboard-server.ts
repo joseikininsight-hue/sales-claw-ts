@@ -7572,19 +7572,19 @@ ${renderStyles()}
         <div class="cli-term-launchers">
           <button type="button" class="cli-term-launch claude" data-cli-launch="claude">
             <img src="/assets/vendor/ai-icons/claude-code.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>Claude を起動</span>
+            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Claude')}</span>
           </button>
           <button type="button" class="cli-term-launch codex" data-cli-launch="codex">
             <img src="/assets/vendor/ai-icons/codex-openai.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>Codex を起動</span>
+            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Codex')}</span>
           </button>
           <button type="button" class="cli-term-launch gemini" data-cli-launch="gemini">
             <img src="/assets/vendor/ai-icons/gemini-cli.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>Gemini を起動</span>
+            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Gemini')}</span>
           </button>
           <button type="button" class="cli-term-stop" data-cli-stop="1" disabled>
             <span class="material-symbols-outlined" style="font-size:14px">stop_circle</span>
-            <span>停止</span>
+            <span>${_t['cli.term.stop'] || '停止'}</span>
           </button>
         </div>
       </div>
@@ -7595,22 +7595,22 @@ ${renderStyles()}
           <span class="material-symbols-outlined" style="font-size:22px">lock_open</span>
         </div>
         <div class="cli-term-auth-help-body">
-          <h4 id="cliTermAuthHelpTitle">認証が必要です</h4>
+          <h4 id="cliTermAuthHelpTitle">${_t['cli.term.authHelp.title'] || '認証が必要です'}</h4>
           <p id="cliTermAuthHelpDesc">${_t['cli.term.authHelp.desc'] || 'Authentication required. Press the button below to type "/login" automatically.'}</p>
           <ol class="cli-term-auth-help-steps">
-            <li>下の「<b>/login を実行</b>」ボタンをクリック</li>
-            <li>ターミナルに <code>/login</code> が自動で入力されます</li>
-            <li>ブラウザが開く → Anthropic にログイン → 完了したらこの画面に戻る</li>
-            <li>もう一度「Claude を起動」を押すか、ダッシュボードで「AI を起動」</li>
+            <li>${_t['cli.term.authHelp.step1'] || '下の「<b>/login を実行</b>」ボタンをクリック'}</li>
+            <li>${_t['cli.term.authHelp.step2'] || 'ターミナルに <code>/login</code> が自動で入力されます'}</li>
+            <li>${_t['cli.term.authHelp.step3'] || 'ブラウザが開く → Anthropic にログイン → 完了したらこの画面に戻る'}</li>
+            <li>${_t['cli.term.authHelp.step4'] || 'もう一度「Claude を起動」を押すか、ダッシュボードで「AI を起動」'}</li>
           </ol>
           <div class="cli-term-auth-help-actions">
             <button type="button" class="cli-term-auth-help-btn primary" data-cli-action="type-login">
               <span class="material-symbols-outlined" style="font-size:14px">keyboard</span>
-              /login を実行
+              ${_t['cli.term.authHelp.runLogin'] || '/login を実行'}
             </button>
-            <button type="button" class="cli-term-auth-help-btn" data-cli-action="dismiss-help">閉じる</button>
+            <button type="button" class="cli-term-auth-help-btn" data-cli-action="dismiss-help">${_t['cli.term.authHelp.dismiss'] || '閉じる'}</button>
             <a href="https://docs.anthropic.com/en/docs/claude-code/quickstart" target="_blank" rel="noopener" class="cli-term-auth-help-btn link">
-              <span class="material-symbols-outlined" style="font-size:14px">help</span>公式ヘルプ
+              <span class="material-symbols-outlined" style="font-size:14px">help</span>${_t['cli.term.authHelp.officialHelp'] || '公式ヘルプ'}
             </a>
           </div>
         </div>
@@ -7621,9 +7621,9 @@ ${renderStyles()}
         <div class="cli-term-empty-illust">
           <span class="material-symbols-outlined" style="font-size:36px;color:var(--text-3)">smart_toy</span>
         </div>
-        <p class="cli-term-empty-title">AI CLI を起動してください</p>
-        <p class="cli-term-empty-sub">上の「Claude を起動」「Codex を起動」「Gemini を起動」のいずれかをクリックすると、ここに対話型ターミナルが立ち上がります。</p>
-        <p class="cli-term-empty-hint">初回はインストールが必要な場合があります。エラーが出たら自動で案内が表示されます。</p>
+        <p class="cli-term-empty-title">${_t['cli.term.empty.title'] || 'AI CLI を起動してください'}</p>
+        <p class="cli-term-empty-sub">${_t['cli.term.empty.sub'] || '上の「Claude を起動」「Codex を起動」「Gemini を起動」のいずれかをクリックすると、ここに対話型ターミナルが立ち上がります。'}</p>
+        <p class="cli-term-empty-hint">${_t['cli.term.empty.hint'] || '初回はインストールが必要な場合があります。エラーが出たら自動で案内が表示されます。'}</p>
       </div>
 
       <!-- xterm container (shown after launch) -->
@@ -8642,11 +8642,16 @@ ${renderProviderIconFixScript()}
   });
 
   // ---- Compose query string from chips ---------------------------------------
+  // LANG === 'ja' のときは日本語ラベル、それ以外は英語ラベルを使う。
+  // CLI へ送る自然文クエリの体裁にだけ影響する (内部識別子は chipState 側 key)。
   function composeQuery() {
     const parts = [];
-    const labels = {
+    const labels = LANG === 'ja' ? {
       industries: '業種', regions: '地域', employeeSize: '従業員規模', revenue: '売上規模',
       departments: '主な部署/担当者', keywords: 'キーワード', excludes: '除外条件', sources: '優先ソース',
+    } : {
+      industries: 'Industry', regions: 'Region', employeeSize: 'Employee size', revenue: 'Revenue',
+      departments: 'Department/role', keywords: 'Keywords', excludes: 'Exclude', sources: 'Preferred sources',
     };
     Object.keys(labels).forEach(function (key) {
       const values = chipState[key];
@@ -8696,12 +8701,10 @@ ${renderProviderIconFixScript()}
       : status === 'running' || status === 'queued' ? 'lb2-hs-run'
       : status === 'cancelled' ? 'lb2-hs-cancel'
       : status === 'partial' ? 'lb2-hs-warn' : 'lb2-hs-other';
-    const label = status === 'completed' ? '完了'
-      : status === 'failed' ? '失敗'
-      : status === 'running' ? '実行中'
-      : status === 'queued' ? '待機'
-      : status === 'cancelled' ? '中止'
-      : status === 'partial' ? '一部' : status;
+    const labelsJa = { completed: '完了', failed: '失敗', running: '実行中', queued: '待機', cancelled: '中止', partial: '一部' };
+    const labelsEn = { completed: 'Done', failed: 'Failed', running: 'Running', queued: 'Queued', cancelled: 'Cancelled', partial: 'Partial' };
+    const dict = LANG === 'ja' ? labelsJa : labelsEn;
+    const label = dict[status] || status;
     return '<span class="lb2-history-status ' + cls + '">' + escHtml(label) + '</span>';
   }
 
@@ -8709,17 +8712,20 @@ ${renderProviderIconFixScript()}
     const list = $('lb2HistoryList');
     if (!list) return;
     if (!runs || runs.length === 0) {
-      list.innerHTML = '<li class="lb2-history-empty">履歴はまだありません</li>';
+      const emptyMsg = (typeof I18N !== 'undefined' && I18N['lb.side.history.empty']) || (LANG === 'ja' ? '履歴はまだありません' : 'No runs yet');
+      list.innerHTML = '<li class="lb2-history-empty">' + escHtml(emptyMsg) + '</li>';
       return;
     }
+    const countLabel = LANG === 'ja' ? ' 社' : '';
+    const delTitle = LANG === 'ja' ? '削除' : 'Delete';
     list.innerHTML = runs.map(function (run) {
       const cnt = run.totalCandidates != null ? run.totalCandidates : (run.newCount || 0);
       return '<li class="lb2-history-item" data-lb2-run="' + escHtml(run.runId) + '">' +
         '<div class="lb2-history-row1">' +
           '<div class="lb2-history-time">' + escHtml(fmtRunTime(run)) + '</div>' +
           statusPillHtml(run.status) +
-          '<div class="lb2-history-count">' + cnt + ' 社</div>' +
-          '<button class="lb2-history-del" type="button" data-lb2-del="' + escHtml(run.runId) + '" title="削除"><span class="material-symbols-outlined">delete</span></button>' +
+          '<div class="lb2-history-count">' + cnt + countLabel + '</div>' +
+          '<button class="lb2-history-del" type="button" data-lb2-del="' + escHtml(run.runId) + '" title="' + escHtml(delTitle) + '"><span class="material-symbols-outlined">delete</span></button>' +
         '</div>' +
         '</li>';
     }).join('');
@@ -8733,7 +8739,8 @@ ${renderProviderIconFixScript()}
       on(btn, 'click', async function (ev) {
         ev.stopPropagation();
         const id = btn.getAttribute('data-lb2-del');
-        if (!confirm('この履歴を削除しますか？')) return;
+        const confirmMsg = LANG === 'ja' ? 'この履歴を削除しますか？' : 'Delete this run?';
+        if (!confirm(confirmMsg)) return;
         await fetch('/api/list-builder/runs/' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
         refreshStatsFromRuns();
       });
@@ -8750,6 +8757,7 @@ ${renderProviderIconFixScript()}
       return;
     }
     if (empty) empty.hidden = true;
+    const viewLabel = LANG === 'ja' ? '表示' : 'View';
     tbody.innerHTML = runs.map(function (run) {
       const cnt = run.totalCandidates != null ? run.totalCandidates : 0;
       return '<tr data-lb2-run="' + escHtml(run.runId) + '">' +
@@ -8762,7 +8770,7 @@ ${renderProviderIconFixScript()}
         '<td>' + (run.needsReviewCount || 0) + '</td>' +
         '<td>' + escHtml(fmtElapsed(run)) + '</td>' +
         '<td class="lb2-h-actions">' +
-          '<button class="lb2-row-action" type="button" data-lb2-load="' + escHtml(run.runId) + '"><span class="material-symbols-outlined">visibility</span>表示</button>' +
+          '<button class="lb2-row-action" type="button" data-lb2-load="' + escHtml(run.runId) + '"><span class="material-symbols-outlined">visibility</span>' + escHtml(viewLabel) + '</button>' +
           '<button class="lb2-row-action lb2-row-action-danger" type="button" data-lb2-del-modal="' + escHtml(run.runId) + '"><span class="material-symbols-outlined">delete</span></button>' +
         '</td>' +
       '</tr>';
@@ -8776,7 +8784,8 @@ ${renderProviderIconFixScript()}
     tbody.querySelectorAll('[data-lb2-del-modal]').forEach(function (b) {
       on(b, 'click', async function () {
         const id = b.getAttribute('data-lb2-del-modal');
-        if (!confirm('この履歴を削除しますか？')) return;
+        const confirmMsg = LANG === 'ja' ? 'この履歴を削除しますか？' : 'Delete this run?';
+        if (!confirm(confirmMsg)) return;
         await fetch('/api/list-builder/runs/' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
         refreshStatsFromRuns();
       });
@@ -8867,9 +8876,11 @@ ${renderProviderIconFixScript()}
       return;
     }
     if (empty) empty.style.display = 'none';
+    const unknownLabel = LANG === 'ja' ? '不明' : 'Unknown';
+    const othersLabel = LANG === 'ja' ? 'その他' : 'Others';
     const counts = {};
     records.forEach(function (r) {
-      const key = (r.industry || '不明').trim() || '不明';
+      const key = (r.industry || unknownLabel).trim() || unknownLabel;
       counts[key] = (counts[key] || 0) + 1;
     });
     const sorted = Object.entries(counts).sort(function (a, b) { return b[1] - a[1]; });
@@ -8877,7 +8888,7 @@ ${renderProviderIconFixScript()}
     const others = sorted.slice(5).reduce(function (sum, e) { return sum + e[1]; }, 0);
     const labels = top.map(function (e) { return e[0]; });
     const data = top.map(function (e) { return e[1]; });
-    if (others > 0) { labels.push('その他'); data.push(others); }
+    if (others > 0) { labels.push(othersLabel); data.push(others); }
     const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#94a3b8'];
     if (typeof window.Chart === 'undefined') return;
     if (industryChart) industryChart.destroy();
@@ -8901,22 +8912,47 @@ ${renderProviderIconFixScript()}
     if (!list) return;
     const items = [];
     if (records.length === 0) {
-      items.push('条件を入力して「AI で候補企業を生成」を押すと、ここに分析結果が表示されます。');
+      const emptyMsg = (typeof I18N !== 'undefined' && I18N['lb.side.suggest.empty'])
+        || (LANG === 'ja'
+          ? '条件を入力して「AI で候補企業を生成」を押すと、ここに分析結果が表示されます。'
+          : 'Enter criteria and click "Generate with AI" to see insights here.');
+      items.push(emptyMsg);
     } else {
       const total = records.length;
       const high = records.filter(r => Number(r.fitScore) >= 70).length;
-      if (high > 0) items.push('高スコア企業が <strong>' + high + ' 社</strong> 検出されました (fitScore 70+)。');
+      if (high > 0) {
+        items.push(LANG === 'ja'
+          ? '高スコア企業が <strong>' + high + ' 社</strong> 検出されました (fitScore 70+)。'
+          : '<strong>' + high + '</strong> high-fit companies detected (fitScore 70+).');
+      }
       const dups = records.filter(r => r.dedupeDecision === 'duplicate' || r.dedupeDecision === 'suppressed').length;
-      if (dups > 0) items.push('既存リストとの重複/除外: ' + dups + ' 社。要確認の場合は「フィルター」で確認できます。');
+      if (dups > 0) {
+        items.push(LANG === 'ja'
+          ? '既存リストとの重複/除外: ' + dups + ' 社。要確認の場合は「フィルター」で確認できます。'
+          : 'Duplicates/excluded vs existing list: ' + dups + '. Use the filter to review.');
+      }
+      const unknownLabel = LANG === 'ja' ? '不明' : 'Unknown';
       const inds = {};
-      records.forEach(function (r) { const k = (r.industry || '不明'); inds[k] = (inds[k] || 0) + 1; });
+      records.forEach(function (r) { const k = (r.industry || unknownLabel); inds[k] = (inds[k] || 0) + 1; });
       const topInd = Object.entries(inds).sort(function (a, b) { return b[1] - a[1]; })[0];
-      if (topInd && topInd[1] > 1) items.push(topInd[0] + ' 業種が最も多く (' + topInd[1] + ' 社) ヒットしています。');
+      if (topInd && topInd[1] > 1) {
+        items.push(LANG === 'ja'
+          ? topInd[0] + ' 業種が最も多く (' + topInd[1] + ' 社) ヒットしています。'
+          : 'Top industry: ' + topInd[0] + ' (' + topInd[1] + ' hits).');
+      }
       const prefs = {};
       records.forEach(function (r) { if (r.prefecture) prefs[r.prefecture] = (prefs[r.prefecture] || 0) + 1; });
       const topPref = Object.entries(prefs).sort(function (a, b) { return b[1] - a[1]; })[0];
-      if (topPref && topPref[1] > 1) items.push(topPref[0] + ' に候補が集中しています (' + topPref[1] + ' 社)。');
-      if (items.length === 0) items.push(total + ' 社の候補が取得されました。');
+      if (topPref && topPref[1] > 1) {
+        items.push(LANG === 'ja'
+          ? topPref[0] + ' に候補が集中しています (' + topPref[1] + ' 社)。'
+          : 'Concentrated in ' + topPref[0] + ' (' + topPref[1] + ' candidates).');
+      }
+      if (items.length === 0) {
+        items.push(LANG === 'ja'
+          ? total + ' 社の候補が取得されました。'
+          : total + ' candidates retrieved.');
+      }
     }
     list.innerHTML = items.map(function (txt) {
       return '<li class="lb2-suggest-item"><span class="material-symbols-outlined">trending_up</span><span>' + txt + '</span></li>';
@@ -8942,10 +8978,13 @@ ${renderProviderIconFixScript()}
     const dupCount = currentRecords.filter(r => r.dedupeDecision === 'duplicate' || r.dedupeDecision === 'suppressed').length;
     const reviewCount = currentRecords.filter(r => r.dedupeDecision === 'needs_review').length;
     if (summary) {
+      const sumNew = LANG === 'ja' ? '新規' : 'New';
+      const sumReview = LANG === 'ja' ? '要確認' : 'Review';
+      const sumDup = LANG === 'ja' ? '重複/除外' : 'Dup/Excl';
       summary.innerHTML =
-        '<span class="lb2-summary-pill lb2-summary-new">新規 ' + newCount + '</span>' +
-        '<span class="lb2-summary-pill lb2-summary-review">要確認 ' + reviewCount + '</span>' +
-        '<span class="lb2-summary-pill lb2-summary-dup">重複/除外 ' + dupCount + '</span>';
+        '<span class="lb2-summary-pill lb2-summary-new">' + sumNew + ' ' + newCount + '</span>' +
+        '<span class="lb2-summary-pill lb2-summary-review">' + sumReview + ' ' + reviewCount + '</span>' +
+        '<span class="lb2-summary-pill lb2-summary-dup">' + sumDup + ' ' + dupCount + '</span>';
     }
 
     if (currentRecords.length === 0) {
@@ -8968,12 +9007,17 @@ ${renderProviderIconFixScript()}
       return true;
     });
 
+    const statusDictJa = { unique: '新規', duplicate: '重複', needs_review: '要確認', suppressed: '除外' };
+    const statusDictEn = { unique: 'New', duplicate: 'Duplicate', needs_review: 'Review', suppressed: 'Excluded' };
+    const statusDict = LANG === 'ja' ? statusDictJa : statusDictEn;
+    const moreTitle = LANG === 'ja' ? 'その他' : 'More';
+    const detailLabel = LANG === 'ja' ? '詳細' : 'Detail';
+    const empUnit = LANG === 'ja' ? '名' : '';
     tbody.innerHTML = filtered.map(function (rec) {
       const decision = rec.dedupeDecision || 'unique';
       const rowCls = decision === 'duplicate' || decision === 'suppressed' ? 'lb2-row-dup'
         : decision === 'needs_review' ? 'lb2-row-review' : '';
-      const statusLabel = decision === 'unique' ? '新規' : decision === 'duplicate' ? '重複'
-        : decision === 'needs_review' ? '要確認' : decision === 'suppressed' ? '除外' : decision;
+      const statusLabel = statusDict[decision] || decision;
       const statusCls = decision === 'unique' ? 'lb2-status-new' : decision === 'duplicate' ? 'lb2-status-dup'
         : decision === 'needs_review' ? 'lb2-status-review' : 'lb2-status-suppressed';
       const canSelect = decision === 'unique' || decision === 'needs_review';
@@ -9000,12 +9044,12 @@ ${renderProviderIconFixScript()}
         '<td>' + urlCell + '</td>' +
         '<td>' + escHtml(rec.industry || '-') + '</td>' +
         '<td>' + escHtml(rec.prefecture || '-') + '</td>' +
-        '<td>' + (rec.employeeCount != null ? rec.employeeCount + '名' : '0名') + '</td>' +
+        '<td>' + (rec.employeeCount != null ? rec.employeeCount + empUnit : ('0' + empUnit)) + '</td>' +
         '<td>' + fitDonut + '</td>' +
         '<td><span class="lb2-status-pill ' + statusCls + '">' + statusLabel + '</span></td>' +
         '<td class="lb2-action-cell">' +
-          '<button class="lb2-row-action" data-lb2-detail="' + realIdx + '" type="button"><span class="material-symbols-outlined">info</span>詳細</button>' +
-          '<button class="lb2-row-more" data-lb2-more="' + realIdx + '" type="button" title="その他"><span class="material-symbols-outlined">more_vert</span></button>' +
+          '<button class="lb2-row-action" data-lb2-detail="' + realIdx + '" type="button"><span class="material-symbols-outlined">info</span>' + detailLabel + '</button>' +
+          '<button class="lb2-row-more" data-lb2-more="' + realIdx + '" type="button" title="' + escHtml(moreTitle) + '"><span class="material-symbols-outlined">more_vert</span></button>' +
         '</td>' +
       '</tr>';
     }).join('');
@@ -9024,17 +9068,24 @@ ${renderProviderIconFixScript()}
         const i = parseInt(b.getAttribute('data-lb2-detail'), 10);
         const r = currentRecords[i];
         if (!r) return;
+        const lbl = LANG === 'ja' ? {
+          company: '会社名', url: 'URL', form: 'フォーム', industry: '業種', region: '地域',
+          employees: '従業員', fit: 'AI 適合度', status: 'ステータス', notes: 'メモ', reasons: '適合理由',
+        } : {
+          company: 'Company', url: 'URL', form: 'Form', industry: 'Industry', region: 'Region',
+          employees: 'Employees', fit: 'AI fit', status: 'Status', notes: 'Notes', reasons: 'Reasons',
+        };
         const lines = [];
-        lines.push('会社名: ' + (r.companyName || '-'));
-        lines.push('URL: ' + (r.url || '-'));
-        lines.push('フォーム: ' + (r.formUrl || '-'));
-        lines.push('業種: ' + (r.industry || '-'));
-        lines.push('地域: ' + (r.prefecture || '-'));
-        lines.push('従業員: ' + (r.employeeCount != null ? r.employeeCount : '-'));
-        lines.push('AI 適合度: ' + (r.fitScore != null ? r.fitScore : '-'));
-        lines.push('ステータス: ' + (r.dedupeDecision || '-'));
-        if (r.notes) lines.push('メモ: ' + r.notes);
-        if (r.fitReasons && r.fitReasons.length) lines.push('適合理由: ' + r.fitReasons.join(', '));
+        lines.push(lbl.company + ': ' + (r.companyName || '-'));
+        lines.push(lbl.url + ': ' + (r.url || '-'));
+        lines.push(lbl.form + ': ' + (r.formUrl || '-'));
+        lines.push(lbl.industry + ': ' + (r.industry || '-'));
+        lines.push(lbl.region + ': ' + (r.prefecture || '-'));
+        lines.push(lbl.employees + ': ' + (r.employeeCount != null ? r.employeeCount : '-'));
+        lines.push(lbl.fit + ': ' + (r.fitScore != null ? r.fitScore : '-'));
+        lines.push(lbl.status + ': ' + (r.dedupeDecision || '-'));
+        if (r.notes) lines.push(lbl.notes + ': ' + r.notes);
+        if (r.fitReasons && r.fitReasons.length) lines.push(lbl.reasons + ': ' + r.fitReasons.join(', '));
         alert(lines.join('\\n'));
       });
     });
@@ -9042,11 +9093,16 @@ ${renderProviderIconFixScript()}
 
   // ---- Progress UI ------------------------------------------------------------
   const STAGE_ORDER = ['discovery', 'qualification', 'dedupe', 'preview_ready'];
-  const STAGE_LABELS = {
+  const STAGE_LABELS = LANG === 'ja' ? {
     discovery: '情報収集', extracting: '情報収集', identity_resolution: '情報収集',
     enrichment: '情報補完', official_verification: '情報補完', streaming: 'AI 応答受信中',
     qualification: 'スコアリング', compliance_precheck: 'スコアリング',
     dedupe: '重複除外', preview_ready: 'リスト化',
+  } : {
+    discovery: 'Discovery', extracting: 'Discovery', identity_resolution: 'Discovery',
+    enrichment: 'Enrichment', official_verification: 'Enrichment', streaming: 'Receiving AI response',
+    qualification: 'Scoring', compliance_precheck: 'Scoring',
+    dedupe: 'Dedupe', preview_ready: 'Listing',
   };
   function setStage(stageKey, percent) {
     const stages = $$('#tab-list-builder [data-lb2-stage]');
@@ -9092,20 +9148,22 @@ ${renderProviderIconFixScript()}
     currentEventSource.addEventListener('progress', function (ev) {
       try {
         const data = JSON.parse(ev.data);
-        const label = STAGE_LABELS[data.stage] || data.stage || '進行中';
+        const fallbackInProgress = LANG === 'ja' ? '進行中' : 'In progress';
+        const label = STAGE_LABELS[data.stage] || data.stage || fallbackInProgress;
         const pct = (data.completed && data.total) ? (data.completed / data.total * 100)
           : data.stage === 'streaming' ? 35
           : data.stage === 'discovery' ? 25
           : data.stage === 'qualification' ? 60
           : data.stage === 'dedupe' ? 80
           : data.stage === 'preview_ready' ? 95 : null;
-        showProgress(data.message || (data.current && data.current.companyName) || label + ' を実行中…');
+        const runningSuffix = LANG === 'ja' ? ' を実行中…' : ' running…';
+        showProgress(data.message || (data.current && data.current.companyName) || label + runningSuffix);
         setStage(data.stage, pct);
       } catch (_) {}
     });
     currentEventSource.addEventListener('done', function () {
       setStage('preview_ready', 100);
-      showProgress('完了。結果を読み込んでいます…');
+      showProgress(LANG === 'ja' ? '完了。結果を読み込んでいます…' : 'Done. Loading results…');
       fetch('/api/list-builder/runs/' + encodeURIComponent(runId)).then(x => x.json()).then(function (data) {
         const records = (data && data.run && data.run.candidates) || data.candidates || [];
         currentRecords = records;
@@ -9120,9 +9178,9 @@ ${renderProviderIconFixScript()}
       currentEventSource = null;
     });
     currentEventSource.addEventListener('error', function (ev) {
-      let msg = '通信エラー';
+      let msg = LANG === 'ja' ? '通信エラー' : 'Connection error';
       try { const d = JSON.parse(ev.data || '{}'); if (d && d.error) msg = d.error; } catch (_) {}
-      showProgress('エラー: ' + msg);
+      showProgress((LANG === 'ja' ? 'エラー: ' : 'Error: ') + msg);
       const fill = $('lb2ProgressFill');
       if (fill) fill.style.background = 'linear-gradient(90deg, var(--error) 0%, #fca5a5 100%)';
     });
@@ -9168,21 +9226,27 @@ ${renderProviderIconFixScript()}
     // ヒント文言の切替
     const hint = $('lb2CriteriaHint');
     if (hint) {
-      hint.textContent = mode === 'ai' ? '空欄の項目は AI が判断します'
-        : mode === 'category' ? 'API キー設定タブで登録した法人番号API/gBizINFO で検索します'
-        : '';
+      if (LANG === 'ja') {
+        hint.textContent = mode === 'ai' ? '空欄の項目は AI が判断します'
+          : mode === 'category' ? 'API キー設定タブで登録した法人番号API/gBizINFO で検索します'
+          : '';
+      } else {
+        hint.textContent = mode === 'ai' ? 'Blank fields are decided by AI'
+          : mode === 'category' ? 'Searches via Houjin-Bangou / gBizINFO using API keys from Settings (JP only)'
+          : '';
+      }
     }
     // ボタンラベル切替
     const lbl = $('lb2RunBtnLabel');
     const ico = $('lb2RunBtnIcon');
     if (mode === 'url') {
-      if (lbl) lbl.textContent = 'URL をスキャン開始';
+      if (lbl) lbl.textContent = LANG === 'ja' ? 'URL をスキャン開始' : 'Start URL scan';
       if (ico) ico.textContent = 'play_arrow';
     } else if (mode === 'category') {
-      if (lbl) lbl.textContent = '公式 API で検索';
+      if (lbl) lbl.textContent = LANG === 'ja' ? '公式 API で検索' : 'Search official APIs';
       if (ico) ico.textContent = 'search';
     } else {
-      if (lbl) lbl.textContent = 'AI で候補企業を生成';
+      if (lbl) lbl.textContent = LANG === 'ja' ? 'AI で候補企業を生成' : 'Generate with AI';
       if (ico) ico.textContent = 'auto_awesome';
     }
   }
@@ -9196,13 +9260,15 @@ ${renderProviderIconFixScript()}
     const fill = $('lb2ProgressFill');
     if (fill) fill.style.background = '';
 
+    const errPrefix = LANG === 'ja' ? 'エラー: ' : 'Error: ';
+
     if (currentMode === 'url') {
       const raw = ($('lb2UrlInput') ? $('lb2UrlInput').value : '').trim();
       const urls = raw.split(/[\\n,]/).map(function (s) { return s.trim(); }).filter(Boolean);
-      if (urls.length === 0) { alert('URL を入力してください'); return; }
+      if (urls.length === 0) { alert(LANG === 'ja' ? 'URL を入力してください' : 'Please enter a URL'); return; }
       const maxPages = parseInt($('lb2UrlMaxPages').value, 10) || 10;
       const maxCompanies = parseInt($('lb2UrlMaxCompanies').value, 10) || 100;
-      showProgress('URL スキャン開始中…');
+      showProgress(LANG === 'ja' ? 'URL スキャン開始中…' : 'Starting URL scan…');
       setStage('discovery', 5);
       try {
         const resp = await fetch('/api/list-builder/run', {
@@ -9211,10 +9277,10 @@ ${renderProviderIconFixScript()}
           body: JSON.stringify({ mode: 'url', payload: { urls: urls, maxPages: maxPages, maxCompanies: maxCompanies } }),
         });
         const data = await resp.json();
-        if (!data.ok) { showProgress('エラー: ' + (data.error || 'unknown')); return; }
+        if (!data.ok) { showProgress(errPrefix + (data.error || 'unknown')); return; }
         currentRunId = data.runId;
         subscribeStream(currentRunId);
-      } catch (e) { showProgress('エラー: ' + e.message); }
+      } catch (e) { showProgress(errPrefix + e.message); }
       return;
     }
 
@@ -9231,10 +9297,12 @@ ${renderProviderIconFixScript()}
         limit: limit,
       };
       if (params.industries.length === 0 && params.prefectures.length === 0 && params.keywords.length === 0) {
-        alert('業種・地域・キーワードのいずれかを 1 つ以上入力してください');
+        alert(LANG === 'ja'
+          ? '業種・地域・キーワードのいずれかを 1 つ以上入力してください'
+          : 'Please enter at least one industry, region, or keyword.');
         return;
       }
-      showProgress('公式 API で検索中…');
+      showProgress(LANG === 'ja' ? '公式 API で検索中…' : 'Searching official APIs…');
       setStage('discovery', 8);
       try {
         const resp = await fetch('/api/list-builder/run', {
@@ -9243,22 +9311,25 @@ ${renderProviderIconFixScript()}
           body: JSON.stringify({ mode: 'category', payload: params }),
         });
         const data = await resp.json();
-        if (!data.ok) { showProgress('エラー: ' + (data.error || 'unknown')); return; }
+        if (!data.ok) { showProgress(errPrefix + (data.error || 'unknown')); return; }
         currentRunId = data.runId;
         subscribeStream(currentRunId);
-      } catch (e) { showProgress('エラー: ' + e.message); }
+      } catch (e) { showProgress(errPrefix + e.message); }
       return;
     }
 
     // AI モード (cli-run)
     const query = composeQuery();
     if (!query) {
-      if (typeof showToast === 'function') showToast('業種・地域などの条件を 1 つ以上入力してください', 'info');
-      else alert('業種・地域などの条件を 1 つ以上入力してください');
+      const needsCriteria = LANG === 'ja'
+        ? '業種・地域などの条件を 1 つ以上入力してください'
+        : 'Please enter at least one criterion (industry, region, etc.)';
+      if (typeof showToast === 'function') showToast(needsCriteria, 'info');
+      else alert(needsCriteria);
       return;
     }
     const provider = $('lb2Provider').value || 'claude';
-    showProgress(provider + ' CLI に依頼中…');
+    showProgress(provider + (LANG === 'ja' ? ' CLI に依頼中…' : ' CLI: sending request…'));
     setStage('discovery', 8);
     try {
       const resp = await fetch('/api/list-builder/cli-run', {
@@ -9268,12 +9339,12 @@ ${renderProviderIconFixScript()}
       });
       const data = await resp.json();
       if (!data.ok) {
-        showProgress('エラー: ' + (data.error || 'unknown'));
+        showProgress(errPrefix + (data.error || 'unknown'));
         return;
       }
       currentRunId = data.runId;
       subscribeStream(currentRunId);
-    } catch (e) { showProgress('エラー: ' + e.message); }
+    } catch (e) { showProgress(errPrefix + e.message); }
   });
 
   on($('lb2CancelBtn'), 'click', function () {
@@ -9304,9 +9375,10 @@ ${renderProviderIconFixScript()}
 
   on($('lb2CommitBtn'), 'click', async function () {
     if (!currentRunId || currentRecords.length === 0) return;
+    const errPrefix = LANG === 'ja' ? 'エラー: ' : 'Error: ';
     const checked = $$('#lb2ResultBody input[data-lb2-idx]:checked');
     if (checked.length === 0) {
-      alert('追加する企業を選択してください');
+      alert(LANG === 'ja' ? '追加する企業を選択してください' : 'Please select companies to add');
       return;
     }
     const ids = checked.map(function (cb) {
@@ -9321,15 +9393,17 @@ ${renderProviderIconFixScript()}
       });
       const data = await resp.json();
       if (data.ok) {
-        const msg = data.appended + ' 社をターゲットリストに追加しました';
+        const msg = LANG === 'ja'
+          ? data.appended + ' 社をターゲットリストに追加しました'
+          : 'Added ' + data.appended + ' companies to the target list';
         if (typeof showToast === 'function') showToast(msg, 'success'); else alert(msg);
         $('lb2Result').hidden = true;
         currentRecords = [];
         refreshStatsFromRuns();
       } else {
-        alert('エラー: ' + (data.error || 'unknown'));
+        alert(errPrefix + (data.error || 'unknown'));
       }
-    } catch (e) { alert('エラー: ' + e.message); }
+    } catch (e) { alert(errPrefix + e.message); }
   });
 
   on($('lb2ActionAddTopBtn'), 'click', function () {

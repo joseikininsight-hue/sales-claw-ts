@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.0.37 - 2026-05-16 — i18n 完全化 (Settings / Awaiting / Sent / List Builder / Stats)
+
+### 完全英語化対象
+
+en mode で残っていた日本語 UI 要素を完全に i18n 化:
+
+1. **Settings タブ全体** (`src/dashboard-server.ts` + `src/ui/client-scripts/settings-redesign.ts`)
+   - 設定メニュー / 各セクションサブタイトル / 完了率 / 保存ボタン / ヒント / プレビュー
+   - 26 サイト置換 + 既存 SECTIONS metadata を `*Key` lookup に統一
+
+2. **Awaiting (確認待ち) タブ** (`src/ui/client-scripts/awaiting-card-redesign.ts`)
+   - 送信内容の確認 / 取得日時 / スクリーンショットツール / 入力サマリー / AI 分析パネル
+   - 全 action button / confirm dialog / toast / alert
+   - 59 サイト i18n 化
+
+3. **Sent (送信済み) タブ** (`src/ui/client-scripts/sent-card-redesign.ts`)
+   - 送信済みヘッダー / 履歴タイムライン / サマリー / 返信記録 / 編集して再送モーダル
+   - 47 サイト i18n 化 + `{n}回目の連絡` テンプレート化
+
+4. **List Builder タブ** (`src/list-builder-page.ts` + `src/dashboard-server.ts` lb2 script + `src/routes/list-builder-api.ts`)
+   - 50+ サイト 完全 bilingual 化
+   - JP-only API (法人番号 / gBizINFO / EDINET) は "JP only" バッジ付きで残す
+   - カテゴリ /都道府県 / 売上規模 ラベルを ja/en 両方提供
+
+5. **Pagination** (`src/ui/client-scripts/pagination.ts`)
+   - 表示件数 / 件中…を表示 / 前へ / 次へ
+   - locale で `toLocaleString` を `ja-JP` ↔ `en-US` 切替
+
+6. **CLI Activity (Logs) タブ** (`src/dashboard-server.ts`)
+   - 各 Provider 起動ボタン / 停止 / 空状態 / 認証ヘルプ 4 ステップ
+
+7. **Analytics チャート凡例** (`src/ui/client-scripts/dashboard-analytics.ts`)
+   - 6 ドーナツ凡例 (送信済み / 要対応 / 確認待ち / エラー / 除外 / 未処理)
+   - 既存 `analytics.chart.legend.*` `stats.*` キー再利用
+   - timeago (X 時間前 / X 分前 / 今日 / 昨日) も locale 連動
+
+### i18n.ts 追加キー数
+
+- 1 回目 agent: settings/awaiting/sent/timeago: 139 unique × 2 langs = 278 lines
+- 2 回目 agent: pagination/cli-activity: 23 unique × 2 langs = 46 lines
+
+### 既存日本語ユーザー無影響
+
+すべて `_lang === 'ja'` (default) で従来表示維持。
+
 ## 2.0.36 - 2026-05-16 — bulkDeleteCompanies 構文エラー修正 + ja モード Accept-Language 互換保証
 
 ### バグ修正

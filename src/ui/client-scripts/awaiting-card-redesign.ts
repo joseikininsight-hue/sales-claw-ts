@@ -120,6 +120,20 @@ const SCRIPT = `(function(){
   var SETTINGS_CACHE = null;
   var SETTINGS_PROMISE = null;
 
+  // i18n helper (uses the global I18N map injected by buildPage())
+  function aw2T(key, fallback, params) {
+    var text = fallback;
+    try {
+      if (typeof I18N === 'object' && I18N && typeof I18N[key] === 'string') text = I18N[key];
+    } catch (_) {}
+    if (params && typeof text === 'string') {
+      Object.keys(params).forEach(function(k){
+        text = text.replace('{' + k + '}', params[k]);
+      });
+    }
+    return text;
+  }
+
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var s = document.createElement('style');
@@ -205,21 +219,21 @@ const SCRIPT = `(function(){
     var ts = c.awaitingAt || Date.now();
     var formatted = fmtDate(ts);
     return [
-      { icon: 'language',         label: 'フォームページにアクセス', time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
-      { icon: 'integration_instructions', label: 'フォーム要素を認識', time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
-      { icon: 'edit_note',        label: '情報を入力',                 time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
-      { icon: 'photo_camera',     label: 'スクリーンショット取得',    time: formatted, done: !!c.hasInputScreenshot || !!c.hasConfirmScreenshot }
+      { icon: 'language',         label: aw2T('awaitingCard.log.access', 'フォームページにアクセス'), time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
+      { icon: 'integration_instructions', label: aw2T('awaitingCard.log.parse', 'フォーム要素を認識'),  time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
+      { icon: 'edit_note',        label: aw2T('awaitingCard.log.fill', '情報を入力'),                  time: formatted, done: !!c.hasInputScreenshot || !!c.hasAnyScreenshot },
+      { icon: 'photo_camera',     label: aw2T('awaitingCard.log.shot', 'スクリーンショット取得'),       time: formatted, done: !!c.hasInputScreenshot || !!c.hasConfirmScreenshot }
     ];
   }
 
   function statusInfo(c) {
     if (c.hasConfirmScreenshot) {
-      return { kind: 'ok', icon: 'check_circle', label: 'この内容で送信可能です' };
+      return { kind: 'ok', icon: 'check_circle', label: aw2T('awaitingCard.status.sendable', 'この内容で送信可能です') };
     }
     if (c.hasInputScreenshot) {
-      return { kind: 'warn', icon: 'pending_actions', label: '入力スクリーンショット確認済み' };
+      return { kind: 'warn', icon: 'pending_actions', label: aw2T('awaitingCard.status.partial', '入力スクリーンショット確認済み') };
     }
-    return { kind: 'err', icon: 'error', label: 'スクリーンショット未取得' };
+    return { kind: 'err', icon: 'error', label: aw2T('awaitingCard.status.noShot', 'スクリーンショット未取得') };
   }
 
   function screenshotSrc(c) {
@@ -248,18 +262,18 @@ const SCRIPT = `(function(){
       + '</li>';
     }).join('');
     return '<div class="aw2-log">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">format_list_bulleted</span>AI の実行ログ</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">format_list_bulleted</span>' + safeText(aw2T('awaitingCard.logTitle', 'AI の実行ログ')) + '</div>'
       + '<ul class="aw2-log-list">' + items + '</ul>'
     + '</div>';
   }
 
   function renderShot(src) {
     if (!src) {
-      return '<div class="aw2-shot-frame"><div class="aw2-shot-empty">スクリーンショットがまだありません</div></div>';
+      return '<div class="aw2-shot-frame"><div class="aw2-shot-empty">' + safeText(aw2T('awaitingCard.shotEmpty', 'スクリーンショットがまだありません')) + '</div></div>';
     }
     return '<div class="aw2-shot-frame">'
       + '<div class="aw2-shot-scroll">'
-      + '<img class="aw2-shot-img" src="' + safeText(src) + '" alt="送信前スクリーンショット" data-zoom="1">'
+      + '<img class="aw2-shot-img" src="' + safeText(src) + '" alt="' + safeText(aw2T('awaitingCard.shotAlt', '送信前スクリーンショット')) + '" data-zoom="1">'
       + '</div>'
     + '</div>';
   }
@@ -270,18 +284,18 @@ const SCRIPT = `(function(){
     return '<div class="aw2-head">'
       + '<div class="aw2-head-left">'
       + (noAttr
-          ? '<label class="aw2-head-check" title="バルク操作の対象に含める" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;cursor:pointer">'
+          ? '<label class="aw2-head-check" title="' + safeText(aw2T('awaitingCard.bulkCheckTitle', 'バルク操作の対象に含める')) + '" style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;cursor:pointer">'
               + '<input type="checkbox" class="awaiting-check" data-no="' + noAttr + '" style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary)">'
             + '</label>'
           : '')
       + '<div class="aw2-head-icon"><span class="material-symbols-outlined">description</span></div>'
       + '<div>'
-      + '<h3 class="aw2-head-title">送信内容の確認</h3>'
-      + '<p class="aw2-head-sub">AI が入力した内容とスクリーンショットを確認してください</p>'
+      + '<h3 class="aw2-head-title">' + safeText(aw2T('awaitingCard.title', '送信内容の確認')) + '</h3>'
+      + '<p class="aw2-head-sub">' + safeText(aw2T('awaitingCard.subtitle', 'AI が入力した内容とスクリーンショットを確認してください')) + '</p>'
       + '</div>'
       + '</div>'
       + '<div class="aw2-head-right">'
-      + '<span class="aw2-acquired"><span class="material-symbols-outlined">schedule</span>取得日時:&nbsp;' + safeText(dateStr) + '</span>'
+      + '<span class="aw2-acquired"><span class="material-symbols-outlined">schedule</span>' + safeText(aw2T('awaitingCard.acquired', '取得日時:')) + '&nbsp;' + safeText(dateStr) + '</span>'
       + '<span class="aw2-status ' + (status.kind === 'ok' ? '' : (status.kind === 'warn' ? 'warn' : 'err')) + '"><span class="material-symbols-outlined">' + status.icon + '</span>' + safeText(status.label) + '</span>'
       + '</div>'
     + '</div>';
@@ -289,16 +303,16 @@ const SCRIPT = `(function(){
 
   function renderLeft(c, src) {
     return '<section class="aw2-col-left">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">image</span>スクリーンショットプレビュー</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">image</span>' + safeText(aw2T('awaitingCard.shotTitle', 'スクリーンショットプレビュー')) + '</div>'
       + renderShot(src)
       + '<div class="aw2-shot-tools">'
       + '<div class="aw2-zoom" data-role="zoom">'
-      +   '<button type="button" data-zoom-action="out" title="縮小">−</button>'
+      +   '<button type="button" data-zoom-action="out" title="' + safeText(aw2T('awaitingCard.zoom.out', '縮小')) + '">−</button>'
       +   '<span class="aw2-zoom-val">100%</span>'
-      +   '<button type="button" data-zoom-action="in" title="拡大">+</button>'
-      +   '<button type="button" data-zoom-action="reset" title="リセット" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
+      +   '<button type="button" data-zoom-action="in" title="' + safeText(aw2T('awaitingCard.zoom.in', '拡大')) + '">+</button>'
+      +   '<button type="button" data-zoom-action="reset" title="' + safeText(aw2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
       + '</div>'
-      + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>別タブで開く</button>' : '')
+      + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>' + safeText(aw2T('awaitingCard.openTab', '別タブで開く')) + '</button>' : '')
       + '</div>'
     + '</section>';
   }
@@ -306,21 +320,23 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || 'サービスについて');
+    var defaultInquiry = aw2T('awaitingCard.field.defaultInquiry', 'サービスについて');
+    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || defaultInquiry);
     var contactName = p ? (p.contactName || p.name || '') : '';
     var email = p ? (p.email || '') : '';
     var phone = p ? (p.phone || '') : '';
+    var settingsLoadingPh = aw2T('awaitingCard.field.settingsLoading', '— (settings 取得中)');
 
     var fields = [
-      renderField('help', 'お問い合わせ種別', inquiryType, { valueClass: 'aw2-fld-inquiry' }),
-      renderField('domain', '会社名', c.name, { valueClass: 'aw2-fld-company' }),
-      renderField('person', '担当者名', contactName, { valueClass: 'aw2-fld-contact', placeholder: '— (settings 取得中)' }),
-      renderField('mail', 'メールアドレス', email, { valueClass: 'aw2-fld-email', placeholder: '— (settings 取得中)' }),
-      renderField('call', '電話番号', phone, { valueClass: 'aw2-fld-phone', placeholder: '— (settings 取得中)' })
+      renderField('help', aw2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }),
+      renderField('domain', aw2T('awaitingCard.field.company', '会社名'), c.name, { valueClass: 'aw2-fld-company' }),
+      renderField('person', aw2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
+      renderField('mail', aw2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),
+      renderField('call', aw2T('awaitingCard.field.phone', '電話番号'), phone, { valueClass: 'aw2-fld-phone', placeholder: settingsLoadingPh })
     ].join('');
 
     var msg = c.sentMessage || '';
-    var msgField = renderField('article', 'お問い合わせ内容', msg, { tall: true, valueClass: 'aw2-fld-message' });
+    var msgField = renderField('article', aw2T('awaitingCard.field.message', 'お問い合わせ内容'), msg, { tall: true, valueClass: 'aw2-fld-message' });
 
     // 1.2.100: sentMessage が template フォールバックの場合は警告バッジを表示。
     // CLI が details.sentMessage を渡してこなかった旧ログだと templateDraft を
@@ -329,12 +345,12 @@ const SCRIPT = `(function(){
     if (c.sentMessageSource === 'template_draft_fallback') {
       draftWarning = '<div class="aw2-draft-warning" style="margin-top:8px;padding:8px 12px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);border-radius:6px;color:#b45309;font-size:.7rem;line-height:1.55;display:flex;align-items:flex-start;gap:6px">'
         + '<span class="material-symbols-outlined" style="font-size:14px;flex-shrink:0;margin-top:1px">warning</span>'
-        + '<span><b>表示中の本文は Phase A の下書き</b>であり、実際のフォーム入力本文と異なる可能性があります。スクリーンショットで実入力内容を必ず確認してください。(1.2.100 以降の記録には sentMessage が必須化されており、この警告は表示されません)</span>'
+        + '<span>' + safeText(aw2T('awaitingCard.draftWarning', '表示中の本文は Phase A の下書きであり、実際のフォーム入力本文と異なる可能性があります。スクリーンショットで実入力内容を必ず確認してください。')) + '</span>'
         + '</div>';
     }
 
     return '<section class="aw2-col-right">'
-      + '<div class="aw2-section-title"><span class="material-symbols-outlined">checklist</span>入力内容のサマリー</div>'
+      + '<div class="aw2-section-title"><span class="material-symbols-outlined">checklist</span>' + safeText(aw2T('awaitingCard.summaryTitle', '入力内容のサマリー')) + '</div>'
       + '<div class="aw2-fields">' + fields + msgField + '</div>'
       + draftWarning
       + renderInsightPanel(c)
@@ -363,38 +379,38 @@ const SCRIPT = `(function(){
       var verdictClass = llm.fitVerdict === 'send' ? 'aw2-insight-ok'
         : llm.fitVerdict === 'skip' ? 'aw2-insight-err'
         : 'aw2-insight-warn';
-      var verdictLabel = llm.fitVerdict === 'send' ? '✓ 送信推奨'
-        : llm.fitVerdict === 'skip' ? '✗ 送信非推奨'
-        : '? 判定保留';
+      var verdictLabel = llm.fitVerdict === 'send' ? '✓ ' + aw2T('awaitingCard.insight.send', '送信推奨')
+        : llm.fitVerdict === 'skip' ? '✗ ' + aw2T('awaitingCard.insight.skip', '送信非推奨')
+        : '? ' + aw2T('awaitingCard.insight.hold', '判定保留');
       var confidence = typeof llm.confidence === 'number' ? Math.round(llm.confidence * 100) + '%' : '—';
       var providerInfo = llm.providerUsed
         ? ' (' + safeText(llm.providerUsed) + (llm.elapsedMs ? ' ' + llm.elapsedMs + 'ms' : '') + ')'
         : '';
 
       rows.push(
-        '<div class="aw2-insight-row"><span class="aw2-insight-key">業態判定</span>'
+        '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.industry', '業態判定')) + '</span>'
         + '<span class="aw2-insight-val">' + industry + providerInfo + '</span></div>'
       );
       rows.push(
-        '<div class="aw2-insight-row"><span class="aw2-insight-key">フィット度</span>'
-        + '<span class="aw2-insight-val ' + verdictClass + '">' + verdictLabel + ' (信頼度 ' + confidence + ')</span></div>'
+        '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.fitScore', 'フィット度')) + '</span>'
+        + '<span class="aw2-insight-val ' + verdictClass + '">' + verdictLabel + ' (' + safeText(aw2T('awaitingCard.insight.confidence', '信頼度')) + ' ' + confidence + ')</span></div>'
       );
       if (llm.fitReason) {
         rows.push(
-          '<div class="aw2-insight-row"><span class="aw2-insight-key">理由</span>'
+          '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.reason', '理由')) + '</span>'
           + '<span class="aw2-insight-val">' + safeText(llm.fitReason) + '</span></div>'
         );
       }
       if (llm.mainOfferings && llm.mainOfferings.length > 0) {
         rows.push(
-          '<div class="aw2-insight-row"><span class="aw2-insight-key">主力</span>'
+          '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.mainOfferings', '主力')) + '</span>'
           + '<span class="aw2-insight-val">' + llm.mainOfferings.map(safeText).join(' / ') + '</span></div>'
         );
       }
       if (llm.evidenceQuotes && llm.evidenceQuotes.length > 0) {
         var quotes = llm.evidenceQuotes.map(function(q){ return '「' + safeText(q) + '」'; }).join('<br>');
         rows.push(
-          '<div class="aw2-insight-row"><span class="aw2-insight-key">原文引用</span>'
+          '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.quotes', '原文引用')) + '</span>'
           + '<span class="aw2-insight-val aw2-insight-quotes">' + quotes + '</span></div>'
         );
       }
@@ -409,7 +425,7 @@ const SCRIPT = `(function(){
         return '<li>' + sev + ' <code>' + safeText(f.name) + '</code>: ' + safeText(f.reason) + '</li>';
       }).join('');
       rows.push(
-        '<div class="aw2-insight-row"><span class="aw2-insight-key">品質チェック</span>'
+        '<div class="aw2-insight-row"><span class="aw2-insight-key">' + safeText(aw2T('awaitingCard.insight.qualityCheck', '品質チェック')) + '</span>'
         + '<span class="aw2-insight-val"><ul class="aw2-insight-failures">' + failItems + '</ul></span></div>'
       );
     }
@@ -418,7 +434,7 @@ const SCRIPT = `(function(){
 
     return '<details class="aw2-insight-details" open>'
       + '<summary class="aw2-insight-summary">'
-      + '<span class="material-symbols-outlined">psychology</span>AI 分析詳細'
+      + '<span class="material-symbols-outlined">psychology</span>' + safeText(aw2T('awaitingCard.insightTitle', 'AI 分析詳細'))
       + (ai.llm && ai.llm.fitVerdict ? ' <span class="aw2-insight-pill ' + (ai.llm.fitVerdict === 'send' ? 'aw2-insight-ok' : ai.llm.fitVerdict === 'skip' ? 'aw2-insight-err' : 'aw2-insight-warn') + '">' + safeText(ai.llm.fitVerdict) + '</span>' : '')
       + '</summary>'
       + '<div class="aw2-insight-body">' + rows.join('') + '</div>'
@@ -433,24 +449,24 @@ const SCRIPT = `(function(){
     // captchaDetected フラグ等でフィルタする。それ以外は AI submit を提示。
     var aiSubmitDisabled = !!c.captchaDetected;
     var aiSubmitTitle = aiSubmitDisabled
-      ? 'CAPTCHA / 認証が要求されているため AI 送信できません。ブラウザで手動送信してください'
-      : 'AI に再度フォームを開かせ、submit ボタンをクリックさせます (実送信)';
+      ? aw2T('awaitingCard.btn.aiSend.disabledCaptcha', 'CAPTCHA / 認証が要求されているため AI 送信できません。ブラウザで手動送信してください')
+      : aw2T('awaitingCard.btn.aiSend.title', 'AI に再度フォームを開かせ、submit ボタンをクリックさせます (実送信)');
     return '<div class="aw2-foot">'
-      + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel">キャンセル</button>'
+      + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel">' + safeText(aw2T('awaitingCard.btn.cancel', 'キャンセル')) + '</button>'
       + '<div class="aw2-foot-right">'
       + (formUrl ? '<span class="aw2-form-url" title="' + formUrl + '">' + formUrl + '</span>' : '')
-      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="edit"><span class="material-symbols-outlined">edit</span>編集して修正</button>'
+      + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="edit"><span class="material-symbols-outlined">edit</span>' + safeText(aw2T('awaitingCard.btn.edit', '編集して修正')) + '</button>'
       // 送信フローは 2 ボタンに分離:
       //  1. ai-send: AI に実際に submit ボタンをクリックさせる (実送信)
       //  2. send: ユーザーがブラウザで手動送信したことを記録するだけ (実送信なし)
       + '<button type="button" class="aw2-btn aw2-btn-ai-send" data-action="ai-send"'
         + (aiSubmitDisabled ? ' disabled' : '')
         + ' title="' + safeText(aiSubmitTitle) + '">'
-        + '<span class="material-symbols-outlined">smart_toy</span>AI に送信させる</button>'
+        + '<span class="material-symbols-outlined">smart_toy</span>' + safeText(aw2T('awaitingCard.btn.aiSend', 'AI に送信させる')) + '</button>'
       + '<button type="button" class="aw2-btn aw2-btn-send" data-action="send"'
         + (canSend ? '' : ' disabled')
-        + ' title="ブラウザで自分で送信してから「送信済み」として記録します (実送信は行いません)">'
-        + '<span class="material-symbols-outlined">check</span>手動送信を記録</button>'
+        + ' title="' + safeText(aw2T('awaitingCard.btn.manualSend.title', 'ブラウザで自分で送信してから「送信済み」として記録します (実送信は行いません)')) + '">'
+        + '<span class="material-symbols-outlined">check</span>' + safeText(aw2T('awaitingCard.btn.manualSend', '手動送信を記録')) + '</button>'
       + '</div>'
     + '</div>';
   }
@@ -489,32 +505,22 @@ const SCRIPT = `(function(){
         var action = actionEl.getAttribute('data-action');
         if (action === 'send') {
           ev.preventDefault();
-          // 「手動送信を記録」: 実送信は行わない。ユーザーが既に
-          // ブラウザで送信したことを前提に、ダッシュボードのログを更新するのみ。
-          // 誤操作を防ぐため確認ダイアログを 1 段階入れる。
-          // 注意: このファイルは template literal で囲まれて SCRIPT に展開される
-          // ため、文字列リテラル内に実改行が混入しないよう \\n でエスケープする。
-          var confirmed = confirm(
-            'これは「実ブラウザで自分で送信ボタンを押した」という記録のみ残します。\\n'
-            + '実送信は行いません。\\n\\n'
-            + 'ブラウザのフォーム確認画面で送信済みですか？'
-          );
+          // Manual-send record: no real send. Confirm dialog to avoid mis-clicks.
+          // Note: this file is wrapped in a template literal, so use \\n inside strings.
+          var confirmed = confirm(aw2T('awaitingCard.confirm.manualSend', 'これは「実ブラウザで自分で送信ボタンを押した」という記録のみ残します。\\n実送信は行いません。\\n\\nブラウザのフォーム確認画面で送信済みですか？'));
           if (!confirmed) return;
           if (typeof window.approveCompany === 'function') window.approveCompany(parseInt(no, 10), name, 'sent');
         } else if (action === 'ai-send') {
           ev.preventDefault();
-          // AI に再度フォームを開かせて submit させる (実送信)
-          var ok = confirm(
-            'AI が ' + (name || '#' + no) + ' のフォームを再度開いて送信ボタンをクリックします。\\n'
-            + '所要時間は 1〜3 分程度です。実行しますか？'
-          );
+          // AI reopens the form and clicks submit (real send)
+          var ok = confirm(aw2T('awaitingCard.confirm.aiSend', 'AI が {name} のフォームを再度開いて送信ボタンをクリックします。\\n所要時間は 1〜3 分程度です。実行しますか？', { name: (name || '#' + no) }));
           if (!ok) return;
           if (typeof window.aiSubmitForm === 'function') {
             window.aiSubmitForm(parseInt(no, 10), name, actionEl);
           } else if (typeof window.toast === 'function') {
-            window.toast('AI 送信機能は 1.2.37+ で利用可能です。アップデート後に再度お試しください。', 'warn');
+            window.toast(aw2T('awaitingCard.aiSend.unavailable', 'AI 送信機能は 1.2.37+ で利用可能です。アップデート後に再度お試しください。'), 'warn');
           } else {
-            alert('AI 送信機能は 1.2.37+ で利用可能です。');
+            alert(aw2T('awaitingCard.aiSend.unavailable', 'AI 送信機能は 1.2.37+ で利用可能です。アップデート後に再度お試しください。'));
           }
         } else if (action === 'cancel') {
           ev.preventDefault();
@@ -522,8 +528,8 @@ const SCRIPT = `(function(){
         } else if (action === 'edit') {
           ev.preventDefault();
           if (typeof window.openAwaitingEditor === 'function') window.openAwaitingEditor(parseInt(no, 10), name, card);
-          else if (typeof window.toast === 'function') window.toast('編集機能は近日対応', 'info');
-          else alert('編集機能は近日対応');
+          else if (typeof window.toast === 'function') window.toast(aw2T('awaitingCard.editComingSoon', '編集機能は近日対応'), 'info');
+          else alert(aw2T('awaitingCard.editComingSoon', '編集機能は近日対応'));
         } else if (action === 'open-tab') {
           ev.preventDefault();
           var img = card.querySelector('.aw2-shot-img');
@@ -567,7 +573,7 @@ const SCRIPT = `(function(){
       btnEl.disabled = true;
       // 1.2.94 U1: ボタンに spinner + ETA テキスト
       btnEl.dataset.originalText = btnEl.dataset.originalText || btnEl.innerHTML;
-      btnEl.innerHTML = '<span style=\\'display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:aw-spin 0.8s linear infinite;margin-right:6px;vertical-align:-2px\\'></span>送信中... (約 1-3 分)';
+      btnEl.innerHTML = '<span style=\\'display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:aw-spin 0.8s linear infinite;margin-right:6px;vertical-align:-2px\\'></span>' + safeText(aw2T('awaitingCard.aiSend.busy', '送信中... (約 1-3 分)'));
       // カード内の他ボタンも同時 disable
       var card = btnEl.closest('.aw2-card, .awaiting-card');
       if (card) {
@@ -590,11 +596,11 @@ const SCRIPT = `(function(){
       return r.json().then(function (j) { return { status: r.status, body: j }; }).catch(function () { return { status: r.status, body: null }; });
     }).then(function (resp) {
       if (resp && resp.body && resp.body.ok) {
-        // 1.2.94 U1: 進捗確認の導線を toast に
+        // 1.2.94 U1: progress feedback via toast
         if (typeof window.toast === 'function') {
-          window.toast('AI 送信タスクをキューしました (1〜3 分で完了)。右下のライブモニタ または「CLI Activity」タブで進捗確認できます。', 'success');
+          window.toast(aw2T('awaitingCard.toast.queued', 'AI 送信タスクをキューしました (1〜3 分で完了)。右下のライブモニタ または「CLI Activity」タブで進捗確認できます。'), 'success');
         } else {
-          alert('AI 送信タスクをキューしました。\\n進捗は右下のライブモニタ または「CLI Activity」タブで確認してください。');
+          alert(aw2T('awaitingCard.alert.queuedAlt', 'AI 送信タスクをキューしました。\\n進捗は右下のライブモニタ または「CLI Activity」タブで確認してください。'));
         }
         // ライブモニタ FAB を自動 open (ユーザーの目線を進捗に向ける)
         try {
@@ -606,8 +612,9 @@ const SCRIPT = `(function(){
         } catch (_) {}
       } else {
         var msg = (resp && resp.body && resp.body.error) || ('HTTP ' + (resp && resp.status));
-        if (typeof window.toast === 'function') window.toast('AI 送信失敗: ' + msg, 'error');
-        else alert('AI 送信失敗: ' + msg);
+        var failPrefix = aw2T('awaitingCard.aiSend.failPrefix', 'AI 送信失敗: ');
+        if (typeof window.toast === 'function') window.toast(failPrefix + msg, 'error');
+        else alert(failPrefix + msg);
         if (btnEl) {
         btnEl.removeAttribute('data-busy'); btnEl.disabled = false;
         // 1.2.94 U1: 元のボタン文言復元
@@ -622,8 +629,9 @@ const SCRIPT = `(function(){
       }
     }).catch(function (e) {
       var msg = (e && e.message) || String(e);
-      if (typeof window.toast === 'function') window.toast('AI 送信失敗: ' + msg, 'error');
-      else alert('AI 送信失敗: ' + msg);
+      var failPrefix2 = aw2T('awaitingCard.aiSend.failPrefix', 'AI 送信失敗: ');
+      if (typeof window.toast === 'function') window.toast(failPrefix2 + msg, 'error');
+      else alert(failPrefix2 + msg);
       if (btnEl) {
         btnEl.removeAttribute('data-busy'); btnEl.disabled = false;
         // 1.2.94 U1: 元のボタン文言復元

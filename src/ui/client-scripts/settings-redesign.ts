@@ -133,15 +133,29 @@ const SCRIPT = `(function(){
     document.head.appendChild(s);
   }
 
-  // Section metadata
+  // i18n helper (uses the global I18N map injected by buildPage())
+  function set2T(key, fallback) {
+    try {
+      if (typeof I18N === 'object' && I18N && I18N[key]) return I18N[key];
+    } catch (_) {}
+    return fallback;
+  }
+
+  // Section metadata (labels resolved via I18N at render time)
   var SECTIONS = [
-    { id: 'companyProfile',    icon: 'apartment',     name: '会社プロフィール',     sub: '基本情報や連絡先を設定',         desc: '企業への連絡に使用する自社情報を設定してください。',           stepName: '会社プロフィール',     stepSub: '基本情報を入力',  inStepper: true },
-    { id: 'valuePropositions', icon: 'lightbulb',     name: '提供価値',             sub: '自社の強みや提供価値を設定',     desc: '自社の強み・実績・業種別の見せ方を整理してメッセージ品質を上げます。', stepName: '提供価値',             stepSub: '自社の強みを設定', inStepper: true },
-    { id: 'targetList',        icon: 'groups',        name: 'ターゲットリスト',     sub: '対象となる企業や条件を設定',     desc: 'アプローチ対象の企業リスト/カラム/ファイル形式を設定します。',         stepName: 'ターゲットリスト',     stepSub: '対象企業を定義',   inStepper: true },
-    { id: 'exclusionRules',    icon: 'block',         name: '除外ルール',           sub: '除外する条件やルールを設定',     desc: '営業対象外の業種・キーワード・カスタムルールを定義します (任意)。',     stepName: null,                   stepSub: null,               inStepper: false },
-    { id: 'messageTemplates',  icon: 'edit_note',     name: 'メッセージテンプレート', sub: '送信するメッセージのテンプレートを設定', desc: '挨拶・締め・署名・CTA・営業方針などメッセージ全体の骨格を整えます。',  stepName: 'メッセージテンプレート', stepSub: '送信内容を設計',   inStepper: true },
-    { id: 'preferences',       icon: 'tune',          name: '環境設定',             sub: 'モデルや保存先などの環境設定',   desc: 'AI Provider・スクリーンショット保存先・データ保存先などを設定します。', stepName: '環境設定',             stepSub: '実行環境を設定',   inStepper: true }
+    { id: 'companyProfile',    icon: 'apartment',     nameKey: 'settingsRedesign.section.companyProfile.name',    subKey: 'settingsRedesign.section.companyProfile.sub',    descKey: 'settingsRedesign.section.companyProfile.desc',    stepNameKey: 'settingsRedesign.section.companyProfile.name',     stepSubKey: 'settingsRedesign.section.companyProfile.stepSub',     inStepper: true },
+    { id: 'valuePropositions', icon: 'lightbulb',     nameKey: 'settingsRedesign.section.valuePropositions.name', subKey: 'settingsRedesign.section.valuePropositions.sub', descKey: 'settingsRedesign.section.valuePropositions.desc', stepNameKey: 'settingsRedesign.section.valuePropositions.name',  stepSubKey: 'settingsRedesign.section.valuePropositions.stepSub',  inStepper: true },
+    { id: 'targetList',        icon: 'groups',        nameKey: 'settingsRedesign.section.targetList.name',        subKey: 'settingsRedesign.section.targetList.sub',        descKey: 'settingsRedesign.section.targetList.desc',        stepNameKey: 'settingsRedesign.section.targetList.name',         stepSubKey: 'settingsRedesign.section.targetList.stepSub',         inStepper: true },
+    { id: 'exclusionRules',    icon: 'block',         nameKey: 'settingsRedesign.section.exclusionRules.name',    subKey: 'settingsRedesign.section.exclusionRules.sub',    descKey: 'settingsRedesign.section.exclusionRules.desc',    stepNameKey: null,                                                stepSubKey: null,                                                  inStepper: false },
+    { id: 'messageTemplates',  icon: 'edit_note',     nameKey: 'settingsRedesign.section.messageTemplates.name',  subKey: 'settingsRedesign.section.messageTemplates.sub',  descKey: 'settingsRedesign.section.messageTemplates.desc',  stepNameKey: 'settingsRedesign.section.messageTemplates.name',   stepSubKey: 'settingsRedesign.section.messageTemplates.stepSub',   inStepper: true },
+    { id: 'preferences',       icon: 'tune',          nameKey: 'settingsRedesign.section.preferences.name',       subKey: 'settingsRedesign.section.preferences.sub',       descKey: 'settingsRedesign.section.preferences.desc',       stepNameKey: 'settingsRedesign.section.preferences.name',        stepSubKey: 'settingsRedesign.section.preferences.stepSub',        inStepper: true }
   ];
+  // Expose translated accessor helpers
+  function sectionName(s) { return set2T(s.nameKey, ''); }
+  function sectionSub(s)  { return set2T(s.subKey, ''); }
+  function sectionDesc(s) { return set2T(s.descKey, ''); }
+  function sectionStepName(s) { return s.stepNameKey ? set2T(s.stepNameKey, '') : null; }
+  function sectionStepSub(s)  { return s.stepSubKey  ? set2T(s.stepSubKey,  '') : null; }
   var SECTION_BY_ID = {};
   SECTIONS.forEach(function(s){ SECTION_BY_ID[s.id] = s; });
   var STEPPER = SECTIONS.filter(function(s){ return s.inStepper; });
@@ -166,22 +180,22 @@ const SCRIPT = `(function(){
       text.className = 'set2-side-text';
       var name = document.createElement('div');
       name.className = 'set2-side-name';
-      name.textContent = meta.name;
+      name.textContent = sectionName(meta);
       var sub = document.createElement('div');
       sub.className = 'set2-side-sub';
-      sub.textContent = meta.sub;
+      sub.textContent = sectionSub(meta);
       text.appendChild(name);
       text.appendChild(sub);
 
       btn.insertBefore(text, btn.firstChild);
       btn.insertBefore(icon, btn.firstChild);
     });
-    // Add a 設定メニュー title at top of sidebar
+    // Add a "Settings menu" title at top of sidebar
     var sidebar = $('.settings-sidebar');
     if (sidebar && !sidebar.querySelector('.set2-side-title')) {
       var t = document.createElement('div');
       t.className = 'set2-side-title';
-      t.textContent = '設定メニュー';
+      t.textContent = set2T('settingsRedesign.menuTitle', '設定メニュー');
       sidebar.insertBefore(t, sidebar.firstChild);
     }
   }
@@ -209,11 +223,11 @@ const SCRIPT = `(function(){
   function renderHeader(meta, prog) {
     return '<div class="set2-header">'
       + '<div class="set2-header-text">'
-      + '<h2>' + escapeHtml(meta.name) + '</h2>'
-      + '<p>' + escapeHtml(meta.desc) + '</p>'
+      + '<h2>' + escapeHtml(sectionName(meta)) + '</h2>'
+      + '<p>' + escapeHtml(sectionDesc(meta)) + '</p>'
       + '</div>'
       + '<div class="set2-progress">'
-      + '<div class="set2-progress-label">設定の完了率 <b>' + prog.pct + '%</b> (' + prog.done + '/' + prog.total + ')</div>'
+      + '<div class="set2-progress-label">' + escapeHtml(set2T('settingsRedesign.progressLabel', '設定の完了率')) + ' <b>' + prog.pct + '%</b> (' + prog.done + '/' + prog.total + ')</div>'
       + '<div class="set2-progress-track"><span style="width:' + prog.pct + '%"></span></div>'
       + '</div>'
       + '</div>';
@@ -232,8 +246,8 @@ const SCRIPT = `(function(){
         +   '<div class="set2-step-dot">'
         +     (iconText === 'check' ? '<span class="material-symbols-outlined">check</span>' : '<span style="font-size:.78rem;font-weight:800">' + iconText + '</span>')
         +   '</div>'
-        +   '<div class="set2-step-name">' + escapeHtml(s.stepName) + '</div>'
-        +   '<div class="set2-step-sub">' + escapeHtml(s.stepSub) + '</div>'
+        +   '<div class="set2-step-name">' + escapeHtml(sectionStepName(s) || '') + '</div>'
+        +   '<div class="set2-step-sub">' + escapeHtml(sectionStepSub(s) || '') + '</div>'
         + '</div>';
     });
     html += '</div>';
@@ -261,20 +275,20 @@ const SCRIPT = `(function(){
     var desc = readFieldValue('businessDescription') || (function(){ var n = document.querySelector('#cp-businessDescription, [name=businessDescription]'); return n ? n.value.trim() : ''; })();
 
     var html = '<aside class="set2-preview">'
-      + '<h4>プレビュー</h4>'
-      + '<div class="set2-preview-name"><span>' + escapeHtml(name || '— 会社名 —') + '</span><span class="set2-preview-tag">プレビュー</span></div>'
-      + '<div class="set2-preview-section-title">連絡先</div>'
+      + '<h4>' + escapeHtml(set2T('settingsRedesign.preview.title', 'プレビュー')) + '</h4>'
+      + '<div class="set2-preview-name"><span>' + escapeHtml(name || set2T('settingsRedesign.preview.namePlaceholder', '— 会社名 —')) + '</span><span class="set2-preview-tag">' + escapeHtml(set2T('settingsRedesign.preview.tag', 'プレビュー')) + '</span></div>'
+      + '<div class="set2-preview-section-title">' + escapeHtml(set2T('settingsRedesign.preview.contactsTitle', '連絡先')) + '</div>'
       + '<div class="set2-preview-list">'
-      +   '<div class="set2-preview-row' + (contactName ? '' : ' muted') + '"><span class="material-symbols-outlined">person</span><span>' + escapeHtml(contactName || '— 担当者名 —') + '</span></div>'
-      +   '<div class="set2-preview-row' + (email ? '' : ' muted') + '"><span class="material-symbols-outlined">mail</span><span>' + escapeHtml(email || '— メール —') + '</span></div>'
-      +   '<div class="set2-preview-row' + (phone ? '' : ' muted') + '"><span class="material-symbols-outlined">call</span><span>' + escapeHtml(phone || '— 電話 —') + '</span></div>'
-      +   '<div class="set2-preview-row' + (website ? '' : ' muted') + '"><span class="material-symbols-outlined">language</span><span>' + escapeHtml(website || '— Web —') + '</span></div>'
+      +   '<div class="set2-preview-row' + (contactName ? '' : ' muted') + '"><span class="material-symbols-outlined">person</span><span>' + escapeHtml(contactName || set2T('settingsRedesign.preview.contactPlaceholder', '— 担当者名 —')) + '</span></div>'
+      +   '<div class="set2-preview-row' + (email ? '' : ' muted') + '"><span class="material-symbols-outlined">mail</span><span>' + escapeHtml(email || set2T('settingsRedesign.preview.emailPlaceholder', '— メール —')) + '</span></div>'
+      +   '<div class="set2-preview-row' + (phone ? '' : ' muted') + '"><span class="material-symbols-outlined">call</span><span>' + escapeHtml(phone || set2T('settingsRedesign.preview.phonePlaceholder', '— 電話 —')) + '</span></div>'
+      +   '<div class="set2-preview-row' + (website ? '' : ' muted') + '"><span class="material-symbols-outlined">language</span><span>' + escapeHtml(website || set2T('settingsRedesign.preview.webPlaceholder', '— Web —')) + '</span></div>'
       + '</div>'
       + '<div class="set2-preview-section">'
-      +   '<div class="set2-preview-section-title">会社概要</div>'
-      +   '<div class="set2-preview-desc">' + escapeHtml(desc || 'AI が生成した会社プロフィールのプレビューがここに表示されます。') + '</div>'
+      +   '<div class="set2-preview-section-title">' + escapeHtml(set2T('settingsRedesign.preview.companyTitle', '会社概要')) + '</div>'
+      +   '<div class="set2-preview-desc">' + escapeHtml(desc || set2T('settingsRedesign.preview.descPlaceholder', 'AI が生成した会社プロフィールのプレビューがここに表示されます。')) + '</div>'
       + '</div>'
-      + '<div class="set2-preview-hint"><span class="material-symbols-outlined">auto_awesome</span><span>入力内容に基づき、AI が最適な表現でプロフィールを自動生成します。</span></div>'
+      + '<div class="set2-preview-hint"><span class="material-symbols-outlined">auto_awesome</span><span>' + escapeHtml(set2T('settingsRedesign.preview.autoHint', '入力内容に基づき、AI が最適な表現でプロフィールを自動生成します。')) + '</span></div>'
     + '</aside>';
     return html;
   }
@@ -284,11 +298,11 @@ const SCRIPT = `(function(){
       + '<div class="set2-hint-card">'
       +   '<div class="set2-hint-icon"><span class="material-symbols-outlined">tips_and_updates</span></div>'
       +   '<div class="set2-hint-body">'
-      +     '<div class="set2-hint-title">設定のヒント</div>'
-      +     '<a href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener" class="set2-hint-link">詳細ガイドを見る <span class="material-symbols-outlined" style="font-size:12px">open_in_new</span></a>'
+      +     '<div class="set2-hint-title">' + escapeHtml(set2T('settingsRedesign.hint.title', '設定のヒント')) + '</div>'
+      +     '<a href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener" class="set2-hint-link">' + escapeHtml(set2T('settingsRedesign.hint.guide', '詳細ガイドを見る')) + ' <span class="material-symbols-outlined" style="font-size:12px">open_in_new</span></a>'
       +   '</div>'
       + '</div>'
-      + '<button type="button" class="set2-save-next" data-set2-save-next="1"><span>保存して次へ</span><span class="material-symbols-outlined">arrow_forward</span></button>'
+      + '<button type="button" class="set2-save-next" data-set2-save-next="1"><span>' + escapeHtml(set2T('settingsRedesign.saveNext', '保存して次へ')) + '</span><span class="material-symbols-outlined">arrow_forward</span></button>'
     + '</div>';
   }
 
@@ -393,18 +407,18 @@ const SCRIPT = `(function(){
       hint.className = 'set2-side-hint';
       hint.innerHTML = '<div class="set2-side-hint-head">'
         +   '<span class="set2-side-hint-icon"><span class="material-symbols-outlined">lightbulb</span></span>'
-        +   '<span class="set2-side-hint-title">設定のヒント</span>'
+        +   '<span class="set2-side-hint-title">' + escapeHtml(set2T('settingsRedesign.hint.title', '設定のヒント')) + '</span>'
         + '</div>'
-        + '<p class="set2-side-hint-desc">各設定はAIがフォームを自動生成・最適化するために使用されます。</p>'
-        + '<a class="set2-side-hint-link" href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener">詳細ガイドを見る <span class="material-symbols-outlined">open_in_new</span></a>';
+        + '<p class="set2-side-hint-desc">' + escapeHtml(set2T('settingsRedesign.hint.desc', '各設定はAIがフォームを自動生成・最適化するために使用されます。')) + '</p>'
+        + '<a class="set2-side-hint-link" href="https://github.com/joseikininsight-hue/sales-claw-ts#readme" target="_blank" rel="noopener">' + escapeHtml(set2T('settingsRedesign.hint.guide', '詳細ガイドを見る')) + ' <span class="material-symbols-outlined">open_in_new</span></a>';
       sidebar.appendChild(spacer);
       sidebar.appendChild(hint);
     }
 
-    // 6) Bottom: 保存して次へ button (hint moved to sidebar)
+    // 6) Bottom: "Save and continue" button (hint moved to sidebar)
     var bottom = document.createElement('div');
     bottom.className = 'set2-bottom';
-    bottom.innerHTML = '<span></span><button type="button" class="set2-save-next" data-set2-save-next="1"><span>保存して次へ</span><span class="material-symbols-outlined">arrow_forward</span></button>';
+    bottom.innerHTML = '<span></span><button type="button" class="set2-save-next" data-set2-save-next="1"><span>' + escapeHtml(set2T('settingsRedesign.saveNext', '保存して次へ')) + '</span><span class="material-symbols-outlined">arrow_forward</span></button>';
     main.appendChild(bottom);
   }
 
@@ -425,7 +439,7 @@ const SCRIPT = `(function(){
       if (next && typeof window.openSettingsSection === 'function') {
         window.openSettingsSection(next.id);
       } else if (typeof window.showToast === 'function') {
-        window.showToast('保存しました', 'success');
+        window.showToast(set2T('settingsRedesign.toast.saved', '保存しました'), 'success');
       }
     }, 250);
   }

@@ -63,7 +63,21 @@ const SCRIPT = `(function(){
     { id: 'log',      container: '#logBody',      childTag: 'TR',  defaultSize: 100, sizes: [50, 100, 200, 500],placement: 'tableFooter', tableSelector: '#tab-logs table.main-table' }
   ];
 
-  function fmtNum(n) { return Number(n).toLocaleString('ja-JP'); }
+  function fmtNum(n) {
+    var locale = (typeof LANG !== 'undefined' && LANG === 'en') ? 'en-US' : 'ja-JP';
+    return Number(n).toLocaleString(locale);
+  }
+  function pgnT(key, fallback, params) {
+    var text = (typeof I18N === 'object' && I18N && typeof I18N[key] === 'string' && I18N[key])
+      ? I18N[key]
+      : fallback;
+    if (params) {
+      Object.keys(params).forEach(function(k){
+        text = text.replace('{' + k + '}', params[k]);
+      });
+    }
+    return text;
+  }
 
   function readStored(key, fallback) {
     try {
@@ -192,12 +206,15 @@ const SCRIPT = `(function(){
     pages.className = 'pgn-pages';
     var size = document.createElement('div');
     size.className = 'pgn-size';
-    size.innerHTML = '<span>表示件数</span>';
+    var sizeLabelSpan = document.createElement('span');
+    sizeLabelSpan.textContent = pgnT('pagination.size.label', '表示件数');
+    size.appendChild(sizeLabelSpan);
+    var sizeUnit = pgnT('pagination.size.unit', '件');
     var sel = document.createElement('select');
     target.sizes.forEach(function(n){
       var opt = document.createElement('option');
       opt.value = String(n);
-      opt.textContent = n + '件';
+      opt.textContent = sizeUnit ? (n + sizeUnit) : String(n);
       if (n === state.size) opt.selected = true;
       sel.appendChild(opt);
     });
@@ -229,11 +246,17 @@ const SCRIPT = `(function(){
 
         var start = (st.page - 1) * st.size + 1;
         var end = Math.min(st.visibleTotal, st.page * st.size);
-        summary.innerHTML = '全 <b>' + fmtNum(st.visibleTotal) + '</b> 件中 <b>' + fmtNum(start) + '–' + fmtNum(end) + '</b> を表示';
+        // Use HTML-escaped <b> wrappers in the localized summary.
+        // The localized template uses {start}, {end}, {total} placeholders.
+        var summaryTemplate = pgnT('pagination.summary', '全 {total} 件中 {start}–{end} を表示');
+        summary.innerHTML = summaryTemplate
+          .replace('{total}', '<b>' + fmtNum(st.visibleTotal) + '</b>')
+          .replace('{start}', '<b>' + fmtNum(start) + '</b>')
+          .replace('{end}', '<b>' + fmtNum(end) + '</b>');
 
         // render page numbers with ellipsis
         pages.innerHTML = '';
-        var prev = mkBtn('chevron_left', '前へ', { nav: true });
+        var prev = mkBtn('chevron_left', pgnT('pagination.prev', '前へ'), { nav: true });
         prev.disabled = st.page <= 1;
         prev.addEventListener('click', function(){ if (st.page > 1) api.onChangePage(st.page - 1); });
         pages.appendChild(prev);
@@ -252,7 +275,7 @@ const SCRIPT = `(function(){
           }
         });
 
-        var next = mkBtn('chevron_right', '次へ', { nav: true });
+        var next = mkBtn('chevron_right', pgnT('pagination.next', '次へ'), { nav: true });
         next.disabled = st.page >= totalPages;
         next.addEventListener('click', function(){ if (st.page < totalPages) api.onChangePage(st.page + 1); });
         pages.appendChild(next);

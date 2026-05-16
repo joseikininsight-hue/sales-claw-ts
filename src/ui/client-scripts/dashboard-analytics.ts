@@ -109,13 +109,14 @@ function renderBreakdownDonut(s){
   const errors = s.error|0;
   const excluded = s.excluded|0;
   const unprocessed = Math.max(0, total - sent - actionNeeded - errors - excluded);
+  const __donutI18N = (typeof I18N === 'object' && I18N) ? I18N : {};
   const segs = [
-    { val: sent, color: '#10b981', lab: '送信済み' },
-    { val: actionNeeded - awaiting, color: '#3b82f6', lab: '要対応' },
-    { val: awaiting, color: '#f59e0b', lab: '確認待ち' },
-    { val: errors, color: '#ef4444', lab: 'エラー' },
-    { val: excluded, color: '#64748b', lab: '除外' },
-    { val: unprocessed, color: 'var(--bg-raised)', lab: '未処理', muted: true }
+    { val: sent, color: '#10b981', lab: __donutI18N['analytics.chart.legend.sent'] || '送信済み' },
+    { val: actionNeeded - awaiting, color: '#3b82f6', lab: __donutI18N['analytics.chart.legend.action'] || '要対応' },
+    { val: awaiting, color: '#f59e0b', lab: __donutI18N['stats.awaiting'] || __donutI18N['stats.awaiting.label'] || '確認待ち' },
+    { val: errors, color: '#ef4444', lab: __donutI18N['analytics.chart.legend.error'] || 'エラー' },
+    { val: excluded, color: '#64748b', lab: __donutI18N['stats.excluded'] || __donutI18N['stats.excluded.label'] || '除外' },
+    { val: unprocessed, color: 'var(--bg-raised)', lab: __donutI18N['analytics.chart.legend.unprocessed'] || '未処理', muted: true }
   ];
   const sum = segs.reduce((a, b) => a + Math.max(0, b.val), 0) || 1;
   // clear existing dynamic paths (keep first child = track circle)
@@ -239,7 +240,8 @@ function renderRecentErrors(data){
     items.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
   }
   if (!items.length) {
-    host.innerHTML = '<div class="recent-errors-empty">エラーはありません</div>';
+    var emptyTxt = (typeof I18N === 'object' && I18N && I18N['analytics.recentErrors.none']) || 'エラーはありません';
+    host.innerHTML = '<div class="recent-errors-empty">' + emptyTxt + '</div>';
     return;
   }
   host.innerHTML = items.slice(0, 5).map((it) => {
@@ -261,12 +263,17 @@ function relativeTimeJa(ts){
     if (!Number.isFinite(t) || t <= 0) return '';
     const diff = Date.now() - t;
     const m = Math.floor(diff / 60000);
-    if (m < 1) return 'たった今';
-    if (m < 60) return m + '分前';
+    var tr = (typeof I18N === 'object' && I18N) ? I18N : {};
+    var fmt = function(key, fallback, n){
+      var s = (tr && tr[key]) || fallback;
+      return String(s).replace('{n}', String(n));
+    };
+    if (m < 1) return (tr['timeago.justNow']) || 'たった今';
+    if (m < 60) return fmt('timeago.minutesAgo', '{n}分前', m);
     const h = Math.floor(m / 60);
-    if (h < 24) return h + '時間前';
+    if (h < 24) return fmt('timeago.hoursAgo', '{n}時間前', h);
     const d = Math.floor(h / 24);
-    return d + '日前';
+    return fmt('timeago.daysAgo', '{n}日前', d);
   } catch(_) { return ''; }
 }
 
@@ -305,7 +312,11 @@ function renderInsight(data){
 
 function computeDailyBars(trend){
   if (!trend || !Array.isArray(trend.labels)) {
-    return { labels: ['6日前','5日前','4日前','3日前','2日前','昨日','今日'], values: [0,0,0,0,0,0,0] };
+    var tr = (typeof I18N === 'object' && I18N) ? I18N : {};
+    var dayN = function(n){ return String((tr['timeago.dayN'] || tr['timeago.daysAgo'] || '{n}日前')).replace('{n}', String(n)); };
+    var yest = tr['timeago.yesterday'] || '昨日';
+    var today = tr['timeago.today'] || '今日';
+    return { labels: [dayN(6), dayN(5), dayN(4), dayN(3), dayN(2), yest, today], values: [0,0,0,0,0,0,0] };
   }
   return { labels: trend.labels, values: trend.sent || [] };
 }
@@ -322,7 +333,11 @@ function updateAnalyticsExtras(data){
   updateAnalyticsDonut(pct);
   // 2. Meta sum text
   const metaSum = document.getElementById('analyticsMetaSum');
-  if (metaSum) metaSum.textContent = done + ' / ' + total + ' 完了 (' + pct + '%)';
+  if (metaSum) {
+    var trMeta = (typeof I18N === 'object' && I18N) ? I18N : {};
+    var fmtMeta = String(trMeta['analytics.meta.completed'] || '{done} / {total} 完了 ({pct}%)');
+    metaSum.textContent = fmtMeta.replace('{done}', done).replace('{total}', total).replace('{pct}', pct);
+  }
   // 3. Pipeline segments (on top of existing width-driven primary)
   updatePipelineSegments(stats);
   // 4. Breakdown donut
