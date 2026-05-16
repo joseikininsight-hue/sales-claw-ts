@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.33 - 2026-05-16 — i18n フル対応 Phase 1: ヘッダー言語切替 + Onboarding 言語選択
+
+### 概要
+
+OSS 公開水準の bilingual 対応を段階的に実装する Phase 1。
+今回はユーザー必須要件である「ヘッダー切替ボタン」と「初期セットアップで
+言語選択」を最優先で実装。残り Phase 2-5 (Locale Pack / 双言語メッセージ
+生成 / 法令対応 / ドキュメント英訳) は今後のリリースで対応。
+
+### 追加機能
+
+1. **ヘッダー言語切替ボタン** (`src/dashboard-server.ts`, `src/ui/client-scripts/dashboard.ts`)
+   - ヘッダー右側 (theme toggle の隣) に 🌐 EN / 🌐 日本語 トグルボタン
+   - クリックで `/api/settings/preferences` PUT { language } → 自動リロード
+   - 表示は現在言語の「逆」(JA 表示中 → ボタン "EN", EN 表示中 → ボタン "日本語")
+
+2. **Onboarding 言語選択カード** (`src/onboarding-wizard.ts`, `src/routes/onboarding-api.ts`)
+   - Step 1 (Welcome) 最上部に大きな 🇯🇵 日本語 / 🇺🇸 English カード
+   - クリックで preferences.language 即更新 → page reload で全 wizard が新言語
+   - Step labels (Welcome / Company / Strengths / Targets / AI Setup) も双言語化
+   - wiz-titlebar / subtitle / welcome H2 / terms 文 / agreement check / next button 全て翻訳
+
+### 実機テスト結果
+
+- Playwright で ja↔en 双方向切替確認
+- ja 状態: titleBar = "Sales Claw — 初回セットアップ", H2 = "Sales Claw へようこそ"
+- en 状態: titleBar = "Sales Claw — Initial Setup", H2 = "Welcome to Sales Claw"
+- htmlLang 属性も連動して切替
+
+### 残り (今後のリリース)
+
+- Phase 1 残り: dashboard.ts / list-builder UI / Step 2-5 の全 i18n 化
+- Phase 2: Locale Pack 基盤 + ターゲット企業サイト言語自動判定
+- Phase 3: CLI prompt + メッセージ生成の双言語化 (英語企業に英語本文)
+- Phase 4: Compliance Registry (CAN-SPAM / GDPR 対応)
+- Phase 5: ドキュメント英訳 (CLAUDE.md / README.md / docs/)
+
 ## 2.0.32 - 2026-05-16 — site_analysis 800字ガード過剰拒否 + target list 自動復旧 (致命)
 
 ### バグ 1: 「対象が見つかりません」永久ループ

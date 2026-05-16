@@ -74,9 +74,16 @@ module.exports = function createOnboardingRoutes(ctx) {
           settingsManager.save(next);
         } catch (_) {}
       }
+      // v2.0.33: 既存 settings.preferences.language を初期表示言語として渡す
+      let preferredLanguage: 'ja' | 'en' = 'ja';
+      try {
+        const prefs = settingsManager.getSection('preferences') || {};
+        if (prefs.language === 'en') preferredLanguage = 'en';
+      } catch (_) { /* default: ja */ }
       const html = renderOnboardingPage({
         sessionToken,
         savedProgress: readProgress(),
+        preferredLanguage,
       });
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(html);

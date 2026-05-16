@@ -91,18 +91,19 @@ function escapeHtml(s) {
  * @param {object} [ctx.savedProgress] data/onboarding-progress.json の内容
  * @returns {string} HTML
  */
-function renderOnboardingPage(ctx: { sessionToken?: string; savedProgress?: Record<string, unknown> | null } = {}) {
+function renderOnboardingPage(ctx: { sessionToken?: string; savedProgress?: Record<string, unknown> | null; preferredLanguage?: 'ja' | 'en' } = {}) {
   const sessionToken = ctx.sessionToken || '';
   const savedProgress = ctx.savedProgress || null;
+  const preferredLanguage = ctx.preferredLanguage === 'en' ? 'en' : 'ja';
   const presetJson = JSON.stringify(PRESET_STRENGTHS);
   const termsJson = JSON.stringify(TERMS_BULLETS);
   const progressJson = JSON.stringify(savedProgress || {});
 
   return `<!doctype html>
-<html lang="ja" data-theme="light">
+<html lang="${preferredLanguage}" data-theme="light">
 <head>
 <meta charset="utf-8">
-<title>Sales Claw — 初回セットアップ</title>
+<title>${preferredLanguage === 'ja' ? 'Sales Claw — 初回セットアップ' : 'Sales Claw — Initial Setup'}</title>
 <meta name="viewport" content="width=1200">
 <style>
 :root {
@@ -606,11 +607,11 @@ body {
       <path d="M21 12c0 4.97-4.03 9-9 9-4.06 0-7.5-2.69-8.62-6.4"/>
     </svg>
   </span>
-  <span>Sales Claw — 初回セットアップ</span>
+  <span>${preferredLanguage === 'ja' ? 'Sales Claw — 初回セットアップ' : 'Sales Claw — Initial Setup'}</span>
 </div>
 
 <div class="wiz-shell">
-  <div class="wiz-subtitle">5 ステップで完了。後からでも <strong style="color: var(--text-1);">設定</strong> タブで変更できます。</div>
+  <div class="wiz-subtitle">${preferredLanguage === 'ja' ? '5 ステップで完了。後からでも <strong style="color: var(--text-1);">設定</strong> タブで変更できます。' : 'Complete in 5 steps. You can change everything later from the <strong style="color: var(--text-1);">Settings</strong> tab.'}</div>
   <div class="wiz-stepper" id="stepper"></div>
   <div class="wiz-card" id="cardHost"></div>
   <div class="wiz-actions" id="actionsHost"></div>
@@ -622,10 +623,14 @@ body {
   const PRESETS = ${presetJson};
   const TERMS = ${termsJson};
   const SAVED = ${progressJson};
+  // v2.0.33: 既存 settings.preferences.language を初期値に
+  const PREFERRED_LANGUAGE = ${JSON.stringify(preferredLanguage || 'ja')};
 
   // ---- state ----
   const state = Object.assign({
     step: 1,
+    // v2.0.33: 言語選択 (ja|en) を Step 1 で決定 → 以降の wizard / dashboard で採用
+    language: (typeof PREFERRED_LANGUAGE === 'string' && PREFERRED_LANGUAGE) || 'ja',
     termsAgreed: false,
     companyProfile: {
       companyName: '',
@@ -681,16 +686,24 @@ body {
     }).catch(() => {});
   }
 
-  // ---- stepper ----
-  const STEPS = [
+  // ---- stepper (v2.0.33: i18n) ----
+  const STEPS_JA = [
     { n: 1, label: 'ようこそ' },
     { n: 2, label: '自社情報' },
     { n: 3, label: '強み' },
     { n: 4, label: 'ターゲット' },
     { n: 5, label: 'AI 連携' },
   ];
+  const STEPS_EN = [
+    { n: 1, label: 'Welcome' },
+    { n: 2, label: 'Company' },
+    { n: 3, label: 'Strengths' },
+    { n: 4, label: 'Targets' },
+    { n: 5, label: 'AI Setup' },
+  ];
 
   function renderStepper() {
+    const STEPS = (state.language || 'ja') === 'en' ? STEPS_EN : STEPS_JA;
     $('#stepper').innerHTML = STEPS.map((s) => {
       const cls = state.step === s.n ? 'active' : (state.step > s.n ? 'done' : '');
       return '<div class="wiz-step ' + cls + '">' +
@@ -711,21 +724,41 @@ body {
   // ---- step 1: welcome + terms ----
   function renderStep1() {
     const termsList = TERMS.map((t) => '<li>' + esc(t) + '</li>').join('');
+    // v2.0.33: 言語選択カードを最上部に表示。state.language === 'en' なら英語表示。
+    const lang = state.language || 'ja';
+    const isJa = lang === 'ja';
     return [
+      // ─── Language picker (always at top of Step 1) ───
+      '<div class="lang-picker" style="display:flex;gap:12px;margin-bottom:20px;padding:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px">',
+      '  <button type="button" id="langJa" class="lang-card' + (isJa ? ' selected' : '') + '" style="flex:1;padding:16px;background:' + (isJa ? '#eff6ff' : '#fff') + ';border:2px solid ' + (isJa ? '#2563eb' : '#e2e8f0') + ';border-radius:10px;cursor:pointer;text-align:center;transition:all .15s">',
+      '    <div style="font-size:32px;margin-bottom:6px">🇯🇵</div>',
+      '    <div style="font-weight:700;font-size:14px">日本語</div>',
+      '    <div style="font-size:11px;color:#64748b;margin-top:2px">Japanese</div>',
+      '  </button>',
+      '  <button type="button" id="langEn" class="lang-card' + (!isJa ? ' selected' : '') + '" style="flex:1;padding:16px;background:' + (!isJa ? '#eff6ff' : '#fff') + ';border:2px solid ' + (!isJa ? '#2563eb' : '#e2e8f0') + ';border-radius:10px;cursor:pointer;text-align:center;transition:all .15s">',
+      '    <div style="font-size:32px;margin-bottom:6px">🇺🇸</div>',
+      '    <div style="font-weight:700;font-size:14px">English</div>',
+      '    <div style="font-size:11px;color:#64748b;margin-top:2px">英語</div>',
+      '  </button>',
+      '</div>',
+
       '<div class="welcome-grid">',
       '  <div class="welcome-emoji">👋</div>',
       '  <div class="welcome-content">',
-      '    <h2>Sales Claw へようこそ</h2>',
-      '    <p class="lead">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。<br>',
-      '       Claude / Codex / Gemini CLI と連携してフォーム入力までを実行します。</p>',
+      isJa ? '    <h2>Sales Claw へようこそ</h2>' : '    <h2>Welcome to Sales Claw</h2>',
+      isJa
+        ? '    <p class="lead">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。<br>       Claude / Codex / Gemini CLI と連携してフォーム入力までを実行します。</p>'
+        : '    <p class="lead">A tool that automates B2B outreach via corporate contact forms.<br>       It integrates with Claude / Codex / Gemini CLI to fill forms automatically.</p>',
       '  </div>',
       '</div>',
 
       '<div class="info-block">',
       '  <div class="ib-icon">⚠️</div>',
       '  <div>',
-      '    <h3>利用前のご確認 (OSS / 自己責任)</h3>',
-      '    <div class="ib-body">本ソフトウェアは MIT ライセンスのオープンソースです。以下の責任はすべてユーザー側にあります。</div>',
+      isJa ? '    <h3>利用前のご確認 (OSS / 自己責任)</h3>' : '    <h3>Before you start (OSS / Use at your own risk)</h3>',
+      isJa
+        ? '    <div class="ib-body">本ソフトウェアは MIT ライセンスのオープンソースです。以下の責任はすべてユーザー側にあります。</div>'
+        : '    <div class="ib-body">This software is open source under the MIT license. The following responsibilities lie entirely with the user.</div>',
       '    <ul class="terms">', termsList, '</ul>',
       '  </div>',
       '</div>',
@@ -733,10 +766,11 @@ body {
       '<div class="info-block">',
       '  <div class="ib-icon">📁</div>',
       '  <div>',
-      '    <h3>データの保存場所</h3>',
+      isJa ? '    <h3>データの保存場所</h3>' : '    <h3>Where data is stored</h3>',
       '    <div class="ib-body">',
-      '      本アプリの設定 / ログ / スクリーンショットはすべて<strong>ローカル</strong>に保存されます。<br>',
-      '      <code>%APPDATA%\\\\sales-claw\\\\runtime\\\\data\\\\</code> 配下にあります。',
+      isJa
+        ? '      本アプリの設定 / ログ / スクリーンショットはすべて<strong>ローカル</strong>に保存されます。<br>      <code>%APPDATA%\\\\sales-claw\\\\runtime\\\\data\\\\</code> 配下にあります。'
+        : '      All settings / logs / screenshots are stored <strong>locally</strong>.<br>      Located under <code>%APPDATA%\\\\sales-claw\\\\runtime\\\\data\\\\</code>.',
       '    </div>',
       '  </div>',
       '</div>',
@@ -746,21 +780,45 @@ body {
       '<label class="terms-check">',
       '  <input type="checkbox" id="termsCheck"' + (state.termsAgreed ? ' checked' : '') + '>',
       '  <span class="box"></span>',
-      '  <span>上記内容を理解し、自己責任でこのツールを使用することに同意します</span>',
+      isJa
+        ? '  <span>上記内容を理解し、自己責任でこのツールを使用することに同意します</span>'
+        : '  <span>I have read and understood the above and agree to use this tool at my own risk.</span>',
       '</label>',
     ].join('\\n');
   }
 
   function renderStep1Actions() {
+    const isJa = (state.language || 'ja') === 'ja';
     return [
-      '<button class="btn btn-secondary" data-action="cancel">キャンセル</button>',
+      '<button class="btn btn-secondary" data-action="cancel">' + (isJa ? 'キャンセル' : 'Cancel') + '</button>',
       '<div class="wiz-actions-right">',
-      '  <button class="btn btn-primary" id="step1Next"' + (state.termsAgreed ? '' : ' disabled') + '>次へ</button>',
+      '  <button class="btn btn-primary" id="step1Next"' + (state.termsAgreed ? '' : ' disabled') + '>' + (isJa ? '次へ' : 'Next') + '</button>',
       '</div>',
     ].join('');
   }
 
   function bindStep1() {
+    // v2.0.33: 言語選択ボタン → preferences 更新 → 完全リロード
+    // (wiz-titlebar / subtitle / html lang は server-rendered なのでリロード必要。
+    //  state は /api/onboarding/progress に persist されてるので復元される)
+    const setLang = async (lang) => {
+      state.language = lang;
+      try {
+        await fetch('/api/settings/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: lang }),
+        });
+      } catch (_) { /* 失敗しても in-memory state は更新する */ }
+      persistProgress();
+      // 完全リロードで全 UI 要素が新言語で再描画される
+      location.reload();
+    };
+    const langJa = $('#langJa');
+    const langEn = $('#langEn');
+    if (langJa) langJa.addEventListener('click', () => setLang('ja'));
+    if (langEn) langEn.addEventListener('click', () => setLang('en'));
+
     $('#termsCheck').addEventListener('change', (e) => {
       state.termsAgreed = e.target.checked;
       $('#step1Next').disabled = !state.termsAgreed;

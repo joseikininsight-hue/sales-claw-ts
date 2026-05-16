@@ -6540,6 +6540,11 @@ ${renderStyles()}
   </div>
   <!-- Icon-only action buttons -->
   <div style="display:flex;align-items:center;gap:2px">
+    <!-- v2.0.33: 言語切替トグル (ja ↔ en)。クリックで preferences.language を更新 → リロード -->
+    <button class="lang-toggle" onclick="toggleLanguage()" title="${_lang === 'ja' ? '言語切替 (Switch to English)' : 'Switch language (日本語へ)'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.72rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
+      <span class="material-symbols-outlined" style="font-size:14px;margin-right:4px">language</span>
+      <span>${_lang === 'ja' ? 'EN' : '日本語'}</span>
+    </button>
     <button class="theme-toggle" onclick="toggleTheme()" title="${_lang === 'ja' ? 'テーマ切替' : 'Toggle theme'}" aria-label="Toggle theme">
       <span class="ti sun"><span class="material-symbols-outlined" style="font-size:18px">light_mode</span></span>
       <span class="ti moon"><span class="material-symbols-outlined" style="font-size:18px">dark_mode</span></span>
