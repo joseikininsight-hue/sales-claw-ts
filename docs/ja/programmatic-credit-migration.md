@@ -1,4 +1,4 @@
-> Japanese version: [docs/ja/programmatic-credit-migration.md](./ja/programmatic-credit-migration.md)
+English version: [programmatic-credit-migration.md](../programmatic-credit-migration.md)
 
 # Programmatic Credit 移行ガイド (2026-06-15 ポリシー対応)
 

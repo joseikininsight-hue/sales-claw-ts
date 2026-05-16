@@ -1,51 +1,53 @@
 # Privacy & Data Handling
 
-このドキュメントは Sales Claw がどのようなデータをどこで扱うかを明示します。
-プライバシーポリシーの代わりにもなります (Sales Claw 自体は SaaS ではなく、
-ユーザーのマシンで動くデスクトップアプリのため、運営側がデータを収集することは
-ありません)。
+> Japanese version: [docs/ja/PRIVACY.md](./docs/ja/PRIVACY.md)
 
-## 概要 — Sales Claw は完全ローカル動作
+This document explains exactly what data Sales Claw handles and where. It
+doubles as our privacy policy — Sales Claw itself is not a SaaS, but a
+desktop application running on the user's machine, so the project operators
+collect no data.
 
-Sales Claw は **ユーザーのローカル PC 内で完結する**ツールです。
-プロジェクト運営者 (Sales Claw contributors) はユーザーのデータを一切
-受信・保存・閲覧しません。
+## Summary — Sales Claw runs entirely locally
 
-ただし、ユーザーが下記の外部サービスを利用する場合、
-そのサービスのプライバシーポリシーが適用されます:
+Sales Claw is a tool that **runs entirely on the user's local PC**. The
+project operators (Sales Claw contributors) never receive, store, or view
+user data.
 
-| 外部サービス | 用途 | データ送信先 |
+However, if the user opts into any of the external services listed below,
+that service's privacy policy applies:
+
+| External service | Use | Data destination |
 |---|---|---|
-| Claude API (Anthropic) | 企業分析・メッセージ生成 | https://api.anthropic.com (Anthropic の[プライバシーポリシー](https://www.anthropic.com/legal/privacy)) |
-| OpenAI Codex API | 同上 (Codex を選択時) | OpenAI の[プライバシーポリシー](https://openai.com/policies/privacy-policy) |
-| Google Gemini API | 同上 (Gemini を選択時) | Google の[プライバシーポリシー](https://policies.google.com/privacy) |
-| SerpApi | 企業リスト発見 (NLQ/カテゴリモード) | https://serpapi.com (任意機能、API キー設定時のみ) |
-| 国税庁 法人番号 Web API | 法人実在性検証 | https://www.houjin-bangou.nta.go.jp (任意機能、API キー設定時のみ) |
-| gBizINFO | 企業詳細情報 | https://info.gbiz.go.jp (任意機能、API キー設定時のみ) |
-| EDINET | 上場企業財務情報 | https://disclosure.edinet-fsa.go.jp (任意機能、API キー設定時のみ) |
-| ターゲット企業の Web サイト | 公式サイト分析・問い合わせフォーム送信 | ユーザーが指定したドメイン |
-| GitHub (自動更新) | 起動時の更新チェック | https://api.github.com (releases メタデータの取得のみ) |
+| Claude API (Anthropic) | Company analysis / message generation | https://api.anthropic.com ([Anthropic privacy policy](https://www.anthropic.com/legal/privacy)) |
+| OpenAI Codex API | Same as above (when Codex is selected) | [OpenAI privacy policy](https://openai.com/policies/privacy-policy) |
+| Google Gemini API | Same as above (when Gemini is selected) | [Google privacy policy](https://policies.google.com/privacy) |
+| SerpApi | Company-list discovery (NLQ / category mode) | https://serpapi.com (optional, only when an API key is set) |
+| Japan NTA Corporate Number Web API | Corporate existence verification | https://www.houjin-bangou.nta.go.jp (optional, only when an API key is set) |
+| gBizINFO | Company detail information | https://info.gbiz.go.jp (optional, only when an API key is set) |
+| EDINET | Listed-company financial data | https://disclosure.edinet-fsa.go.jp (optional, only when an API key is set) |
+| Target company website | Official site analysis / contact-form submission | The domain the user specified |
+| GitHub (auto-update) | Update check on startup | https://api.github.com (releases metadata only) |
 
-## ローカル保存データ
+## Locally stored data
 
-以下のディレクトリにユーザーデータが保存されます:
+User data lives under these directories:
 
 ### Windows
 ```
 %APPDATA%\sales-claw\runtime\data\
-├── settings.json              ユーザー設定 (自社情報・強み・API キー等)
-├── action-log.json            送信ログ
-├── contact-history.json       連絡履歴
-├── outreach-targets.json      ターゲットリスト
-├── live-monitor.json          進行状況
-├── dashboard-runtime.json     ダッシュボード起動情報
-├── ai-runs/                   AI 実行ログ (PTY セッション)
-├── ai-prompts/                AI へ送ったプロンプト
-├── claude-prompts/            Claude 用プロンプト履歴
-├── provider-homes/<provider>/ 各 AI CLI の認証情報 (subscription token)
-├── cache/analysis/            企業分析キャッシュ (30 日 TTL, sha256 ハッシュキー)
-├── recovery/                  クラッシュ復旧用スナップショット
-└── screenshots/               フォーム入力時のスクリーンショット
+├── settings.json              User settings (own company info / strengths / API keys / etc.)
+├── action-log.json            Sent log
+├── contact-history.json       Contact history
+├── outreach-targets.json      Target list
+├── live-monitor.json          Progress state
+├── dashboard-runtime.json     Dashboard launch info
+├── ai-runs/                   AI execution logs (PTY sessions)
+├── ai-prompts/                Prompts sent to the AI
+├── claude-prompts/            Claude prompt history
+├── provider-homes/<provider>/ Per-AI-CLI credentials (subscription token)
+├── cache/analysis/            Company-analysis cache (30-day TTL, sha256 hash key)
+├── recovery/                  Crash-recovery snapshot
+└── screenshots/               Screenshots taken during form fill
 ```
 
 ### macOS
@@ -58,88 +60,100 @@ Sales Claw は **ユーザーのローカル PC 内で完結する**ツールで
 ~/.config/sales-claw/runtime/data/
 ```
 
-## API キー / 認証情報
+## API keys / credentials
 
-- `data/settings.json::apiKeys` に保存される API キーは **平文** です (Phase 1 設計)
-  - Phase 8 で暗号化対応予定 ([CHANGELOG](./CHANGELOG.md) / ロードマップ参照)
-  - 共有マシン / 公開リポジトリへの誤コミットを避けるため `.gitignore` 済
-- AI CLI の subscription token は `provider-homes/<provider>/.claude/credentials.json`
-  などに保存されます。各 CLI ベンダーの仕様に準拠
+- API keys stored in `data/settings.json::apiKeys` are kept in **plaintext**
+  (Phase 1 design).
+  - Encryption is planned for Phase 8 (see [CHANGELOG](./CHANGELOG.md) and
+    the roadmap).
+  - The file is in `.gitignore` to avoid accidentally committing keys to a
+    shared machine or public repo.
+- AI CLI subscription tokens are stored under
+  `provider-homes/<provider>/.claude/credentials.json` and similar paths.
+  These follow each CLI vendor's specification.
 
-## ログ / スクリーンショット
+## Logs / screenshots
 
-- フォーム送信時のスクリーンショットには **ユーザーが入力した本文と相手企業の情報** が含まれます
-- AI セッションログには **送信プロンプトと AI の応答全文** が含まれます
-- これらは全てローカル保存。外部送信されません
-- 配布や共有を行う場合は、これらを除外/マスクしてください
+- Form-submit screenshots contain **the body the user typed and the target
+  company's info**.
+- AI session logs contain the **prompt sent and the full AI response**.
+- All of these are stored locally — none are sent externally.
+- If you redistribute or share them, exclude or mask them first.
 
-## 法的責任
+## Legal responsibility
 
-Sales Claw は**営業活動の自動化を支援するツール**であり、
-**実際の送信 / 連絡先利用は全てユーザーの責任**で行います。
+Sales Claw is a **tool that assists with automating sales outreach**. The
+**actual sending and contact use are entirely the user's responsibility**.
 
-### 日本国内でご利用の場合 (要遵守)
+### When used in Japan (must comply)
 
-#### 1. 特定電子メールの送信の適正化等に関する法律 (特定電子メール法)
+#### 1. Specified Commercial Email Act (特定電子メール法)
 
-メール送信を行う場合、以下の 4 要素を本文に含める必要があります:
+If you send email, the body must contain these four elements:
 
-1. 送信者の氏名又は名称
-2. 送信者の連絡先 (URL / メールアドレス)
-3. 受信拒否の通知ができる旨と通知先
-4. 任意:住所・電話番号
+1. The sender's name or business name.
+2. The sender's contact (URL / email address).
+3. A notice that the recipient can opt out, plus where to send the opt-out.
+4. Optional: postal address / phone number.
 
-> Sales Claw の `src/compliance.ts` がこれら 4 要素の自動検出 + 自動補完を
-> 行います (`preferences.complianceFooter: true` がデフォルト)。
+> Sales Claw's `src/compliance.ts` automatically detects + auto-completes
+> these four elements (`preferences.complianceFooter: true` by default).
 
-#### 2. 個人情報の保護に関する法律 (個人情報保護法)
+#### 2. Act on the Protection of Personal Information (個人情報保護法)
 
-- 公開されている**法人情報** (会社名・代表者名・代表 URL・公式問い合わせフォーム) は
-  個人情報に該当しないことが多いですが、担当者の個人氏名・私用メールアドレス等は
-  個人情報になり得ます
-- 取得経路 (どこから入手したターゲットリストか) を `preferences.listSourceMetadata`
-  に記録することを推奨
+- Publicly available **corporate information** (company name,
+  representative name, representative URL, official contact form) is
+  generally not personal information, but the individual contact person's
+  name and personal email can be.
+- It is recommended to record the source (where the target list came from)
+  in `preferences.listSourceMetadata`.
 
-#### 3. その他
+#### 3. Other
 
-- **送信先サイトの利用規約遵守**: Sales Claw は robots.txt / CAPTCHA 検出を行いますが、
-  最終的な遵守責任はユーザーにあります
-- **連投・大量送信の禁止**: 法令 + 一般的なマナーに従い、適切な頻度で利用してください
-- **「営業お断り」「採用専用」等の明示**がある問い合わせ窓口には送らないでください
-  (Sales Claw はこれを自動検出して `skipped` にする機能を持ちます)
+- **Comply with the target site's terms of use**: Sales Claw checks
+  robots.txt and detects CAPTCHA, but ultimate compliance is on the user.
+- **No spamming / bulk blasting**: follow the law and general etiquette;
+  use Sales Claw at a sensible cadence.
+- **Do not submit to "no solicitation", "hiring only", etc.** contact
+  windows. (Sales Claw detects these automatically and marks them
+  `skipped`.)
 
-## EU/UK でのご利用 (GDPR/UK GDPR)
+## When used in the EU / UK (GDPR / UK GDPR)
 
-EU/UK 在住の個人または EU/UK の企業にコンタクトする場合、GDPR が適用されます:
+If you are contacting an individual in the EU / UK or an EU / UK company,
+GDPR applies:
 
-- B2B コンタクトであっても個人氏名は個人データに該当
-- Legitimate Interest (正当な利益) を根拠とする場合、データ最小化原則を守る
-- DPA (Data Protection Officer) への問い合わせフォームが用意されている場合は
-  そちらを優先
+- Even in B2B contact, an individual name is personal data.
+- When relying on Legitimate Interest, observe the data-minimization
+  principle.
+- Where the target company exposes a DPA (Data Protection Officer) contact
+  form, prefer that.
 
-## 米国でのご利用 (CAN-SPAM Act)
+## When used in the United States (CAN-SPAM Act)
 
-- メール件名・送信者表示が誤解を招くものでないこと
-- 物理住所の記載
-- オプトアウトの提供
-- オプトアウト要請に 10 営業日以内に対応
+- The subject line and sender display must not be misleading.
+- A physical postal address must be included.
+- An opt-out must be offered.
+- Opt-out requests must be honored within 10 business days.
 
 ## DISCLAIMER
 
-Sales Claw は **"AS IS"** で提供されます ([LICENSE](./LICENSE) 参照)。
+Sales Claw is provided **"AS IS"** (see [LICENSE](./LICENSE)).
 
-- 本ツールの使用により生じたいかなる損害 (法的責任・経済的損失・評判の損失等)
-  についても、プロジェクト運営者は一切の責任を負いません
-- 法令違反となる使い方は禁止します
-- 倫理的・社会的に問題のある使い方 (スパム・嫌がらせ・なりすまし等) は禁止します
+- The project operators are not liable for any damages (legal liability,
+  financial loss, reputational harm, etc.) arising from the use of this
+  tool.
+- Uses that violate the law are forbidden.
+- Uses that are ethically / socially harmful (spam, harassment,
+  impersonation, etc.) are forbidden.
 
-## 連絡
+## Contact
 
-- セキュリティ問題: [SECURITY.md](./SECURITY.md)
-- プライバシー関連の問い合わせ: [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (タイトルに `[Privacy]` を付けてください)
+- Security issues: [SECURITY.md](./SECURITY.md)
+- Privacy inquiries: [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (prefix the title with `[Privacy]`)
 
-## 改訂履歴
+## Revision history
 
-| 日付 | 内容 |
+| Date | Notes |
 |---|---|
-| 2026-05-14 | 初版 (2.0.0 リリース時に新規作成) |
+| 2026-05-14 | Initial version (created at the 2.0.0 release). |

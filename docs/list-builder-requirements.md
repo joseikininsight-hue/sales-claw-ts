@@ -1,3 +1,5 @@
+> Japanese version: [docs/ja/list-builder-requirements.md](./ja/list-builder-requirements.md)
+
 # 企業リスト作成機能 — 完成形要件定義 v2.0
 
 **ステータス**: 確定版（実装着手可能）

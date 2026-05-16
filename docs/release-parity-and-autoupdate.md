@@ -1,3 +1,5 @@
+> Japanese version: [docs/ja/release-parity-and-autoupdate.md](./ja/release-parity-and-autoupdate.md)
+
 # Release Parity and Auto Update Guardrails
 
 Sales Claw has four different runtime surfaces:

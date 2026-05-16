@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions / 質問 (Discussions)
+    url: https://github.com/joseikininsight-hue/sales-claw-ts/discussions
+    about: How-to questions, ideas, and general discussion. 使い方の質問・アイデア・全般的な議論はこちら。
+  - name: 🔒 Security vulnerability / セキュリティ脆弱性
+    url: https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new
+    about: Report a security issue privately. Do NOT open a public issue. セキュリティ問題は非公開で報告してください。
+  - name: 📚 Documentation
+    url: https://github.com/joseikininsight-hue/sales-claw-ts#documentation
+    about: README / SETUP / TROUBLESHOOTING / FAQ — most questions are answered here. ほとんどの質問はここで解決できます。
+  - name: 📋 Code of Conduct violation / 行動規範違反
+    url: https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new
+    about: Use private security advisory with title prefix [CoC]. タイトルに [CoC] を付けて非公開報告してください。

@@ -1,63 +1,76 @@
 # Support
 
-Sales Claw のサポート窓口・問い合わせ方法を整理します。
+> Japanese version: [docs/ja/SUPPORT.md](./docs/ja/SUPPORT.md)
 
-## どこに質問すべきか
+This document lays out Sales Claw's support channels and how to reach us.
 
-| 質問の種類 | 行き先 |
+## Where to ask
+
+| Type of question | Where it goes |
 |---|---|
-| **バグ報告** | [GitHub Issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues/new?template=bug_report.md) (bug_report テンプレート) |
-| **機能要望** | [GitHub Issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues/new?template=feature_request.md) (feature_request テンプレート) |
-| **使い方の質問** | [GitHub Discussions](https://github.com/joseikininsight-hue/sales-claw-ts/discussions) (有効化後) |
-| **セキュリティ脆弱性** | **公開 Issue を立てずに** [SECURITY.md](./SECURITY.md) の手順を参照 |
-| **行動規範 (Code of Conduct) 違反** | [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (タイトル `[CoC]` を付与) |
+| **Bug report** | [GitHub Issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues/new?template=bug_report.md) (use the bug_report template) |
+| **Feature request** | [GitHub Issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues/new?template=feature_request.md) (use the feature_request template) |
+| **Usage questions** | [GitHub Discussions](https://github.com/joseikininsight-hue/sales-claw-ts/discussions) (once enabled) |
+| **Security vulnerability** | **Do not open a public issue** — follow [SECURITY.md](./SECURITY.md) |
+| **Code-of-Conduct violation** | [GitHub Private Security Advisory](https://github.com/joseikininsight-hue/sales-claw-ts/security/advisories/new) (prefix the title with `[CoC]`) |
 
-## サポート対象バージョン
+## Supported versions
 
-| Version | サポート | 備考 |
+| Version | Support | Notes |
 |---|---|---|
-| 2.0.x | ✅ Active | 推奨。最新機能・自動更新あり |
-| 1.2.x | 🟡 Security only | セキュリティ修正のみ |
-| < 1.2 | ❌ End-of-life | 2.x へのアップデートを推奨 |
+| 2.0.x | ✅ Active | Recommended. Latest features and auto-update. |
+| 1.2.x | 🟡 Security only | Security fixes only. |
+| < 1.2 | ❌ End-of-life | Please upgrade to 2.x. |
 
-## 問い合わせ前のチェックリスト
+## Pre-flight checklist
 
-時間を節約するため、以下を先にご確認ください:
+To save everyone's time, please check these first:
 
-1. **[README.md](./README.md)** にセットアップ・使い方の基本が記載されています
-2. **[CHANGELOG.md](./CHANGELOG.md)** で既知の修正/変更を確認できます
-3. **[既存の Issue](https://github.com/joseikininsight-hue/sales-claw-ts/issues?q=is%3Aissue)** で同じ問題が報告されていないか検索
-4. **`%APPDATA%\sales-claw\runtime\data\dashboard-diagnostics.jsonl`** にアプリの診断ログがあります (バグ報告時に添付推奨)
+1. **[README.md](./README.md)** covers setup and basic usage.
+2. **[CHANGELOG.md](./CHANGELOG.md)** lists known fixes and changes.
+3. **[Existing issues](https://github.com/joseikininsight-hue/sales-claw-ts/issues?q=is%3Aissue)** — search whether the same issue is already reported.
+4. **`%APPDATA%\sales-claw\runtime\data\dashboard-diagnostics.jsonl`** contains the app's diagnostic log (recommended to attach to bug reports).
 
-## 返答の目安
+## Response-time expectations
 
-| カテゴリ | 初回返答 |
+| Category | Initial response |
 |---|---|
-| クリティカルなセキュリティ脆弱性 | 3 営業日以内 |
-| バグ報告 | 7 営業日以内 |
-| 機能要望 | 14 営業日以内 (検討開始の連絡) |
-| 一般的な質問 | ベストエフォート |
+| Critical security vulnerability | Within 3 business days |
+| Bug report | Within 7 business days |
+| Feature request | Within 14 business days (acknowledgement that we've started reviewing) |
+| General question | Best effort |
 
-> ⚠️ Sales Claw は OSS プロジェクトであり、商用サポート / SLA は提供していません。
-> 上記は目安であり、保証ではありません。返答が遅れた場合は再投稿してください。
+> ⚠️ Sales Claw is an OSS project. We do not provide commercial support or a
+> contractual SLA. The numbers above are best-effort guidelines, not
+> guarantees. If we don't reply, please bump the thread.
 
-## コントリビュート
+## Contributing
 
-ユーザーとしてだけでなく、コードや翻訳で貢献いただける場合は [CONTRIBUTING.md](./CONTRIBUTING.md) をご参照ください。
+If you'd like to contribute beyond just using the project — code or
+translations — please see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-## よくある質問
+## FAQ
 
-### Q: Windows で SmartScreen 警告が出ます
-A: Windows code signing 未対応のため (詳細: [ROADMAP.md](./ROADMAP.md) の Known Limitations 参照)。「詳細情報」→「実行」で起動できます。
+### Q: Windows shows a SmartScreen warning.
+A: Windows code signing is not in place yet (details in
+[ROADMAP.md](./ROADMAP.md) under Known Limitations). You can run the app via
+"More info" → "Run anyway".
 
-### Q: 自動更新が来ません
-A: 起動 5 秒後 + 6 時間ごとに GitHub Releases の `latest.yml` を polling します。Firewall で `api.github.com` がブロックされていないか確認してください。
+### Q: Auto-update isn't reaching me.
+A: The app polls GitHub Releases' `latest.yml` 5 seconds after launch and
+every 6 hours thereafter. Make sure your firewall isn't blocking
+`api.github.com`.
 
-### Q: AI CLI (Claude/Codex/Gemini) のインストール先は？
-A: Sales Claw とは別途、`npm install -g @anthropic-ai/claude-code` 等で別途インストールが必要です。詳細は [README.md](./README.md) を参照。
+### Q: Where do I install the AI CLI (Claude / Codex / Gemini)?
+A: Separately from Sales Claw — for example
+`npm install -g @anthropic-ai/claude-code`. See [README.md](./README.md) for
+details.
 
-### Q: ライセンス料・利用料はかかりますか？
-A: Sales Claw 自体は MIT ライセンスで無料です。ただし、利用する AI CLI のサブスクリプション (Claude Pro 等) や API キーの利用料は別途必要です。
+### Q: Are there license / usage fees?
+A: Sales Claw itself is free under the MIT license. You will still need
+your own AI CLI subscription (e.g. Claude Pro) or API-key usage fees,
+depending on what you wire up.
 
-### Q: GDPR / EU 在住者へ送信できますか？
-A: ユーザー責任です。[PRIVACY.md](./PRIVACY.md) の GDPR セクションをご確認ください。
+### Q: Can I contact people in the EU under GDPR?
+A: That's your responsibility as the user. See the GDPR section in
+[PRIVACY.md](./PRIVACY.md).

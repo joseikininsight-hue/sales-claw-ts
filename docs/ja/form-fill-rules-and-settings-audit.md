@@ -1,6 +1,6 @@
-> Japanese version: [docs/ja/form-fill-rules-and-settings-audit.md](./ja/form-fill-rules-and-settings-audit.md)
+English version: [form-fill-rules-and-settings-audit.md](../form-fill-rules-and-settings-audit.md)
 
-# Form Fill Rules And Settings Audit
+# フォーム入力ルールと設定監査
 
 ## 1. 運用ルール
 

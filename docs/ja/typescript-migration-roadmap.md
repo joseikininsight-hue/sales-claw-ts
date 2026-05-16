@@ -1,6 +1,6 @@
-> Japanese version: [docs/ja/typescript-migration-roadmap.md](./ja/typescript-migration-roadmap.md)
+English version: [typescript-migration-roadmap.md](../typescript-migration-roadmap.md)
 
-# TypeScript Migration Roadmap
+# TypeScript 移行ロードマップ
 
 このドキュメントは Sales Claw を「動く CJS プロジェクト」から「型安全な
 TypeScript プロジェクト」に育てるための**長期計画**を記載します。

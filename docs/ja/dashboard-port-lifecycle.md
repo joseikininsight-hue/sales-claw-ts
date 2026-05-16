@@ -1,6 +1,6 @@
-> Japanese version: [docs/ja/dashboard-port-lifecycle.md](./ja/dashboard-port-lifecycle.md)
+English version: [dashboard-port-lifecycle.md](../dashboard-port-lifecycle.md)
 
-# Dashboard Port / Runtime / Lock Lifecycle
+# ダッシュボードの port / runtime / lock ライフサイクル
 
 このドキュメントは、Sales Claw のダッシュボードサーバ起動時の
 **port / `dashboard-runtime.json` / `dashboard-server.lock` のライフサイクル**

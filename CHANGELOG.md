@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.0.38 - 2026-05-16 — ドキュメント全面整備 + GitHub bilingual 化
+
+OSS 公開水準のドキュメント整備。ユーザー (英語話者・日本語話者) が
+自己解決できる情報量を確保。
+
+### README + Quick Start 全面更新 (en + ja)
+
+- `README.md` 247 → **390 行** (+58%)
+- `docs/ja/README.md` 331 → **389 行** (+18%)
+- 11 セクション統一: Highlights / System requirements / Quick Start (5 min) /
+  Bilingual support / Architecture / Send policy / Disclaimer / Documentation /
+  Contributing / Security / License + Table of contents
+- v2.0.37 bilingual rollout の専用セクション
+- 4 locale Compliance Registry 表
+- ASCII architecture diagram
+
+### 新規ドキュメント (4 ファイル × 2 言語 = 8 ファイル)
+
+| ファイル | 行数 | 内容 |
+|---|---|---|
+| `SETUP.md` (en) | 689 | 10 セクション、28 コマンド例、3 AI provider 詳細 |
+| `docs/ja/SETUP.md` | 692 | 同等 (日本語) |
+| `TROUBLESHOOTING.md` (en) | 631 | 15 問題 × 5 カテゴリ + 修正版数 + ログ参照 |
+| `docs/ja/TROUBLESHOOTING.md` | 618 | 同等 |
+| `FAQ.md` (en) | 410 | 27 質問 × 6 カテゴリ |
+| `docs/ja/FAQ.md` | 402 | 同等 |
+| `docs/ja/SETUP.md` 等 | - | 全 cross-link 整備 |
+
+### Root メタドキュメント英訳 (6 ファイル)
+
+| ファイル | 状態 |
+|---|---|
+| `AGENTS.md` | 英訳済 (54 行)、`docs/ja/AGENTS.md` (50 行) に日本語版保管 |
+| `DESIGN.md` | 英訳済 (389 行)、`docs/ja/DESIGN.md` (343 行) |
+| `MIGRATION.md` | 英訳済 (299 行)、`docs/ja/MIGRATION.md` (267 行) |
+| `PRIVACY.md` | 英訳済 (159 行)、`docs/ja/PRIVACY.md` (147 行) |
+| `ROADMAP.md` | 英訳済 (81 行) + i18n ✅ DONE 反映、`docs/ja/ROADMAP.md` (74 行) |
+| `SUPPORT.md` | 英訳済 (76 行)、`docs/ja/SUPPORT.md` (65 行) |
+
+### docs/* 仕様書 日本語版作成 (6 ファイル)
+
+| 既存英語 | 新規日本語版 |
+|---|---|
+| `docs/dashboard-port-lifecycle.md` | `docs/ja/dashboard-port-lifecycle.md` |
+| `docs/form-fill-rules-and-settings-audit.md` | `docs/ja/form-fill-rules-and-settings-audit.md` |
+| `docs/list-builder-requirements.md` | `docs/ja/list-builder-requirements.md` |
+| `docs/programmatic-credit-migration.md` | `docs/ja/programmatic-credit-migration.md` |
+| `docs/release-parity-and-autoupdate.md` | `docs/ja/release-parity-and-autoupdate.md` |
+| `docs/typescript-migration-roadmap.md` | `docs/ja/typescript-migration-roadmap.md` |
+
+### GitHub Issue/PR テンプレート (bilingual)
+
+- 既存 `bug_report.md` `feature_request.md` `PULL_REQUEST_TEMPLATE.md` は既に bilingual
+- 新規 `.github/ISSUE_TEMPLATE/config.yml` - Discussions / Security advisory / Documentation / CoC への動線
+- 新規 `.github/ISSUE_TEMPLATE/question.md` - 質問テンプレート (まず docs を参照誘導)
+
+### 集計
+
+- 新規・更新ドキュメント: **30+ ファイル**
+- 追加行数: **約 6,000 行**
+- すべて bilingual cross-link 完備 (root ↔ docs/ja/)
+
+### 既存ユーザー無影響
+
+- ソースコード変更なし
+- ドキュメント拡充のみ
+- `git pull` 後の動作変化なし
+
 ## 2.0.37 - 2026-05-16 — i18n 完全化 (Settings / Awaiting / Sent / List Builder / Stats)
 
 ### 完全英語化対象

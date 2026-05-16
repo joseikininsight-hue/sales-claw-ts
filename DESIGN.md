@@ -1,67 +1,82 @@
 # Sales Claw Design System
 
-> B2B営業アプローチ自動化ダッシュボード。業務効率と信頼感を両立する、データ密度の高いプロフェッショナルUI。
-> Inspired by: Notion (温かいミニマリズム + 4層シャドウ), Stripe (金融グレードの精度), Linear (ステータス駆動UI), Vercel (shadow-as-border), Superhuman (極限の色の節制)
+> Japanese version: [docs/ja/DESIGN.md](./docs/ja/DESIGN.md)
+>
+> Dashboard for automated B2B outreach. A data-dense, professional UI that
+> balances operational efficiency with a sense of trust.
+> Inspired by: Notion (warm minimalism + 4-layer shadows), Stripe
+> (financial-grade precision), Linear (status-driven UI), Vercel
+> (shadow-as-border), Superhuman (extreme color restraint).
 
 ---
 
 ## 1. Visual Theme & Atmosphere
 
-Sales Clawは「営業の司令塔」として、大量の企業データと処理ステータスを一目で把握できるUIを提供する。白を基調としたクリーンな画面に、深いスレートブルー(`#0f172a`)の見出しと、鮮やかなブルー(`#2563eb`)のアクセントが、信頼感と行動喚起を両立する。
+Sales Claw is the "outreach command center". The UI surfaces large volumes of
+company data and processing state at a glance. A clean white canvas, deep
+slate-blue (`#0f172a`) headings, and a vivid blue (`#2563eb`) accent
+combine credibility with a clear call to action.
 
-**設計思想:**
-- **データ密度 × 余白のバランス**: テーブルやステータスカードは密に、それを囲むUI chromeは余裕を持たせる（Stripe方式）
-- **ステータス駆動**: 全ての色は意味を持つ。装飾的な色は使わない
-- **Shadow-as-Border**: Vercel方式の `box-shadow: 0 0 0 1px` でボーダーを表現。スムーズな角丸と状態遷移を実現
-- **コンパクト & スキャナブル**: 営業担当者が3秒で状況を把握できるレイアウト
-- **ライトモード最適化**: 長時間の営業作業に適した目に優しい配色
+**Design principles:**
+- **Data density × whitespace balance**: tables and status cards stay dense;
+  the surrounding UI chrome breathes (Stripe-style).
+- **Status-driven**: every color carries meaning. No decorative color.
+- **Shadow-as-Border**: Vercel-style `box-shadow: 0 0 0 1px` as the border,
+  enabling smooth corners and state transitions.
+- **Compact & scannable**: a sales rep should grasp the situation in 3
+  seconds.
+- **Light-mode optimized**: an easy-on-the-eyes palette for long sessions.
 
 ---
 
 ## 2. Color Palette & Roles
 
 ### Primary
-- **Claw Blue** (`#2563eb`): プライマリCTA、アクティブ状態、リンク、選択中タブ
-- **Claw Blue Hover** (`#1d4ed8`): ホバー状態
-- **Claw Blue Glow** (`rgba(37,99,235,.12)`): 選択行のハイライト、フォーカスリング背景
-- **On Primary** (`#ffffff`): プライマリ上のテキスト
+- **Claw Blue** (`#2563eb`): primary CTA, active state, links, selected tab
+- **Claw Blue Hover** (`#1d4ed8`): hover state
+- **Claw Blue Glow** (`rgba(37,99,235,.12)`): selected row highlight,
+  focus-ring background
+- **On Primary** (`#ffffff`): text on top of the primary color
 
-### Text — Notion風の温かいニュートラル（冷たいブルーグレーは使わない）
-- **Heading** (`#1a1a1a`): 見出し、強調テキスト。温かいニアブラック（Notion `rgba(0,0,0,.95)` に近い）
-- **Body** (`#5a5a58`): 本文、説明テキスト、セカンダリラベル。温かいグレー
-- **Muted** (`#9a9a96`): キャプション、プレースホルダー、タイムスタンプ。温かいライトグレー
+### Text — Notion-style warm neutrals (no cold blue-grays)
+- **Heading** (`#1a1a1a`): headings, emphasis. A warm near-black (close to
+  Notion's `rgba(0,0,0,.95)`).
+- **Body** (`#5a5a58`): body text, descriptions, secondary labels. Warm gray.
+- **Muted** (`#9a9a96`): captions, placeholders, timestamps. Warm light gray.
 
-### Background (Light Mode) — Notion風の温かい白
-- **Deep** (`#eeefeb`): 最も奥の面。スクロールバー、凹んだ領域。わずかにイエロー系
-- **Base** (`#f5f5f3`): ページ背景。Notion風のウォームホワイト
-- **Surface** (`#fafaf8`): カード内のサブ領域、テーブルヘッダー
-- **Card** (`#ffffff`): カード、モーダル、最前面の面
-- **Raised** (`#f0f0ee`): ホバーハイライト
+### Background (Light Mode) — Notion-style warm white
+- **Deep** (`#eeefeb`): the furthest-back surface. Scrollbars, recessed
+  regions. Slightly yellowish.
+- **Base** (`#f5f5f3`): page background. Notion-style warm white.
+- **Surface** (`#fafaf8`): sub-areas inside cards, table headers.
+- **Card** (`#ffffff`): cards, modals, frontmost surfaces.
+- **Raised** (`#f0f0ee`): hover highlight.
 
-### Status (セマンティック — 装飾使用禁止)
-| トークン | HEX | 用途 | 背景(dim) |
-|---------|-----|------|-----------|
-| Success | `#059669` | 送信済み、完了 | `rgba(5,150,105,.1)` |
-| Warning | `#d97706` | 確認待ち、要対応 | `rgba(217,119,6,.1)` |
-| Error | `#dc2626` | エラー、失敗 | `rgba(220,38,38,.1)` |
-| Info | `#7c3aed` | 分析中、処理中 | `rgba(124,58,237,.1)` |
-| Neutral | `#64748b` | 除外、スキップ | `rgba(100,116,139,.1)` |
+### Status (semantic — no decorative use)
+| Token | HEX | Use | Background (dim) |
+|-------|-----|-----|------------------|
+| Success | `#059669` | submitted, complete | `rgba(5,150,105,.1)` |
+| Warning | `#d97706` | awaiting approval, attention needed | `rgba(217,119,6,.1)` |
+| Error | `#dc2626` | error, failure | `rgba(220,38,38,.1)` |
+| Info | `#7c3aed` | analyzing, in progress | `rgba(124,58,237,.1)` |
+| Neutral | `#64748b` | excluded, skipped | `rgba(100,116,139,.1)` |
 
-### Pipeline Status Colors (チャート・バッジ専用)
-| ステータス | カラー | 用途 |
-|-----------|--------|------|
-| 対象 | `#6366f1` (Indigo) | 営業対象企業カウント |
-| フォーム有 | `#94a3b8` (Slate) | フォームURL登録済み |
-| 入力済み | `#3b82f6` (Blue) | フォーム入力完了 |
-| 確認待ち | `#f59e0b` (Amber) | 人間の承認待ち |
-| 送信済み | `#10b981` (Emerald) | 送信完了 |
-| エラー | `#ef4444` (Red) | 処理失敗 |
-| 除外 | `#64748b` (Slate) | 対象外 |
+### Pipeline Status Colors (for charts and badges only)
+| Status | Color | Use |
+|--------|-------|-----|
+| Targets | `#6366f1` (Indigo) | count of targeted companies |
+| Has form | `#94a3b8` (Slate) | form URL registered |
+| Filled | `#3b82f6` (Blue) | form fill complete |
+| Awaiting | `#f59e0b` (Amber) | awaiting human approval |
+| Submitted | `#10b981` (Emerald) | sent |
+| Error | `#ef4444` (Red) | processing failed |
+| Excluded | `#64748b` (Slate) | out of scope |
 
 ### Border
-- **Subtle** (`rgba(15,23,42,.07)`): テーブル行区切り、軽いカード境界
-- **Default** (`rgba(15,23,42,.12)`): 標準ボーダー、フィルターバー、入力欄
-- **Strong** (`rgba(15,23,42,.22)`): ホバー時、アクティブ境界
+- **Subtle** (`rgba(15,23,42,.07)`): table row dividers, lightweight card
+  edges.
+- **Default** (`rgba(15,23,42,.12)`): standard border, filter bar, inputs.
+- **Strong** (`rgba(15,23,42,.22)`): hover, active boundary.
 
 ---
 
@@ -70,31 +85,36 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 ### Font Family
 - **Primary**: `Inter`, system-ui, sans-serif
 - **Monospace**: `JetBrains Mono`, `Fira Code`, monospace
-- **Icon**: `Material Symbols Outlined` (font-variation-settings: 'FILL' 0, 'wght' 300)
+- **Icon**: `Material Symbols Outlined` (font-variation-settings: 'FILL' 0,
+  'wght' 300)
 
 ### Hierarchy
 
 | Role | Size | Weight | Line Height | Letter Spacing | Color | Use |
 |------|------|--------|-------------|----------------|-------|-----|
-| Page Title | 1.15rem | 900 | 1.0 | .02em | `--text-1` | アプリ名 |
-| Section Label | .6rem | 700 | 1.0 | .07em | `--text-2` | uppercase。セクション見出し |
-| Stat Number | 1.6rem | 700 | 1.0 | normal | 状況色 | mono。統計数値 |
-| Stat Label | .6rem | 600 | 1.2 | .05em | `--text-2` | uppercase。統計ラベル |
-| Table Header | .6rem | 700 | 1.0 | .07em | `--text-2` | uppercase。テーブル列見出し |
-| Table Body | .8rem | 400 | 1.5 | normal | `--text-1` | テーブルセルテキスト |
-| Body | .875rem | 400 | 1.5 | normal | `--text-1` | 標準本文 |
-| Caption | .68rem | 500 | 1.3 | normal | `--text-2` | 補足情報、バッジラベル |
-| Micro | .58rem | 700 | 1.1 | .03em | `--text-3` | バージョン番号、タイムスタンプ |
-| Button | .78rem | 700 | 1.0 | .04em | inherit | ボタンテキスト |
-| Filter Tab | .7rem | 500 | 1.0 | normal | `--text-2` | フィルターボタン |
-| Filter Select | .78rem | 400 | 1.0 | normal | `--text-1` | ドロップダウン内テキスト |
-| Code | .75rem | 500 | 1.4 | normal | inherit | mono。コードブロック |
+| Page Title | 1.15rem | 900 | 1.0 | .02em | `--text-1` | app name |
+| Section Label | .6rem | 700 | 1.0 | .07em | `--text-2` | uppercase, section heading |
+| Stat Number | 1.6rem | 700 | 1.0 | normal | status color | mono, statistic number |
+| Stat Label | .6rem | 600 | 1.2 | .05em | `--text-2` | uppercase, statistic label |
+| Table Header | .6rem | 700 | 1.0 | .07em | `--text-2` | uppercase, column header |
+| Table Body | .8rem | 400 | 1.5 | normal | `--text-1` | table cell text |
+| Body | .875rem | 400 | 1.5 | normal | `--text-1` | standard body |
+| Caption | .68rem | 500 | 1.3 | normal | `--text-2` | supplementary text, badge labels |
+| Micro | .58rem | 700 | 1.1 | .03em | `--text-3` | version, timestamps |
+| Button | .78rem | 700 | 1.0 | .04em | inherit | button text |
+| Filter Tab | .7rem | 500 | 1.0 | normal | `--text-2` | filter button |
+| Filter Select | .78rem | 400 | 1.0 | normal | `--text-1` | dropdown text |
+| Code | .75rem | 500 | 1.4 | normal | inherit | mono, code blocks |
 
 ### Principles
-- **700-800は見出しとラベルのみ**。本文は400。ボタンとキャプションは500-700
-- **uppercaseはセクションラベルとテーブルヘッダーのみ**。letter-spacingを`.05em`以上に
-- **monoフォントは数値と技術情報のみ**。統計数値、バージョン、ログタイムスタンプ
-- **フォントサイズは`.58rem`〜`1.6rem`の範囲**。極端に大きいサイズは使わない（ダッシュボードは情報密度が重要）
+- **700-800 is for headings and labels only**. Body is 400. Buttons /
+  captions are 500-700.
+- **Uppercase is for section labels and table headers only**. Letter-spacing
+  must be at least `.05em`.
+- **Mono fonts are for numbers and technical info only**: stats, version
+  strings, log timestamps.
+- **Font sizes range from `.58rem` to `1.6rem`**. Avoid extremely large
+  sizes (a dashboard prioritizes density).
 
 ---
 
@@ -109,14 +129,14 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 - Radius: 20px (pill)
 - Shadow: `0 2px 10px rgba(59,130,246,.3)`
 - Hover: `var(--primary-dim)` → `#1d4ed8`
-- Use: 「AIでフォーム入力」「AI を起動」
+- Use: "AI form fill", "Launch AI"
 
 **Danger**
 - Background: `#dc2626`
 - Text: `#ffffff`
 - Padding: 4px 12px
 - Radius: 6px
-- Use: 「選択を削除」
+- Use: "Delete selected"
 
 **Ghost / Outlined**
 - Background: transparent
@@ -124,7 +144,7 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 - Border: `1px solid var(--border-default)`
 - Radius: 20px (pill)
 - Hover: `var(--bg-raised)` background, `var(--text-1)` text
-- Use: フィルタータブ、セカンダリアクション
+- Use: filter tab, secondary action
 
 **Filter Tab (Active)**
 - Background: `var(--primary)`
@@ -139,9 +159,10 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 - Border: `1px solid var(--border-subtle)`
 - Radius: 8px
 - Shadow: `0 1px 8px rgba(15,23,42,.08)`
-- Hover: shadow → `0 4px 20px rgba(15,23,42,.1)`, transform: `translateY(-2px)`
+- Hover: shadow → `0 4px 20px rgba(15,23,42,.1)`, transform:
+  `translateY(-2px)`
 
-**Dark Panel** (進行状況ログヘッダー)
+**Dark Panel** (progress log header)
 - Background: `linear-gradient(135deg, #1e293b 0%, #334155 100%)`
 - Text: `#e2e8f0`
 - Border-radius: 8px (top only)
@@ -159,22 +180,24 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 - Height: 44px fixed
 - Text: `.8rem`, weight 400, `var(--text-1)`
 - Hover: `var(--primary-glow)`
-- Cursor: pointer (行クリックで詳細モーダル)
+- Cursor: pointer (click a row to open the detail modal)
 - Overflow: `text-overflow: ellipsis`
 
-**Layout**: `table-layout: fixed` + `colgroup` で列幅を制御
+**Layout**: `table-layout: fixed` + `colgroup` for column width control.
 
 ### Filter Bar
-- Container: `var(--bg-surface)` background, `1px solid var(--border-default)`, radius 10px
+- Container: `var(--bg-surface)` background, `1px solid
+  var(--border-default)`, radius 10px
 - Fields: `var(--bg-deep)` background, radius 7px, height 30px
-- Focus: `border-color: var(--primary)`, `box-shadow: 0 0 0 3px rgba(59,130,246,.1)`
+- Focus: `border-color: var(--primary)`, `box-shadow: 0 0 0 3px
+  rgba(59,130,246,.1)`
 - Icon: Material Symbols 14px, `var(--text-3)`
 
 ### Toast Notifications
 - Success: `rgba(16,185,129,.15)` bg, `var(--success)` text, green border
 - Error: `rgba(239,68,68,.15)` bg, `var(--error)` text, red border
 - Info: `rgba(59,130,246,.15)` bg, `var(--primary)` text, blue border
-- Animation: `slideIn` from right, 3秒で自動消去
+- Animation: `slideIn` from the right, auto-dismiss after 3s
 
 ### Loading Overlay
 - Backdrop: `rgba(0,0,0,.3)`
@@ -186,9 +209,9 @@ Sales Clawは「営業の司令塔」として、大量の企業データと処�
 - Radius: 4px
 - Font: `.6rem`, weight 600
 - Padding: 2px 8px
-- Color-coded by status (Success/Warning/Error/Info)
+- Color-coded by status (Success / Warning / Error / Info)
 
-### Thinking Indicator (AIの思考中)
+### Thinking Indicator (AI is thinking)
 - Spinner: `.think-spin`, 10px, `#818cf8` border-top
 - Text: `.76rem`, italic, `#818cf8`
 - Background: `rgba(99,102,241,.05)`, left border `rgba(99,102,241,.3)`
@@ -204,30 +227,30 @@ Scale: 2px, 3px, 4px, 6px, 7px, 8px, 9px, 10px, 12px, 14px, 16px, 20px, 24px, 32
 ```
 
 ### Grid System
-- **App Header**: Fixed 48px, full width, `backdrop-filter: blur(12px)`
-- **Tab Bar**: Horizontal tabs below header, pill-style buttons
-- **Analytics Panel**: 3カラムグリッド (`1.1fr 1fr 1.8fr`)
-  - Col1: 全体進捗 + ステータスリスト
-  - Col2: ドーナツチャート
-  - Col3: エリアチャート
-- **Content Area**: Single column, max-width none (full width)
+- **App Header**: fixed 48px, full width, `backdrop-filter: blur(12px)`
+- **Tab Bar**: horizontal tabs below the header, pill-style buttons
+- **Analytics Panel**: 3-column grid (`1.1fr 1fr 1.8fr`)
+  - Col 1: overall progress + status list
+  - Col 2: donut chart
+  - Col 3: area chart
+- **Content Area**: single column, no `max-width` (full width)
 - **Table**: `table-layout: fixed` with explicit `colgroup` widths
 
 ### Whitespace Philosophy
-- **セクション間**: 12px（コンパクト。スクロール量を減らす）
-- **カード内padding**: 12-16px
-- **テーブルセル**: `.55rem .75rem` padding
-- **フィルタータブ間**: 4px gap
-- **アナリティクスカード間**: 10px gap
+- **Between sections**: 12px (compact; reduces scroll)
+- **Card padding**: 12-16px
+- **Table cell**: `.55rem .75rem` padding
+- **Between filter tabs**: 4px gap
+- **Between analytics cards**: 10px gap
 
 ### Border Radius Scale
 | Token | Value | Use |
 |-------|-------|-----|
-| `--radius-sm` | 4px | バッジ、ステータスチップ |
-| `--radius-md` | 8px | カード、テーブルコンテナ、モーダル |
-| `--radius-lg` | 12px | チャートパネル、大きなカード |
-| `--radius-xl` | 20px | フィルタータブ（pill） |
-| Full Pill | 999px | バージョンバッジ、アプリヘッダーボタン |
+| `--radius-sm` | 4px | badges, status chips |
+| `--radius-md` | 8px | cards, table containers, modals |
+| `--radius-lg` | 12px | chart panels, large cards |
+| `--radius-xl` | 20px | filter tabs (pill) |
+| Full Pill | 999px | version badges, header buttons |
 
 ---
 
@@ -235,40 +258,45 @@ Scale: 2px, 3px, 4px, 6px, 7px, 8px, 9px, 10px, 12px, 14px, 16px, 20px, 24px, 32
 
 | Level | Token | Treatment | Use |
 |-------|-------|-----------|-----|
-| Flat (L0) | — | Shadow なし | ページ背景、インラインテキスト |
-| Ambient (L1) | `--shadow-ambient` | `0 1px 8px rgba(15,23,42,.08)` | 標準カード、テーブルコンテナ |
-| Card (L2) | `--shadow-card` | `0 4px 20px rgba(15,23,42,.1)` | ホバー時カード、ドロップダウン |
-| Modal (L3) | `--shadow-modal` | `0 24px 60px rgba(15,23,42,.2)` | モーダル、オーバーレイ |
-| Header | — | `0 1px 12px rgba(15,23,42,.08)` | スティッキーヘッダー |
+| Flat (L0) | — | no shadow | page background, inline text |
+| Ambient (L1) | `--shadow-ambient` | `0 1px 8px rgba(15,23,42,.08)` | standard card, table container |
+| Card (L2) | `--shadow-card` | `0 4px 20px rgba(15,23,42,.1)` | card on hover, dropdown |
+| Modal (L3) | `--shadow-modal` | `0 24px 60px rgba(15,23,42,.2)` | modal, overlay |
+| Header | — | `0 1px 12px rgba(15,23,42,.08)` | sticky header |
 
 ### Shadow Philosophy
-- Stripe方式のスレートブルー系シャドウ（`rgba(15,23,42,...)`）を全レベルで統一
-- 純黒シャドウ (`rgba(0,0,0,...)`) は使わない
-- ホバー時は shadow + `translateY(-2px)` で浮遊感を演出
-- `backdrop-filter: blur(12px)` はヘッダーのみ
+- Unify on Stripe-style slate-blue shadows (`rgba(15,23,42,...)`) across all
+  levels.
+- Do not use pure-black shadows (`rgba(0,0,0,...)`).
+- On hover, add a slight `translateY(-2px)` along with the shadow for a sense
+  of lift.
+- `backdrop-filter: blur(12px)` is only for the header.
 
 ---
 
 ## 7. Do's and Don'ts
 
 ### Do
-- Status Colorsは意味（成功/警告/エラー）に対してのみ使う
-- テーブルは `table-layout: fixed` + `text-overflow: ellipsis` で行高さを統一
-- フィルタータブは pill radius (20px) で、アクティブ時は `var(--primary)` fill
-- 統計数値は mono フォント + ステータスカラーで視認性を確保
-- モーダルはESCキーで閉じられるようにする
-- 非同期操作にはローディングオーバーレイを表示する
-- ユーザーデータは `esc()` で5文字エスケープ (`& < > " '`)
-- CLI Activity のログは `textContent` で描画（innerHTML禁止）
+- Use status colors only for their meaning (success / warning / error).
+- Use `table-layout: fixed` + `text-overflow: ellipsis` to keep row heights
+  consistent.
+- Filter tabs use pill radius (20px); active state fills with
+  `var(--primary)`.
+- Statistic numbers use mono font + status color for legibility.
+- Modals close with the ESC key.
+- Show a loading overlay during async operations.
+- Escape user data with `esc()` (five chars: `& < > " '`).
+- Render the CLI Activity log with `textContent` (no `innerHTML`).
 
 ### Don't
-- 装飾目的でStatus Colorsを使わない（ブランドカラーは `--primary` のみ）
-- テーブル行にwrapを許可しない（`white-space: nowrap` 必須）
-- 12px以上のradiusをボタンに使わない（pill除く）
-- 純黒 (`#000000`) をテキストに使わない（常に `#0f172a` スレートブルー）
-- `innerHTML` にユーザーデータを直接挿入しない
-- `font-weight: 800-900` を本文に使わない（見出しラベルのみ）
-- ダークモードのカラーパレットを混在させない（ライトモード統一）
+- Don't use status colors decoratively (the brand color is only
+  `--primary`).
+- Don't let table rows wrap (`white-space: nowrap` is required).
+- Don't use radius ≥ 12px on buttons (except pills).
+- Don't use pure black (`#000000`) for text (always `#0f172a` slate blue).
+- Don't inject user data directly into `innerHTML`.
+- Don't use `font-weight: 800-900` in body copy (heading labels only).
+- Don't mix dark-mode palette tokens (stay in light mode).
 
 ---
 
@@ -277,21 +305,21 @@ Scale: 2px, 3px, 4px, 6px, 7px, 8px, 9px, 10px, 12px, 14px, 16px, 20px, 24px, 32
 ### Breakpoints
 | Name | Width | Key Changes |
 |------|-------|-------------|
-| Compact | <768px | Analytics 1列、テーブル横スクロール |
-| Standard | 768-1200px | Analytics 2列、テーブルフル表示 |
-| Wide | >1200px | Analytics 3列、余裕あるmargin |
+| Compact | <768px | Analytics 1 column, table horizontal scroll |
+| Standard | 768-1200px | Analytics 2 columns, table fully visible |
+| Wide | >1200px | Analytics 3 columns, generous margins |
 
 ### Touch Targets
-- ボタン最小高さ: 30px
-- テーブル行高さ: 44px（タップしやすい）
-- フィルターフィールド高さ: 30px
-- タブボタン padding: 4px 13px
+- Button minimum height: 30px
+- Table row height: 44px (tap-friendly)
+- Filter field height: 30px
+- Tab button padding: 4px 13px
 
 ### Collapsing Strategy
-- Analytics 3列 → 2列 → 1列（積み重ね）
-- テーブル: 固定レイアウト維持、水平スクロール
-- 進行状況ログ: 2カラム → 1カラム
-- フィルタータブ: flex-wrap で折り返し
+- Analytics: 3 cols → 2 cols → 1 col (stack)
+- Table: keep fixed layout, scroll horizontally
+- Progress log: 2 cols → 1 col
+- Filter tabs: `flex-wrap` to wrap
 
 ---
 
@@ -315,27 +343,47 @@ Info/Processing: #7c3aed
 
 ### Example Component Prompts
 
-**ステータスカード:**
-「白背景カード、1px solid rgba(15,23,42,.07) ボーダー、8px radius。左に3px幅のステータスカラーバー。右寄せでmono .85rem bold の数値。ラベルは.68rem #475569。hover時にshadow: 0 4px 20px rgba(15,23,42,.1) + translateY(-2px)。」
+**Status card:**
+"White-bg card, 1px solid rgba(15,23,42,.07) border, 8px radius. 3px-wide
+status color bar on the left. Right-aligned mono `.85rem` bold number.
+Label is `.68rem` `#475569`. On hover, shadow `0 4px 20px
+rgba(15,23,42,.1)` + `translateY(-2px)`."
 
-**フィルターバー:**
-「#f8f9fd背景、1px solid rgba(15,23,42,.12) ボーダー、10px radius、7px 10px padding。内部のフィルターフィールドは#f0f2f8背景、7px radius、30px高さ。Material Symbols 14px アイコン付き。focus時にblue ring: 0 0 0 3px rgba(59,130,246,.1)。」
+**Filter bar:**
+"`#f8f9fd` background, 1px solid rgba(15,23,42,.12) border, 10px radius,
+7px 10px padding. Inner filter fields are `#f0f2f8` background, 7px radius,
+30px tall, with a 14px Material Symbols icon. Focus state is a blue ring:
+`0 0 0 3px rgba(59,130,246,.1)`."
 
-**テーブル行:**
-「table-layout:fixed。ヘッダーは#f8f9fd背景、.6rem uppercase bold #475569、letter-spacing .07em。行は44px固定高さ、奇数#fff/偶数#eef0f6。hover時にrgba(37,99,235,.12)背景。text-overflow:ellipsis。行クリックで詳細モーダル。」
+**Table row:**
+"`table-layout: fixed`. Header is `#f8f9fd` bg, `.6rem` uppercase bold
+`#475569`, `letter-spacing: .07em`. Rows are 44px fixed height, odd `#fff`,
+even `#eef0f6`. Hover background `rgba(37,99,235,.12)`. `text-overflow:
+ellipsis`. Clicking a row opens the detail modal."
 
-**ダークヘッダーバー:**
-「linear-gradient(135deg,#1e293b,#334155)背景。テキスト#e2e8f0 .68rem bold uppercase letter-spacing .1em。右端にチップ: rgba(255,255,255,.1)背景、#94a3b8テキスト、4px radius。思考中はスピナー + #818cf8テキスト。」
+**Dark header bar:**
+"`linear-gradient(135deg, #1e293b, #334155)` background. Text `#e2e8f0`
+`.68rem` bold uppercase `letter-spacing: .1em`. Right-side chip:
+`rgba(255,255,255,.1)` bg, `#94a3b8` text, 4px radius. While thinking, show
+a spinner + `#818cf8` text."
 
-**プライマリボタン:**
-「#2563eb背景、#fff テキスト、.78rem bold、letter-spacing .04em、6px 16px padding、20px radius (pill)。shadow: 0 2px 10px rgba(59,130,246,.3)。hover: #1d4ed8。」
+**Primary button:**
+"`#2563eb` background, `#fff` text, `.78rem` bold, `letter-spacing: .04em`,
+`6px 16px` padding, 20px radius (pill). `box-shadow: 0 2px 10px
+rgba(59,130,246,.3)`. Hover `#1d4ed8`."
 
 ### Iteration Guide
-1. 色は常にCSS変数 (`var(--primary)`) 経由で参照する。ハードコードしない
-2. テキストは `esc()` を通してから描画する。`innerHTML` にユーザーデータを直接入れない
-3. 非同期操作は `safeFetch()` でラップし、ローディング表示 + エラートーストを自動化
-4. テーブルは `table-layout: fixed` + `colgroup` で列幅を制御。行高さ44px固定
-5. モーダル/オーバーレイはESCキーで閉じる。`z-index: 9999`
-6. ステータスカラーは意味に紐づく。装飾に使わない
-7. shadow は `rgba(15,23,42,...)` のスレートブルー系を統一。純黒禁止
-8. border-radius は `--radius-sm(4)` / `--radius-md(8)` / `--radius-lg(12)` / `--radius-xl(20)` の4段階
+1. Always reference colors through CSS variables (`var(--primary)`); never
+   hardcode.
+2. Always pipe text through `esc()` before rendering; never insert user data
+   directly into `innerHTML`.
+3. Wrap async operations with `safeFetch()` to auto-show a loading state and
+   error toast.
+4. Tables use `table-layout: fixed` + `colgroup` for column widths; row
+   height stays at 44px.
+5. Modals / overlays close on ESC. `z-index: 9999`.
+6. Status colors are tied to meaning; never decorative.
+7. Shadows use the slate-blue family (`rgba(15,23,42,...)`) consistently —
+   pure black is forbidden.
+8. The radius scale has 4 steps: `--radius-sm(4)`, `--radius-md(8)`,
+   `--radius-lg(12)`, `--radius-xl(20)`.
