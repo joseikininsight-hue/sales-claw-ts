@@ -146,8 +146,22 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const monitorSummary = getLiveMonitorSummary();
       const activeNos = getManagedAiReservedCompanyNos();
       if (isAiRuntimeActivelyProcessing()) {
+        // v2.0.42: live-monitor の古い「analyzing / active=true」event は
+        //   Phase A subprocess crash や stop 前の状態がそのまま残っているゴミ。
+        //   旧: 何分前の event であろうと activeNos に追加 → 再キュー時に
+        //     「既に処理中」エラーで弾かれる事故 (4社が数時間 stuck)。
+        //   新: 5分以上更新がない event は古いゴミとして無視する。本当に処理中
+        //     なら 5分以内に何らかの logAction / monitor update が出るはず。
+        const STALE_MONITOR_MS = 5 * 60 * 1000;
+        const nowMs = Date.now();
         (monitorSummary.events || [])
           .filter(ev => ev && ev.active !== false && !['awaiting_approval','submitted','completed','skipped','error'].includes(ev.status))
+          .filter(ev => {
+            const tsRaw = ev.updatedAt || ev.timestamp || ev.time;
+            const tsMs = tsRaw ? Date.parse(String(tsRaw)) : 0;
+            if (!Number.isFinite(tsMs) || tsMs === 0) return true; // ts 無いものは保守的に in-flight 扱い
+            return (nowMs - tsMs) < STALE_MONITOR_MS;
+          })
           .forEach((ev: any) => {
             activeNos.add(Number(ev.companyNo));
           });

@@ -1177,8 +1177,12 @@ function touchManagedAiBatchActivity(reason = 'unknown') {
   controller.activeBatch.lastProgressReason = reason;
 }
 
-function cleanupStaleManagedAiMonitorEvents(maxAgeMs = MANAGED_AI_BATCH_STALL_MS) {
-  if (claudePty || getActiveHeadlessRun()) return 0;
+function cleanupStaleManagedAiMonitorEvents(maxAgeMs = MANAGED_AI_BATCH_STALL_MS, options: { force?: boolean } = {}) {
+  // v2.0.42: force=true (ユーザー明示停止 / 強制リセット時) は PTY 死活を問わず実行する。
+  //   旧: PTY 生存中だと無条件 return 0 → stopManagedClaudePty が cleanup を呼んでも
+  //     no-op になり、live-monitor の analyzing/active=true な古い event が残留 →
+  //     再キュー時に「以下の企業は既に処理中です」エラーで弾かれる事故。
+  if (!options.force && (claudePty || getActiveHeadlessRun())) return 0;
   const summary = getLiveMonitorSummary();
   const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error']);
   const now = Date.now();
@@ -3566,7 +3570,9 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
       controller.queueStuckNotified = false;
     }
     try { clearRecoverySnapshot(); } catch (_) { /* swallow */ }
-    cleanupStaleManagedAiMonitorEvents(0);
+    // v2.0.42: force=true で PTY 生存中でも live-monitor の非terminal event を
+    //   強制 finish する。これをやらないと再キュー時に「既に処理中」エラーで弾かれる。
+    cleanupStaleManagedAiMonitorEvents(0, { force: true });
     stopPowerSaveBlockerIfActive();
     queueClearStats = { activeCleared: hadActive, pendingCleared: pendingCount };
     if (pendingCount > 0 || hadActive) {
