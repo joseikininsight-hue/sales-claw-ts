@@ -278,6 +278,19 @@ const MANAGED_AI_BATCH_STALL_MS = 20 * 60 * 1000;
 //   ユーザーが「止まった」と判断するまでに 5 分待たされる事故が起きていた。
 //   90 秒で stuck 判定 → 自動 dispatch 再試行 + ユーザー通知 を発火させる。
 const MANAGED_AI_QUEUE_STUCK_MS = 90 * 1000;
+// v2.0.41: per-company stall 監視。
+//   - PER_COMPANY_EMPTY_LOG_MS: dispatch 後この時間 1 件もログがない社 → auto-fail
+//   - PER_COMPANY_PARTIAL_STALL_MS: site_analysis / message_draft / form_fill で
+//     この時間更新がない社 → auto-fail
+// 旧仕様 (v2.0.23): batch.lastProgressAt が 20 分 (もしくは空 action なら 6.7 分)
+//   経過してから「初めて」 stallNotified を立てて detectStalledCompanies を回す。
+//   バッチ内 1 社でも進捗があると lastProgressAt が更新され続けるため、
+//   進捗あり社 + stall 社 が混在するバッチでは stall 社が永遠に error 化されず、
+//   batch_completed イベントも発火せず、後続バッチが dispatch されない事故 (No.152
+//   アビーム のケース)。
+//   新仕様: per-company の latestTimestamp ベースで毎 poll 判定する。
+const MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS = 3 * 60 * 1000;
+const MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS = 8 * 60 * 1000;
 const MANAGED_AI_PTY_LOG_MAX_BYTES = 1024 * 1024;
 const MANAGED_AI_RECOVERY_RETRY_MS = 15000;
 const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;
@@ -1573,7 +1586,8 @@ function startManagedAiBatchPoller() {
         try { tryRecoverManagedAiSession('queue-stuck'); } catch (_) { /* swallow */ }
       }
       // claudePty が生きていれば dispatch を試す (auto-recovery が PTY を蘇生させた直後など)
-      if (claudePty) {
+      // v2.0.41: restartingForErrors 中は chain 側が dispatch を担当するためスキップ
+      if (claudePty && !activeController.restartingForErrors) {
         dispatchNextManagedAiFormFillBatch();
       }
       return;
@@ -1589,10 +1603,23 @@ function startManagedAiBatchPoller() {
     }
 
     if (snapshot.terminalCount >= snapshot.totalCount && snapshot.totalCount > 0) {
+      // v2.0.41: バッチ完了時の error 率を判定する。半数以上が error の場合は
+      //   Claude レート制限 / CLI ハング の可能性が高いので、次 dispatch 前に
+      //   CLI セッションを再起動して連鎖 error を断つ。
+      const errorCount = (snapshot.statuses || [])
+        .filter((s: any) => {
+          const a = String((s && (s.latestAction || s.action)) || '').trim();
+          return a === 'error';
+        }).length;
+      const errorRate = snapshot.totalCount > 0 ? errorCount / snapshot.totalCount : 0;
+      const shouldRestartCli = errorCount >= 2 && errorRate >= 0.5;
       appendDiagnosticEvent('managed_ai_batch_completed', {
         provider: activeController.providerId,
         batchId: activeController.activeBatch.id,
         companyCount: snapshot.totalCount,
+        errorCount,
+        errorRate,
+        shouldRestartCli,
         durationMs: Date.now() - activeController.activeBatch.startedAt,
         statuses: snapshot.statuses,
         parallelTabs: getPhaseBParallelTabs(),
@@ -1601,11 +1628,55 @@ function startManagedAiBatchPoller() {
         provider: activeController.providerId,
         batchId: activeController.activeBatch.id,
         companyCount: snapshot.totalCount,
+        errorCount,
+        errorRate,
+        shouldRestartCli,
         durationMs: Date.now() - activeController.activeBatch.startedAt,
         statuses: snapshot.statuses,
         parallelTabs: getPhaseBParallelTabs(),
       });
       activeController.activeBatch = null;
+      if (shouldRestartCli && activeController.pending.length > 0) {
+        emitClaudeAutomationLog(
+          `[CLI再起動] 直前バッチで ${errorCount}/${snapshot.totalCount}社が error。Claude レート制限 / セッション劣化の可能性が高いため、次バッチ投入前に AI セッションを再起動します。\n`,
+          'warn',
+          activeController.providerId,
+        );
+        const providerForRestart = activeController.providerId;
+        const autoSendSafeForRestart = activeController.autoSendSafe !== false;
+        // v2.0.41: restartingForErrors フラグで poll loop の auto-dispatch を抑止する。
+        //   旧: chain 中に poll が !activeBatch && claudePty 経路に入って dispatch
+        //     を呼び、停止直前の古い PTY に新バッチを投入する競合があった。
+        activeController.restartingForErrors = true;
+        Promise.resolve()
+          .then(() => stopManagedClaudePty({ suppressAutoRecovery: false }))
+          .then(() => startManagedAiSession('default', providerForRestart, {
+            allowReuse: false,
+            autoSendSafe: autoSendSafeForRestart,
+          }))
+          .then(() => {
+            const c = managedAiBatchController;
+            if (c) {
+              c.restartingForErrors = false;
+              if (!c.activeBatch && c.pending.length > 0) {
+                dispatchNextManagedAiFormFillBatch();
+              }
+            }
+          })
+          .catch((e: any) => {
+            const c = managedAiBatchController;
+            if (c) c.restartingForErrors = false;
+            try {
+              emitClaudeAutomationLog(
+                `[CLI再起動失敗] ${(e && e.message) || e}。auto-recovery に委ねます。\n`,
+                'warn',
+                providerForRestart,
+              );
+            } catch (_) { /* swallow */ }
+            // 失敗しても poller は走り続ける → そのうち auto-recovery が拾う
+          });
+        return;
+      }
       if (activeController.pending.length === 0) {
         clearManagedAiBatchControllerTimer(activeController);
         try { clearRecoverySnapshot(); } catch (_) {}
@@ -1617,10 +1688,77 @@ function startManagedAiBatchPoller() {
       return;
     }
 
-    // v2.0.23: バッチ stall の早期判定。
-    // 通常 (CLI が少なくとも 1 社の log を残した) は 20 分待つが、
-    // 「全社 action 空」 (CLI が一度も触っていない) 場合は CLI 失敗の可能性が
-    // 高いので 7 分で stall 判定する。
+    // v2.0.41: per-company stall を毎 poll で検査する。
+    //   バッチ内 1 社でも進捗があると batch.lastProgressAt が更新され続けるため、
+    //   旧仕様だと進捗ありメンバーに引きずられて stall 社が永遠に救済されない
+    //   (No.152 アビーム のケース)。per-company の latestTimestamp で個別判定する。
+    {
+      const stalledNow = (Array.isArray(snapshot.statuses) ? snapshot.statuses : [])
+        .filter((status: any) => {
+          if (!status || status.terminal) return false;
+          const action = String(status.latestAction || status.action || '').trim();
+          const tsRaw = status.latestTimestamp || status.updatedAt || status.timestamp;
+          const lastMs = tsRaw ? Date.parse(String(tsRaw)) : 0;
+          const idleMs = lastMs > 0
+            ? Date.now() - lastMs
+            : Date.now() - (activeController.activeBatch.startedAt || Date.now());
+          const threshold = action === ''
+            ? MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS
+            : MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS;
+          return idleMs > threshold;
+        })
+        .map((status: any) => Number(status.companyNo))
+        .filter((no: any) => Number.isFinite(no))
+        // 既に error / submitted / awaiting_approval ログを書いている社は除外 (terminal判定の二重防御)
+        .filter((no: number) => {
+          const status = snapshot.statuses.find((s: any) => Number(s.companyNo) === no);
+          const action = String((status && (status.latestAction || status.action)) || '').trim();
+          return !['error', 'submitted', 'skipped', 'awaiting_approval'].includes(action);
+        });
+
+      if (stalledNow.length > 0) {
+        const autoFailedSet = activeController.activeBatch.perCompanyAutoFailed
+          || (activeController.activeBatch.perCompanyAutoFailed = new Set<number>());
+        const freshFailures = stalledNow.filter((no: number) => !autoFailedSet.has(no));
+        if (freshFailures.length > 0) {
+          freshFailures.forEach((companyNo: number) => {
+            autoFailedSet.add(companyNo);
+            const status = snapshot.statuses.find((s: any) => Number(s.companyNo) === companyNo);
+            const company = activeController.activeBatch.companies.find((c: any) => Number(c.no) === companyNo);
+            const tsRaw = status && (status.latestTimestamp || status.updatedAt || status.timestamp);
+            const idleMs = tsRaw ? Date.now() - Date.parse(String(tsRaw)) : Date.now() - activeController.activeBatch.startedAt;
+            const stalledAt = status ? (status.latestAction || status.action || '') : '';
+            const reason = formatStallReason(stalledAt, idleMs);
+            logAction(companyNo, company ? company.companyName : '', 'error', {
+              source: 'per-company-watchdog',
+              reason,
+              idleMs,
+              stalledAt: stalledAt || 'no-log',
+            });
+            finishLiveMonitor(companyNo, {
+              companyNo,
+              companyName: company ? company.companyName : '',
+              status: 'error',
+              step: reason,
+            });
+          });
+          appendDiagnosticEvent('managed_ai_per_company_auto_failed', {
+            provider: activeController.providerId,
+            batchId: activeController.activeBatch.id,
+            stalledCompanyNos: freshFailures,
+            durationMs: Date.now() - activeController.activeBatch.startedAt,
+          });
+          emitClaudeAutomationLog(
+            `[個別タイムアウト] ${freshFailures.length}社が個別 stall 判定で error 化されました: ${freshFailures.join(',')}。バッチを進めます。\n`,
+            'warn',
+            activeController.providerId,
+          );
+        }
+      }
+    }
+
+    // v2.0.23: バッチ stall の早期判定 (バッチ全体の safety-net)。
+    // per-company が拾えなかった場合の保険として残す。
     const allEmptyAction = Array.isArray(snapshot.statuses) && snapshot.statuses.length > 0 &&
       snapshot.statuses.every((s: any) => !s || (!s.action && !s.latestAction && !s.terminal));
     const effectiveStallMs = allEmptyAction ? Math.floor(MANAGED_AI_BATCH_STALL_MS / 3) : MANAGED_AI_BATCH_STALL_MS;
@@ -1697,6 +1835,10 @@ function dispatchNextManagedAiFormFillBatch() {
   // 念のため Array.isArray ガード。length アクセスで TypeError を出さない。
   if (!Array.isArray(controller.pending)) controller.pending = [];
   if (controller.activeBatch || controller.pending.length === 0) return null;
+  // v2.0.41: error-rate restart の chain 実行中は dispatch を抑止する。
+  //   poll loop からの auto-dispatch と chain の最終 dispatch が同時に走ると、
+  //   停止直前の PTY に古いバッチを投入してしまう競合が起きるため。
+  if (controller.restartingForErrors) return null;
   const next = controller.pending.shift();
   controller.activeBatch = {
     id: next.id,
