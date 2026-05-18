@@ -263,8 +263,31 @@ async function resolveContactFormUrl(siteUrl) {
   };
 }
 
+/**
+ * v2.0.40: target list の formUrl が事前に設定されている社向けに、
+ * そのページを単発フェッチして「実際に <form> があるか / mailto/tel のみか」を判定する。
+ * Phase A で formUrl が preset だと resolveContactFormUrl がスキップされ、
+ * email_only ページがそのまま Phase B に流れ込んで browser_snapshot で
+ * 大量のトークンを消費していた事故の対策。
+ *
+ * @returns { ok, formType, hasForm } | { ok: false, reason }
+ */
+async function classifyPresetFormUrl(formUrl: string) {
+  if (!formUrl || !isSafeUrl(formUrl)) {
+    return { ok: false, reason: 'invalid-url' };
+  }
+  const html: any = await fetchText(formUrl);
+  if (!html) {
+    return { ok: false, reason: 'fetch-failed' };
+  }
+  const hasForm = /<form\b/i.test(html) || /<textarea\b/i.test(html);
+  const formType = hasForm ? 'contact_form' : classifyPageContent(html);
+  return { ok: true, formType, hasForm };
+}
+
 module.exports = {
   resolveContactFormUrl,
+  classifyPresetFormUrl,
   isSafeUrl,
   classifyPageContent,
 };

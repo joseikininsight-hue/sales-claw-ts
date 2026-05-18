@@ -10,7 +10,7 @@
 const path = require('path');
 const { log, thinking } = require('./cli-logger');
 const { updateLiveMonitor } = require('./live-monitor');
-const { resolveContactFormUrl } = require('./form-url-resolver');
+const { resolveContactFormUrl, classifyPresetFormUrl } = require('./form-url-resolver');
 const { resolveOfficialSiteByCompanyName } = require('./official-site-resolver');
 const { resolveDataPath } = require('./data-paths');
 
@@ -818,7 +818,44 @@ async function main() {
     let formResolutionMethod = resolvedFormUrl ? 'preset' : 'none';
     // 初期値は 'unknown' としておき、下流で null チェック漏れが起きないようにする
     let resolvedFormType = resolvedFormUrl ? 'contact_form' : 'unknown';
-    if (!resolvedFormUrl && effectiveUrl) {
+    // v2.0.40: preset が「メールのみ/電話のみ」と判定された場合は resolver 再探索を抑止する。
+    let presetClassifiedAsNonForm = false;
+
+    // v2.0.40: preset formUrl も <form>/mailto/tel 判定する。
+    // 旧: target list に formUrl が入っていれば無条件で contact_form 扱い → email_only
+    //   ページが Phase B (MCP Playwright) に流れ、browser_snapshot で大量のトークンを
+    //   食い潰した上で skipped 化される事故が起きていた (1社あたり ~12-15K tokens)。
+    // 新: preset URL も単発フェッチして hasForm を確認。email_only / phone_only と
+    //   判定されたら resolvedFormUrl を空に落として下流の skipped 経路に乗せる。
+    if (resolvedFormUrl) {
+      thinking(`[No.${no}] ${companyName}: preset フォームURL検証中`);
+      try {
+        const presetCheck: any = await classifyPresetFormUrl(resolvedFormUrl);
+        if (presetCheck.ok) {
+          if (presetCheck.formType === 'email_only' || presetCheck.formType === 'phone_only') {
+            log(`[No.${no}] ${companyName}: preset formUrl は ${presetCheck.formType} → Phase B を skipped`, 'warn');
+            resolvedFormUrl = '';
+            resolvedFormType = presetCheck.formType;
+            formResolutionMethod = 'preset-classified-' + presetCheck.formType;
+            presetClassifiedAsNonForm = true;
+          } else if (presetCheck.hasForm) {
+            resolvedFormType = 'contact_form';
+            formResolutionMethod = 'preset-verified';
+          } else {
+            // not_found: <form> も mailto/tel もない → Phase B 探索に委ねる
+            log(`[No.${no}] ${companyName}: preset formUrl にフォーム要素なし → resolver で再探索`, 'warn');
+            resolvedFormUrl = '';
+            resolvedFormType = 'unknown';
+            formResolutionMethod = 'preset-no-form';
+          }
+        }
+        // fetch-failed 等は resolvedFormUrl を保持して下流に任せる (false negative を避ける)
+      } catch (e: any) {
+        log(`[No.${no}] ${companyName}: preset formUrl 検証エラー (${e && e.message || e}) → preset を保持して続行`, 'warn');
+      }
+    }
+
+    if (!resolvedFormUrl && effectiveUrl && !presetClassifiedAsNonForm) {
       thinking(`[No.${no}] ${companyName}: フォームURL探索中`);
       updateLiveMonitor(no, {
         companyNo: no,
