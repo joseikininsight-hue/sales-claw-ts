@@ -273,8 +273,11 @@ const MANAGED_AI_BATCH_POLL_MS = 5000;
 // 余裕を持たせる。CLI には 2 分以内に進捗 logAction を残すよう prompt で指示。
 const MANAGED_AI_BATCH_STALL_MS = 20 * 60 * 1000;
 // A4: pending キューが activeBatch なしで放置されている時間の閾値。
-// 過去バグ (47 バッチ滞留) の検知用 — 5 分動かなければ stuck と判定。
-const MANAGED_AI_QUEUE_STUCK_MS = 5 * 60 * 1000;
+// 過去バグ (47 バッチ滞留) の検知用。
+// v2.0.38: 5 分 → 90 秒。200 社一括 (67+ バッチ) を投入した際に 5 分待ちは長すぎ、
+//   ユーザーが「止まった」と判断するまでに 5 分待たされる事故が起きていた。
+//   90 秒で stuck 判定 → 自動 dispatch 再試行 + ユーザー通知 を発火させる。
+const MANAGED_AI_QUEUE_STUCK_MS = 90 * 1000;
 const MANAGED_AI_PTY_LOG_MAX_BYTES = 1024 * 1024;
 const MANAGED_AI_RECOVERY_RETRY_MS = 15000;
 const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;

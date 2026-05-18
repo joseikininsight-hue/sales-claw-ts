@@ -403,6 +403,12 @@ module.exports = function createSettingsApiRoutes(ctx) {
             no: removed.no !== undefined ? removed.no : '',
             companyName: removed.companyName || (runtimeCompany && runtimeCompany.name) || String(removed.no || ''),
           });
+          // v2.0.38: target list から削除した社も action ログ / history / monitor を必ず purge する。
+          // 旧仕様: target list 削除のみ。logs は残るため、dashboard refresh 時に
+          // buildDashboardDataFromSources が logs を見て rowMap に「detached」として
+          // 再追加 → 「確認待ち」カードが復活 (lastAction === 'awaiting_approval' で判定)。
+          // 1 回目では消えず 2 回目の delete でやっと purge される事故が起きていた。
+          try { purgeHistoryOnlyCompany(removed.no); } catch (_) { /* logs already gone */ }
         }
       }
 
@@ -477,10 +483,16 @@ module.exports = function createSettingsApiRoutes(ctx) {
       const companyNo = decodeURIComponent(companyApiMatch[1]);
       const runtimeCompany = findRuntimeCompanyRecord(companyNo);
       let removed = deleteCompany(companyNo);
+      const removedFromTargetList = !!(removed && removed.ok);
       if (!removed.ok) removed = purgeHistoryOnlyCompany(companyNo);
       if (!removed.ok) {
         jsonResponse(res, 400, { ok: false, error: removed.error || 'Company delete failed.' });
         return;
+      }
+      // v2.0.38: target list 削除に成功した社も action ログ / history / monitor を必ず purge する。
+      // 同 bulk-delete 同様、logs を残すと「確認待ち」カードが SSE refresh で復活する。
+      if (removedFromTargetList) {
+        try { purgeHistoryOnlyCompany(companyNo); } catch (_) { /* logs already gone */ }
       }
 
       setTargets([{
