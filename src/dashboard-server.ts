@@ -1704,82 +1704,26 @@ function startManagedAiBatchPoller() {
       return;
     }
 
-    // v2.0.41: per-company stall を毎 poll で検査する。
-    //   バッチ内 1 社でも進捗があると batch.lastProgressAt が更新され続けるため、
-    //   旧仕様だと進捗ありメンバーに引きずられて stall 社が永遠に救済されない
-    //   (No.152 アビーム のケース)。per-company の latestTimestamp で個別判定する。
-    {
-      const stalledNow = (Array.isArray(snapshot.statuses) ? snapshot.statuses : [])
-        .filter((status: any) => {
-          if (!status || status.terminal) return false;
-          const action = String(status.latestAction || status.action || '').trim();
-          const tsRaw = status.latestTimestamp || status.updatedAt || status.timestamp;
-          const lastMs = tsRaw ? Date.parse(String(tsRaw)) : 0;
-          const idleMs = lastMs > 0
-            ? Date.now() - lastMs
-            : Date.now() - (activeController.activeBatch.startedAt || Date.now());
-          // v2.0.43: 新規セッション首回り (contract injection + WebSearch 立ち上げ) には +90秒 grace
-          const graceMs = activeController.activeBatch.isFreshSession ? MANAGED_AI_FRESH_SESSION_GRACE_MS : 0;
-          const threshold = (action === ''
-            ? MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS
-            : MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS) + graceMs;
-          return idleMs > threshold;
-        })
-        .map((status: any) => Number(status.companyNo))
-        .filter((no: any) => Number.isFinite(no))
-        // 既に error / submitted / awaiting_approval ログを書いている社は除外 (terminal判定の二重防御)
-        .filter((no: number) => {
-          const status = snapshot.statuses.find((s: any) => Number(s.companyNo) === no);
-          const action = String((status && (status.latestAction || status.action)) || '').trim();
-          return !['error', 'submitted', 'skipped', 'awaiting_approval'].includes(action);
-        });
-
-      if (stalledNow.length > 0) {
-        const autoFailedSet = activeController.activeBatch.perCompanyAutoFailed
-          || (activeController.activeBatch.perCompanyAutoFailed = new Set<number>());
-        const freshFailures = stalledNow.filter((no: number) => !autoFailedSet.has(no));
-        if (freshFailures.length > 0) {
-          freshFailures.forEach((companyNo: number) => {
-            autoFailedSet.add(companyNo);
-            const status = snapshot.statuses.find((s: any) => Number(s.companyNo) === companyNo);
-            const company = activeController.activeBatch.companies.find((c: any) => Number(c.no) === companyNo);
-            const tsRaw = status && (status.latestTimestamp || status.updatedAt || status.timestamp);
-            const idleMs = tsRaw ? Date.now() - Date.parse(String(tsRaw)) : Date.now() - activeController.activeBatch.startedAt;
-            const stalledAt = status ? (status.latestAction || status.action || '') : '';
-            const reason = formatStallReason(stalledAt, idleMs);
-            logAction(companyNo, company ? company.companyName : '', 'error', {
-              source: 'per-company-watchdog',
-              reason,
-              idleMs,
-              stalledAt: stalledAt || 'no-log',
-            });
-            finishLiveMonitor(companyNo, {
-              companyNo,
-              companyName: company ? company.companyName : '',
-              status: 'error',
-              step: reason,
-            });
-          });
-          appendDiagnosticEvent('managed_ai_per_company_auto_failed', {
-            provider: activeController.providerId,
-            batchId: activeController.activeBatch.id,
-            stalledCompanyNos: freshFailures,
-            durationMs: Date.now() - activeController.activeBatch.startedAt,
-          });
-          emitClaudeAutomationLog(
-            `[個別タイムアウト] ${freshFailures.length}社が個別 stall 判定で error 化されました: ${freshFailures.join(',')}。バッチを進めます。\n`,
-            'warn',
-            activeController.providerId,
-          );
-        }
-      }
-    }
+    // v2.0.44: v2.0.41 で導入した per-company-watchdog auto-fail を撤去。
+    //   実機ログで以下の誤発火を観測:
+    //     - 2026-05-18 23:58 [59,61,62]: missingFormUrl=3 + 新規セッション
+    //       → 3 分閾値で auto-fail (v2.0.41 設定)
+    //     - 2026-05-19 00:43 [64,66,68]: 同上 → 旧 batch-watchdog (6.7分) で auto-fail
+    //   原因: WebSearch + 新規セッション首回り + parallelTabs 競合で初回 logAction まで
+    //         6-7 分かかるのは正常動作。短い閾値で打ち切ると正常社まで error 化する。
+    //   方針転換: 個別 auto-fail は完全停止。CLI に充分な時間を与え、本当に長期 stall
+    //         した場合のみ legacy batch-watchdog (20分) が拾う。No.152 case (永久stall)
+    //         は 20分待ちのほうがマシで、誤検出で社を焼くより全社失う方が損害が小さい。
 
     // v2.0.23: バッチ stall の早期判定 (バッチ全体の safety-net)。
     // per-company が拾えなかった場合の保険として残す。
     const allEmptyAction = Array.isArray(snapshot.statuses) && snapshot.statuses.length > 0 &&
       snapshot.statuses.every((s: any) => !s || (!s.action && !s.latestAction && !s.terminal));
-    const effectiveStallMs = allEmptyAction ? Math.floor(MANAGED_AI_BATCH_STALL_MS / 3) : MANAGED_AI_BATCH_STALL_MS;
+    // v2.0.44: emptyActionStallMs を 20/3=6.7分 → 15分 に緩和。
+    //   実機で確認: missingFormUrl のみのバッチ + 新規セッション首回りで
+    //   初回 logAction まで 6:40+ かかるのが正常。6.7分閾値で発火 → 全社誤 error 化。
+    //   15分なら正常動作の余裕がある一方、本当の stall (No.152 case) も 15分で拾える。
+    const effectiveStallMs = allEmptyAction ? 15 * 60 * 1000 : MANAGED_AI_BATCH_STALL_MS;
     if (!activeController.activeBatch.stallNotified
       && (Date.now() - activeController.activeBatch.lastProgressAt) > effectiveStallMs) {
       activeController.activeBatch.stallNotified = true;
