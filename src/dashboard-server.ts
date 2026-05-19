@@ -5781,9 +5781,19 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
     console.warn('[launch-ai] non-blocking MCP warning:', mcpWarning);
   }
 
+  // v2.0.46: --session-id を外し、Claude を素の interactive モードで起動する。
+  //   旧仕様: 毎回 crypto.randomUUID() で --session-id を渡していた
+  //     → Claude CLI が「指定 session の単発タスク」として扱い、応答後に
+  //       "Resume this session with: claude --resume <uuid>" を出して exit code 0
+  //       で終了。
+  //     → Sales Claw の recovery が毎バッチ後に発火 → 新 PTY launch → 認証/path
+  //       resolution エラーで連続失敗 → ユーザーが「ログイン求められる」と認識。
+  //   新仕様: session-id 無しなら interactive モードでプロンプト待機のまま留まる。
+  //     1 PTY で 20 社でも 100 社でもバッチを順次投入できる
+  //     (ユーザー設計の「同じターミナルに次のバッチ投げていく」が成立する)。
   const flags = buildLaunchArgs(normalizedProviderId, mode, {
     model: getConfiguredAiModel(normalizedProviderId),
-    sessionId: normalizedProviderId === 'claude' ? crypto.randomUUID() : null,
+    // sessionId: 削除済み (v2.0.46) — Claude 自動 exit 防止
   });
   const spawnSpec = buildManagedSpawnSpec(normalizedProviderId, executable, flags);
   assertManagedAiLaunchActive(launchToken, 'before-spawn');
