@@ -532,9 +532,57 @@ function getPlaywrightMcpCommandSpec() {
   };
 }
 
+/**
+ * v2.0.47: Claude CLI のバイナリが「アップデート途中で .old にリネームされたまま
+ * 新バイナリの置換が失敗した」状態を自己修復する。
+ *
+ * 実機事例 (2026-05-19 03:31):
+ *   bin/ に claude.exe.old.1779156283983 だけが残り claude.exe が存在せず、
+ *   .bin/claude.cmd shim → 存在しない claude.exe を呼び出し → cmd が
+ *   「'...claude.exe' is not recognized」を出して exit 1。AI 起動不可。
+ *
+ * 修復ロジック:
+ *   - bin/claude.exe (or 該当 OS の実体) が無い、かつ
+ *   - bin/claude.exe.old.<timestamp> が 1 つ以上ある場合
+ *   - 最新の .old を本体名にリネームして復活させる。
+ *
+ * 効果: 自動アップデート競合の事故に対する自己修復。完全に消失した場合は
+ *       installProviderCli の再インストールに任せる。
+ *
+ * @returns { recovered: boolean, restoredFrom?: string, reason?: string }
+ */
+function recoverClaudeBinaryIfOrphaned(providerId) {
+  try {
+    const provider = getProvider(normalizeProviderId(providerId));
+    if (provider.id !== 'claude') return { recovered: false, reason: 'not-claude' };
+    const binDir = path.join(getNpmProjectDir(), 'node_modules', '@anthropic-ai', 'claude-code', 'bin');
+    if (!fs.existsSync(binDir)) return { recovered: false, reason: 'bin-dir-missing' };
+    const targetName = process.platform === 'win32' ? 'claude.exe' : 'claude';
+    const targetPath = path.join(binDir, targetName);
+    if (fs.existsSync(targetPath)) return { recovered: false, reason: 'binary-present' };
+    const entries = fs.readdirSync(binDir);
+    const oldPattern = new RegExp(`^${targetName.replace(/\./g, '\\.')}\\.old\\.(\\d+)$`);
+    const oldFiles = entries
+      .map((entry: string) => {
+        const m = oldPattern.exec(entry);
+        return m ? { name: entry, ts: Number(m[1]) } : null;
+      })
+      .filter((entry: any): entry is { name: string; ts: number } => entry !== null)
+      .sort((a: { ts: number }, b: { ts: number }) => b.ts - a.ts);
+    if (oldFiles.length === 0) return { recovered: false, reason: 'no-old-file' };
+    const latest = oldFiles[0];
+    fs.renameSync(path.join(binDir, latest.name), targetPath);
+    return { recovered: true, restoredFrom: latest.name };
+  } catch (e: any) {
+    return { recovered: false, reason: 'error:' + (e && e.message || String(e)) };
+  }
+}
+
 function getProviderExecutableCandidates(providerId) {
   const provider = getProvider(normalizeProviderId(providerId));
   ensureToolchainFiles();
+  // v2.0.47: 取得前に自己修復を試みる。Claude binary が .old のままになっていれば戻す。
+  try { recoverClaudeBinaryIfOrphaned(provider.id); } catch (_) { /* swallow */ }
   const binDir = getNpmBinDir();
   const names = new Set<any>();
   for (const executableName of provider.executableNames || []) {
@@ -882,6 +930,7 @@ module.exports = {
   installAiRuntimeWithProgress,
   installPlaywrightChromium,
   installProviderCli,
+  recoverClaudeBinaryIfOrphaned,
   probeAiToolchainStatus,
   probeEmbeddedNpmStatus,
   probePlaywrightMcpStatus,

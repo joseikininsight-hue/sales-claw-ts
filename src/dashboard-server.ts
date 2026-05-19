@@ -4440,6 +4440,27 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
   if (cached && fs.existsSync(cached)) return cached;
   if (process.platform !== 'win32') return provider.id;
 
+  // v2.0.47: Claude binary が "アップデート中断で .old のまま" の状態を自己修復する。
+  //   実機事例: 2026-05-19 03:31 - bin/claude.exe が消えて .old.1779156283983 だけ残り
+  //   「'...claude.exe' is not recognized」で AI 起動不可になった。
+  //   recoverClaudeBinaryIfOrphaned が成功すれば diagnostic を残しユーザーに知らせる。
+  try {
+    const recovery = localToolchain.recoverClaudeBinaryIfOrphaned(provider.id);
+    if (recovery && recovery.recovered) {
+      appendDiagnosticEvent('claude_binary_self_healed', {
+        provider: provider.id,
+        restoredFrom: recovery.restoredFrom,
+      });
+      emitClaudeAutomationLog(
+        `[自己修復] Claude CLI バイナリ (${recovery.restoredFrom}) を claude.exe に復元しました。アップデート中断による不整合を解消しました。\n`,
+        'system',
+        provider.id,
+      );
+    }
+  } catch (e: any) {
+    console.warn('[resolveClaude] self-heal failed:', e && e.message || e);
+  }
+
   const whereNames = Array.from(new Set([
     ...provider.executableNames,
     ...provider.executableNames.map((entry: any) => path.parse(entry).name),
