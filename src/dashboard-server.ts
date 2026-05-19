@@ -289,8 +289,20 @@ const MANAGED_AI_QUEUE_STUCK_MS = 90 * 1000;
 //   batch_completed イベントも発火せず、後続バッチが dispatch されない事故 (No.152
 //   アビーム のケース)。
 //   新仕様: per-company の latestTimestamp ベースで毎 poll 判定する。
-const MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS = 3 * 60 * 1000;
-const MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS = 8 * 60 * 1000;
+// v2.0.43: PER_COMPANY_EMPTY_LOG_MS を 3分 → 6分に緩和。
+//   実機で確認した誤発火 (2026-05-18 23:58 [59,61,62] バッチ):
+//   - knownFormUrlCount=0 / missingFormUrlCount=3 → 全社 WebSearch 必要
+//   - sessionContractInjected=true → 新規セッション首回り
+//   - parallelTabs=3 → リソース競合
+//   この組み合わせで首回り含めて初回 logAction まで 3-5 分かかるのは正常。
+//   3 分で打ち切ると正常処理中の社まで error 化していた。6 分に伸ばしても No.152
+//   case (20+ 分 stall) は十分早く検知できる。
+const MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS = 6 * 60 * 1000;
+const MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS = 10 * 60 * 1000;
+// v2.0.43: 新規 session の最初のバッチでは contract injection + WebSearch 首回り
+//   コストで +90 秒の猶予を持たせる。dispatchNextManagedAiFormFillBatch で
+//   activeBatch.sessionContractInjected を見て threshold を加算する。
+const MANAGED_AI_FRESH_SESSION_GRACE_MS = 90 * 1000;
 const MANAGED_AI_PTY_LOG_MAX_BYTES = 1024 * 1024;
 const MANAGED_AI_RECOVERY_RETRY_MS = 15000;
 const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;
@@ -1706,9 +1718,11 @@ function startManagedAiBatchPoller() {
           const idleMs = lastMs > 0
             ? Date.now() - lastMs
             : Date.now() - (activeController.activeBatch.startedAt || Date.now());
-          const threshold = action === ''
+          // v2.0.43: 新規セッション首回り (contract injection + WebSearch 立ち上げ) には +90秒 grace
+          const graceMs = activeController.activeBatch.isFreshSession ? MANAGED_AI_FRESH_SESSION_GRACE_MS : 0;
+          const threshold = (action === ''
             ? MANAGED_AI_PER_COMPANY_EMPTY_LOG_MS
-            : MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS;
+            : MANAGED_AI_PER_COMPANY_PARTIAL_STALL_MS) + graceMs;
           return idleMs > threshold;
         })
         .map((status: any) => Number(status.companyNo))
@@ -1844,6 +1858,10 @@ function dispatchNextManagedAiFormFillBatch() {
   //   停止直前の PTY に古いバッチを投入してしまう競合が起きるため。
   if (controller.restartingForErrors) return null;
   const next = controller.pending.shift();
+  // v2.0.43: 新規セッション (contract 未注入) の最初のバッチかを記録する。
+  //   per-company watchdog で +90秒 の grace 期間を持たせるため。
+  const sessionState: any = (typeof getManagedAiSessionState === 'function') ? getManagedAiSessionState() : null;
+  const isFreshSession = !sessionState || sessionState.contractVersionSent !== MANAGED_AI_CONTRACT_VERSION;
   controller.activeBatch = {
     id: next.id,
     companyNos: next.companies.map((company: any) => Number(company.no)),
@@ -1854,6 +1872,7 @@ function dispatchNextManagedAiFormFillBatch() {
     lastProgressAt: Date.now(),
     lastProgressReason: 'queued',
     stallNotified: false,
+    isFreshSession,  // v2.0.43: watchdog がこの値を見て grace を加算する
   };
   appendDiagnosticEvent('managed_ai_batch_dispatch', {
     provider: controller.providerId,
