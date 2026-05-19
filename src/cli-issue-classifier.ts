@@ -88,6 +88,17 @@ export const CLI_ISSUE_PATTERNS: CliIssueRule[] = [
     type: 'error',
     label: '認証エラー',
   },
+  // v2.0.45: Claude CLI が API 401 を受けた時の specific 表示。
+  //   実機ログで観測: "Please run /login · API Error: 401 Invalid authentication credentials"
+  //   このメッセージが出ると Claude は処理を止めるが、Sales Claw は recovery で
+  //   無限再起動 → ユーザーが「login を要求される」と感じる事故が発生していた。
+  //   ※ Anthropic 側の rate limit ヒット時にも同じメッセージが出るので、
+  //     ユーザーには「認証失効」または「Claude Pro 5時間使用上限到達」を案内する。
+  {
+    pattern: /^[^\n]*(?:Please\s+run\s+\/login|API\s+Error:\s*401|Invalid\s+authentication\s+credentials)[^\n]*$/im,
+    type: 'error',
+    label: 'Claude認証失効/レート上限',
+  },
 
   // ─── レート/クォータ ─────────────────────────────────────────────────
   {

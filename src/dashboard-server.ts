@@ -1418,6 +1418,54 @@ function detectCliIssuesFromOutput(rawData, providerId) {
       time: new Date().toISOString(),
     }) + '\n\n');
   });
+
+  // v2.0.45: Claude 認証失効 / レート上限を検出したら recovery 無限再起動を停止する。
+  //   Claude CLI が "Please run /login" / "API Error: 401" を出してから exit すると
+  //   旧仕様では recovery が新しい PTY を起動し、同じ 401 で死ぬループに陥る。
+  //   検出時:
+  //     1. recovery state をクリア (これ以上 PTY を立ち上げない)
+  //     2. pending バッチは保持 (ユーザーが /login 後に再開できる)
+  //     3. UI / SSE に明示メッセージを出す
+  if (classified.rule.label === 'Claude認証失効/レート上限') {
+    try {
+      // 既存の recovery 予定をキャンセル
+      if (typeof clearManagedAiRecoveryTimer === 'function') clearManagedAiRecoveryTimer();
+      managedAiRecoveryState = null;
+      // 次の PTY exit で recovery が再キューされないよう suppress を立てる
+      managedAiSuppressAutoRecovery = true;
+      // active batch は pending に戻して保持 (停止扱いではなく一時凍結)
+      const controller: any = managedAiBatchController;
+      if (controller && controller.activeBatch && Array.isArray(controller.pending)) {
+        const frozen = {
+          id: controller.activeBatch.id,
+          companies: controller.activeBatch.companies || [],
+          options: controller.activeBatch.options || {},
+        };
+        controller.pending.unshift(frozen);
+        controller.activeBatch = null;
+      }
+      appendDiagnosticEvent('claude_auth_failure_detected', {
+        provider: normalizeProviderId(providerId),
+        line: classified.line,
+        pendingBatchCount: controller && Array.isArray(controller.pending) ? controller.pending.length : 0,
+      });
+      emitClaudeAutomationLog(
+        `[認証/レート停止] Claude が API 401 (認証失効 または Pro 5時間使用上限) を返しました。\n→ 自動再起動を停止しました。pending バッチは保持しています。\n→ 対処: 1) Claude が表示する画面で /login を実行 / 2) Pro/Max の 5時間枠リセット待ち\n→ 解決したら「AI を起動」ボタンを押すと残りバッチが再開されます。\n`,
+        'warn',
+        normalizeProviderId(providerId),
+      );
+      sseClients.forEach(function(r) {
+        r.write('data: ' + JSON.stringify({
+          type: 'cli-log',
+          message: '[Sales Claw] Claude 認証失効を検出 → 自動再起動を停止しました。/login またはレート枠リセット後に「AI を起動」してください。',
+          logType: 'warn',
+          time: new Date().toISOString(),
+        }) + '\n\n');
+      });
+    } catch (e) {
+      console.warn('[auth-failure-handler] error:', e && e.message || e);
+    }
+  }
 }
 
 function flushManagedAiPromptQueue() {
