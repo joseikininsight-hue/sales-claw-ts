@@ -2446,30 +2446,63 @@ function prepareClaudeManagedHome(projectRoot = PROJECT_ROOT) {
   fs.mkdirSync(managedAppDataLocal, { recursive: true });
   fs.mkdirSync(managedTempDir, { recursive: true });
 
-  copyFileIfExists(path.join(realHome, '.claude', '.credentials.json'), path.join(managedClaudeDir, '.credentials.json'));
-  copyFileIfExists(path.join(realHome, '.claude', '.omc-config.json'), path.join(managedClaudeDir, '.omc-config.json'));
+  // v2.0.50: 認証保持。Sales Claw 内で /login した結果 (managed home 側に保存)
+  // を次回起動時に realHome 由来の値で上書きしてしまうバグを修正。
+  //   旧仕様: .credentials.json / settings.json / .claude.json を毎回 realHome
+  //          から copy/再構築 → managed 内で /login しても次回起動で消える
+  //          → ユーザー体験: 「毎回 Please run /login が出る」
+  //   新仕様: managed 側に既存 auth/state があれば **それを優先**。
+  //          realHome は「初回 seed」のみで使う (managed が空のとき)。
+  //          managed 制御項目 (mcpServers / projects / hooks / autoUpdates /
+  //          plugins) はこちらが上書きする。
+  const managedCredsPath = path.join(managedClaudeDir, '.credentials.json');
+  if (!fs.existsSync(managedCredsPath)) {
+    copyFileIfExists(path.join(realHome, '.claude', '.credentials.json'), managedCredsPath);
+  }
+  const managedOmcConfig = path.join(managedClaudeDir, '.omc-config.json');
+  if (!fs.existsSync(managedOmcConfig)) {
+    copyFileIfExists(path.join(realHome, '.claude', '.omc-config.json'), managedOmcConfig);
+  }
 
+  // settings.json: managed 側に書き込まれた hooks/mcpServers 以外の項目 (theme,
+  // preferences, model 等) を温存しつつ、Sales Claw が管理する 2 項目だけ上書き。
+  const managedSettingsPath = path.join(managedClaudeDir, 'settings.json');
+  const managedSettingsExisting = readJsonFileSafe(managedSettingsPath, null);
   const realSettings = readJsonFileSafe(path.join(realHome, '.claude', 'settings.json'), {}) || {};
+  const settingsBase = (managedSettingsExisting && typeof managedSettingsExisting === 'object')
+    ? managedSettingsExisting
+    : realSettings;
   const managedSettings = {
-    ...(realSettings || {}),
+    ...(settingsBase || {}),
     hooks: {},
     mcpServers: {},
   };
-  fs.writeFileSync(path.join(managedClaudeDir, 'settings.json'), JSON.stringify(managedSettings, null, 2), 'utf8');
+  fs.writeFileSync(managedSettingsPath, JSON.stringify(managedSettings, null, 2), 'utf8');
 
+  // .claude.json: oauthAccount / userID / firstStartTime / projects 等が含まれる。
+  // managed 側に既存があれば優先 (= /login 後の状態を保持)、なければ realHome から seed。
+  const managedStatePath = path.join(managedHome, '.claude.json');
+  const managedStateExisting = readJsonFileSafe(managedStatePath, null);
   const realState = readJsonFileSafe(path.join(realHome, '.claude.json'), {}) || {};
+  const stateBase = (managedStateExisting && typeof managedStateExisting === 'object')
+    ? managedStateExisting
+    : realState;
   const projectKey = normalizeProjectConfigKey(projectRoot);
+  const baseProjects = (stateBase && typeof stateBase === 'object' && stateBase.projects && typeof stateBase.projects === 'object')
+    ? stateBase.projects
+    : {};
   const managedState = {
-    ...(realState || {}),
+    ...(stateBase || {}),
     autoUpdates: false,
-    mcpServers: buildManagedClaudeMcpServers(realState),
+    mcpServers: buildManagedClaudeMcpServers(stateBase),
     projects: {
-      [projectKey]: extractManagedClaudeProjectState(realState, projectKey),
+      ...baseProjects,
+      [projectKey]: extractManagedClaudeProjectState(stateBase, projectKey),
     },
     plugins: [],
   };
   delete managedState.prompt;
-  fs.writeFileSync(path.join(managedHome, '.claude.json'), JSON.stringify(managedState, null, 2), 'utf8');
+  fs.writeFileSync(managedStatePath, JSON.stringify(managedState, null, 2), 'utf8');
 
   return managedHome;
 }
@@ -9889,6 +9922,12 @@ function getSettingsApiDispatch() {
       loadData,
       purgeHistoryOnlyCompany,
       findRuntimeCompanyRecord,
+      // v2.0.50: mutation API (create/update/delete/import) 完了直後にダッシュ
+      //   ボードのインメモリキャッシュを即時無効化するため。
+      //   旧仕様: fs watcher の debounce (500ms) を待ってから invalidate → その間
+      //          GET /api/dashboard は古いキャッシュを返し、UI が「削除したのに残って
+      //          いる」「送信したのに表示されない」と誤認する事象が報告されていた。
+      invalidateDashboardDataCache,
     });
   }
   return _settingsApiDispatch;

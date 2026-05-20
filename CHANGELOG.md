@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.0.50 - 2026-05-20 — Claude /login 認証保持 + UI キャッシュ即時無効化 + CLI 操作ヒント
+
+ユーザー報告 3 点に対する修正リリース:
+
+1. **Claude のログイン状態が次回起動時に消える** — Sales Claw 内で `/login`
+   しても再起動するたびに「Please run /login」が出る
+2. **企業を削除しても復元される / 送信記録が表示されない** — UI が古い
+   キャッシュを表示するため、削除/送信完了が見えないことがある
+3. **CLI ターミナルで `/` を押すと `/add-dir` が入力されてしまう** —
+   Claude Code の補完候補をユーザーが誤って確定する事故
+
+### 修正内容
+
+- **`prepareClaudeManagedHome` の認証保持**
+  (`src/dashboard-server.ts`) — 旧仕様では起動毎に realHome (ホスト OS の
+  `~/.claude`) の値で managed home (`%APPDATA%/sales-claw/.../provider-homes/claude/`)
+  の `.credentials.json` / `.claude/settings.json` / `.claude.json` を
+  全上書きしていた → Sales Claw 内で `/login` した結果が次回起動で消失。
+  新仕様: managed 側に既存値があれば優先し、`mcpServers` / `projects[projectKey]`
+  / `hooks` / `autoUpdates` / `plugins` の Sales Claw 管理項目のみ上書き。
+- **mutation API でダッシュボード in-memory キャッシュを即時無効化**
+  (`src/routes/settings-api.ts`, `src/dashboard-server.ts`) —
+  bulk-delete / delete / update / create / import / outreach-targets-update
+  ハンドラで `notifyClients` 直前に `invalidateDashboardDataCache()` を呼ぶ。
+  旧仕様: fs watcher の debounce (500ms) を待ってからキャッシュが破棄され、
+  その間 GET /api/dashboard は古い結果を返していた → UI が「削除したのに
+  残ってる」「送信したのに表示されない」と誤認していた。
+- **`removeCompanyLogs` の race 修正** (`src/action-logger.ts`) —
+  旧仕様: `logCache.signature = null` してから `loadLog()` で disk 再読込
+  → debounce flush 待ちの他社の新規ログを失う可能性。新仕様: 削除前に
+  必ず `flushNow()` で pending を確定 → in-memory cache から filter。
+- **CLI 操作ヒント** (`src/ui/client-scripts/cli-terminal.ts`) — Claude 起動
+  直後に「`/` でコマンドメニュー、ESC か Backspace で取り消し」を案内する
+  banner を term に出力。`/add-dir` 誤確定への教育的対策。
+
+### 影響範囲
+
+- 変更ファイル: `src/dashboard-server.ts`, `src/routes/settings-api.ts`,
+  `src/action-logger.ts`, `src/ui/client-scripts/cli-terminal.ts`,
+  `package.json`, `package-lock.json`, `CHANGELOG.md`
+- 既存 managed home を使い続けるので 2.0.49 → 2.0.50 アップグレード時に
+  ユーザーの再 `/login` は不要 (managed 側に credentials が残っていれば優先)。
+
 ## 2.0.49 - 2026-05-20 — Phase A 認証失効時の即時 abort (401 ループ解消)
 
 実機ログで「自動再起動を停止しました」WRN の後も Phase A workers が次々と

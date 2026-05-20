@@ -73,7 +73,18 @@ module.exports = function createSettingsApiRoutes(ctx) {
     loadData,
     purgeHistoryOnlyCompany,
     findRuntimeCompanyRecord,
+    invalidateDashboardDataCache,
   } = ctx;
+
+  // v2.0.50: 削除/更新/追加/インポート完了直後にダッシュボードのインメモリ
+  // キャッシュを即時無効化する。fs watcher の debounce (500ms) 待ちで UI が
+  // 古い表示のまま「削除したのに残ってる」と見えるバグの対策。
+  // 旧 ctx に未注入なら no-op で degrade。
+  function invalidateNow(): void {
+    if (typeof invalidateDashboardDataCache === 'function') {
+      try { invalidateDashboardDataCache(); } catch { /* best-effort */ }
+    }
+  }
 
   // ---------- 各ハンドラ関数 ----------
 
@@ -135,6 +146,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       if (imported.sections.valuePropositions) {
         settings.replaceSection('valuePropositions', imported.sections.valuePropositions);
       }
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'settings-excel-imported', time: Date.now() });
       jsonResponse(res, 200, {
         ok: true,
@@ -220,6 +232,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'settings-saved', time: Date.now() });
       jsonResponse(res, 200, { ok: true, data: settings.getSection(section) });
     } catch (e) {
@@ -333,6 +346,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'target-list-imported', time: Date.now() });
       notifyClients({ type: 'target-list-validation-deferred', reason: 'target-list-imported', time: Date.now() });
       jsonResponse(res, 200, { ok: true, validationDeferred: true, ...imported });
@@ -367,6 +381,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'company-added', time: Date.now() });
       jsonResponse(res, 200, { ok: true, company: created.company, targetPath: created.targetPath });
     } catch (e) {
@@ -438,6 +453,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'company-bulk-deleted', time: Date.now() });
       jsonResponse(res, 200, {
         ok: true,
@@ -470,6 +486,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'company-updated', time: Date.now() });
       jsonResponse(res, 200, { ok: true, company: updated.company, targetPath: updated.targetPath });
     } catch (e) {
@@ -501,6 +518,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
       }], false);
 
       refreshWatchTargets();
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'company-deleted', time: Date.now() });
       jsonResponse(res, 200, { ok: true, company: removed.company, targetPath: removed.targetPath });
     } catch (e) {
@@ -530,6 +548,7 @@ module.exports = function createSettingsApiRoutes(ctx) {
         companyName: company.companyName,
       }));
       setTargets(targets, active);
+      invalidateNow();
       notifyClients({ type: 'update', reason: 'outreach-targets-updated', time: Date.now() });
       jsonResponse(res, 200, { ok: true, count: targets.length, active });
     } catch (e) {

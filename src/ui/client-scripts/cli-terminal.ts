@@ -775,6 +775,17 @@ const SCRIPT = `(function(){
       }
       currentProvider = provider;
       connectWs();
+      // v2.0.50: Claude のスラッシュコマンドメニュー (/add-dir, /login, ...) を
+      // ユーザーが誤って確定する事故防止のためのヒント。term が準備できていれば
+      // 起動直後に banner を出す (Claude welcome 表示の上書きにはならない位置)。
+      if (term && provider === 'claude') {
+        try {
+          term.writeln('\\r\\n\\x1b[36m[操作ヒント]\\x1b[0m \\x1b[2m'
+            + '"/" でコマンドメニューが開きます (例: \\x1b[0m\\x1b[2m/login)。'
+            + '誤って表示された候補 (例: /add-dir) を取り消すには \\x1b[1mESC\\x1b[0m'
+            + '\\x1b[2m か \\x1b[1mBackspace\\x1b[0m\\x1b[2m を押してください。\\x1b[0m');
+        } catch (_) {}
+      }
     } catch (e) {
       if (e && e.name === 'AbortError') {
         var reasonText = launchAbortReason === 'timeout' ? 'launch timed out' : 'launch cancelled';

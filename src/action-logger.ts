@@ -307,8 +307,15 @@ export function removeCompanyLogs(companyNo: number | string): number {
   const lockFile = acquireFileLock(filePath);
   try {
     const key = String(companyNo);
-    logCache.signature = null;
-    const entries = loadLog();
+    // v2.0.50: signature=null → loadLog で disk 再読込すると、debounce flush 待ち
+    // の他社の新規ログ (submitted など) を失う事故があった。
+    // 削除前に必ず pending flush を実行 → 以降は in-memory cache から filter する。
+    if (_pendingFlush || _flushTimer) {
+      try { flushNow(); } catch { /* keep going — best effort */ }
+    }
+    const entries = logCache.data && logCache.data.length > 0
+      ? logCache.data
+      : loadLog();
     const remaining = entries.filter((entry: any) => String(entry.companyNo) !== key);
     const removedCount = entries.length - remaining.length;
     if (removedCount > 0) {
