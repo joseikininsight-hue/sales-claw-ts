@@ -40,7 +40,11 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     lines.push('- 1社ずつ処理し、結果報告は簡潔にする');
   } else {
     lines.push(
-      `- ★ タブ並列 pipeline 許可 (最大 ${tabs} 並列): browser_navigate を発行したら snapshot を待たずに、次の会社のタブを window.open / browser_tabs で開いてさらに navigate を発行してよい。両方の navigate 完了を待ってから browser_snapshot → browser_fill_form の順で進める。同時に 4 社以上のタブを開いてはいけない (Claude の状態管理が混乱する)。各社の入力・スクショ・ログ記録は会社単位で完結させ、混同しない。会社ごとの awaiting_approval / submitted ログには finalFormTab URL を含める。\n- pipeline で進めるのはサイト到達 / form 発見 / form_fill の navigation 待ち局面のみ。CAPTCHA 解析・本文生成は 1 社ずつ集中する`,
+      `- ★ タブ並列 pipeline (最大 ${tabs} 並列): 起動直後にまず ${tabs} 社分のタブを browser_evaluate(window.open) / browser_tabs で立て続けに開き、それぞれの form URL (formUrl 未解決なら公式トップ → contact path) に並行 navigate せよ。navigate を発行したら次の社の navigate に進み、待ち時間をオーバーラップさせる`,
+      `- 同時に ${tabs + 1} 社以上のタブを開かない (Claude の状態管理が混乱する)。各社の入力・スクショ・ログ記録は会社単位で完結させて混同しない`,
+      `- 全社の navigate 完了後、browser_snapshot → browser_fill_form → browser_take_screenshot → curl /api/log-action を社順に進める。snapshot は社ごとに最小限の呼び出しで済ませる (form 構造把握用 1 回 + 確認画面確認 1 回が標準)`,
+      `- pipeline で並行できるのは navigate / 待機局面のみ。CAPTCHA 解析・本文生成・最終送信判断は 1 社ずつ集中する`,
+      `- 会社ごとの awaiting_approval / submitted ログには finalFormTab URL を含める`,
     );
   }
 

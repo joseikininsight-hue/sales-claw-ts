@@ -125,13 +125,31 @@ const SCRIPT = `(function(){
       // xterm.js not loaded yet — defer a tick
       return null;
     }
+    // v2.0.52: VS Code 同等品質の Terminal 設定。
+    //   - fontFamily: VS Code 既定 ("Cascadia Code" → "Menlo" → fallback)。
+    //   - fontSize 13.5 / lineHeight 1.15: ASCII と日本語の高さ揃え、表示崩れ抑制。
+    //   - allowProposedApi: unicode11 / web-links が proposed API を使うため必須。
+    //   - cursorStyle 'bar' + cursorWidth 2: VS Code 同等の細いカーソル。
+    //   - drawBoldTextInBrightColors: false: 太字を「色」で表現しない → 表示崩れ防止。
+    //   - scrollOnUserInput: ユーザー入力で下までスクロール (Claude の paste banner 時に上に戻る問題対策)
+    //   - rightClickSelectsWord: VS Code 同等の選択挙動。
+    //   - macOptionIsMeta: false (Win/Linux 中心なので影響なし)。
+    //   - windowsMode (Windows): ConPTY との改行整合。windows-pty wrap 不要だが文字幅計算で安定。
     term = new window.Terminal({
       cursorBlink: true,
-      fontFamily: '"JetBrains Mono","Fira Code",ui-monospace,monospace',
-      fontSize: 13,
-      lineHeight: 1.2,
-      scrollback: 5000,
+      cursorStyle: 'bar',
+      cursorWidth: 2,
+      fontFamily: '"Cascadia Code","JetBrains Mono","Fira Code","Menlo","Consolas",ui-monospace,monospace',
+      fontSize: 13.5,
+      lineHeight: 1.15,
+      letterSpacing: 0,
+      scrollback: 10000,
       convertEol: true,
+      allowProposedApi: true,
+      drawBoldTextInBrightColors: false,
+      rightClickSelectsWord: true,
+      scrollOnUserInput: true,
+      windowsMode: (navigator.platform || '').toLowerCase().indexOf('win') === 0,
       theme: {
         background: '#0b0e14',
         foreground: '#e6edf3',
@@ -153,7 +171,93 @@ const SCRIPT = `(function(){
       } catch (_) {}
     }
 
+    // v2.0.52: web-links addon を追加。URL に hover で下線、Ctrl+Click で外部ブラウザ起動。
+    if (window.WebLinksAddon && window.WebLinksAddon.WebLinksAddon) {
+      try {
+        var webLinks = new window.WebLinksAddon.WebLinksAddon(function(event, uri) {
+          // Sales Claw は Electron なので window.open は外部ブラウザに引き渡される
+          try { window.open(uri, '_blank', 'noopener,noreferrer'); } catch (_) {}
+        });
+        term.loadAddon(webLinks);
+      } catch (e) { console.warn('[cli-terminal] WebLinksAddon load failed:', e && e.message || e); }
+    }
+
+    // v2.0.52: search addon (Ctrl+F でターミナル内検索)
+    var searchAddon = null;
+    if (window.SearchAddon && window.SearchAddon.SearchAddon) {
+      try {
+        searchAddon = new window.SearchAddon.SearchAddon();
+        term.loadAddon(searchAddon);
+      } catch (e) { console.warn('[cli-terminal] SearchAddon load failed:', e && e.message || e); }
+    }
+
+    // v2.0.52: unicode11 addon (絵文字・全角文字幅を正しく計算 → 表示崩れ防止)
+    if (window.Unicode11Addon && window.Unicode11Addon.Unicode11Addon) {
+      try {
+        term.loadAddon(new window.Unicode11Addon.Unicode11Addon());
+        if (term.unicode && typeof term.unicode === 'object') {
+          term.unicode.activeVersion = '11';
+        }
+      } catch (e) { console.warn('[cli-terminal] Unicode11Addon load failed:', e && e.message || e); }
+    }
+
     term.open(refs.host);
+
+    // v2.0.52: コピペ品質改善。
+    //   - 選択直後に Ctrl+C で clipboard コピー、空選択時は SIGINT を PTY へ送る。
+    //   - Ctrl+V / Ctrl+Shift+V で clipboard 貼り付け (xterm の bracketed paste で安全)。
+    //   - 右クリックで「コピーがあればコピー、無ければ貼り付け」(VS Code/Windows Terminal 互換)
+    term.attachCustomKeyEventHandler(function(ev) {
+      // Ctrl+C
+      if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && (ev.key === 'c' || ev.key === 'C')) {
+        var sel = term.getSelection();
+        if (sel && sel.length > 0) {
+          try { navigator.clipboard.writeText(sel); } catch (_) {}
+          term.clearSelection();
+          return false; // PTY に Ctrl+C は送らない
+        }
+        return true; // 空選択なら通常通り SIGINT 送信
+      }
+      // Ctrl+V / Ctrl+Shift+V → paste
+      if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && (ev.key === 'v' || ev.key === 'V')) {
+        try {
+          navigator.clipboard.readText().then(function(text) {
+            if (text && ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'input', data: text }));
+            }
+          });
+        } catch (_) {}
+        return false;
+      }
+      // Ctrl+F → 検索 (将来用、現状は browser native の find はターミナルに効かないので何もしない)
+      if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && (ev.key === 'f' || ev.key === 'F')) {
+        if (searchAddon && typeof searchAddon.findNext === 'function') {
+          var q = window.prompt('ターミナル内検索:');
+          if (q) {
+            try { searchAddon.findNext(q, { caseSensitive: false, regex: false, wholeWord: false }); } catch (_) {}
+          }
+          return false;
+        }
+      }
+      return true;
+    });
+    // 右クリック: 選択ありならコピー、無ければ paste
+    refs.host.addEventListener('contextmenu', function(ev) {
+      ev.preventDefault();
+      var sel = term.getSelection();
+      if (sel && sel.length > 0) {
+        try { navigator.clipboard.writeText(sel); } catch (_) {}
+        term.clearSelection();
+      } else {
+        try {
+          navigator.clipboard.readText().then(function(text) {
+            if (text && ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'input', data: text }));
+            }
+          });
+        } catch (_) {}
+      }
+    });
 
     // Restore saved height
     try {
@@ -234,8 +338,23 @@ const SCRIPT = `(function(){
       }
     });
 
+    // v2.0.52: リサイズ debounce。コンテナのサイズ変動が連続で来た時に
+    //   fit() を毎回呼ぶと描画が乱れる (1 フレーム内に複数 fit が走るとカーソル
+    //   位置がズレることがある)。次フレームに 1 回だけ fit する。
+    var roPending = null;
     var ro = new ResizeObserver(function(){
-      try { fitAddon && fitAddon.fit(); } catch(_){}
+      if (roPending) return;
+      roPending = requestAnimationFrame(function() {
+        roPending = null;
+        try {
+          if (fitAddon) {
+            fitAddon.fit();
+            if (ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+            }
+          }
+        } catch(_){}
+      });
     });
     ro.observe(refs.host);
 

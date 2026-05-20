@@ -258,6 +258,20 @@ function bundleJsLibraries() {
     const src = path.join(pkgRoot, 'lib', 'xterm-addon-fit.js');
     if (fs.existsSync(src)) copyFile(src, path.join(JS_DIR, 'xterm-addon-fit.js'), 'js/xterm-addon-fit.js');
   }
+
+  // v2.0.52: VS Code 同等品質を目指してアドオンを追加。
+  //   - web-links: URL を hover/click 可能にする (Claude /login URL のコピペ問題対策)
+  //   - search: Ctrl+F でターミナル内検索
+  //   - unicode11: 絵文字・全角文字幅を正しく計算 (表示崩れ対策)
+  for (const addon of ['xterm-addon-web-links', 'xterm-addon-search', 'xterm-addon-unicode11']) {
+    try {
+      const pkgRoot = packageRoot(addon);
+      const src = path.join(pkgRoot, 'lib', `${addon}.js`);
+      if (fs.existsSync(src)) copyFile(src, path.join(JS_DIR, `${addon}.js`), `js/${addon}.js`);
+    } catch (_) {
+      // optional addon: 未インストールでも build を止めない
+    }
+  }
 }
 
 // ──────────────────────────────────────────────────────────────

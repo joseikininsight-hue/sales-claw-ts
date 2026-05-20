@@ -35,7 +35,11 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     lines.push('- Process companies one at a time and keep status reports concise.');
   } else {
     lines.push(
-      `- ★ Tab-parallel pipeline allowed (max ${tabs} tabs in flight): after issuing browser_navigate, you may open the next company\'s tab via window.open / browser_tabs and issue a navigate without waiting for the snapshot. Wait for both navigations to settle, then run browser_snapshot → browser_fill_form. Never have more than 4 tabs open simultaneously (Claude\'s state tracking breaks down). Keep each company\'s input, screenshot, and log strictly per-company. Each company\'s awaiting_approval / submitted log MUST include the finalFormTab URL.\n- Pipelining is only allowed for navigation-bound steps (site reach / form discovery / form_fill navigation wait). CAPTCHA analysis and body generation must be done one company at a time.`,
+      `- ★ Tab-parallel pipeline (max ${tabs} tabs in flight): at session start, open ${tabs} company tabs back-to-back via browser_evaluate(window.open) / browser_tabs and issue navigate to each formUrl (fall back to official homepage → contact path when formUrl is unresolved) so the navigations overlap.`,
+      `- Never have more than ${tabs + 1} tabs open simultaneously (Claude's state tracking breaks down). Keep each company's input, screenshot, and log strictly per-company.`,
+      `- Once all navigations settle, walk through the companies in order: browser_snapshot → browser_fill_form → browser_take_screenshot → curl /api/log-action. Use the minimum snapshots per company (one for structure, one for confirmation screen is the norm).`,
+      `- Pipelining is only allowed for navigation-bound steps / waits. CAPTCHA analysis, body generation, and final-send decisions must be done one company at a time.`,
+      `- Each company's awaiting_approval / submitted log MUST include the finalFormTab URL.`,
     );
   }
 

@@ -286,24 +286,62 @@ function getManagedAiFormBatchSize(): number {
 
 // v2.0.26: Phase B 内のタブ並列度 (1 Playwright + 1 Claude PTY が pipeline で
 // 進めるタブ数)。1 = 直列、2-3 でナビゲーション待ちオーバーラップ。
+//
+// v2.0.51: デフォルトを「auto」に変更。
+//   旧仕様 (=1): 3 社バッチでも逐次処理 → 1社 2-3 分 × 3 = 6-9 分。
+//     実測 (ai-run-metrics.jsonl) で中央値 160 秒/社 × 3 = 480 秒 (8 分)。
+//   新仕様 (=auto): ユーザー明示設定なしなら batchSize に応じて
+//     Math.min(batchSize, MAX_PHASE_B_PARALLEL_TABS) に自動拡張。
+//     3 社バッチなら 3 並列 → 理論上 1/3 の時間 (≈ 2-3 分) で完走。
+//   3 並列のリソース競合リスクはあるが、batch_rules で
+//     「同時に 4 社以上のタブを開いてはいけない」と CLI 側に明示しており、
+//     実機運用 (parallelTabs=3 を手動設定したユーザー) でも安定動作している。
 const DEFAULT_PHASE_B_PARALLEL_TABS = 1;
 const MIN_PHASE_B_PARALLEL_TABS = 1;
 const MAX_PHASE_B_PARALLEL_TABS = 3;
-function getPhaseBParallelTabs(): number {
+
+/**
+ * ユーザー明示設定がある場合は数値で、未設定なら 'auto' を返す。
+ * 後段で batchSize を加味して resolve する。
+ */
+function readPhaseBParallelTabsRaw(): number | 'auto' {
   let raw: any = null;
   try {
     const prefs = settings.getSection('preferences') || {};
-    if (prefs.parallelTabs !== undefined && prefs.parallelTabs !== null) {
+    if (prefs.parallelTabs !== undefined && prefs.parallelTabs !== null && prefs.parallelTabs !== '') {
       raw = prefs.parallelTabs;
     }
   } catch (_) { /* swallow */ }
   if (raw === null && process.env.SALES_CLAW_PHASE_B_PARALLEL_TABS) {
     raw = process.env.SALES_CLAW_PHASE_B_PARALLEL_TABS;
   }
-  if (raw === null || raw === undefined || raw === '') return DEFAULT_PHASE_B_PARALLEL_TABS;
+  if (raw === null || raw === undefined || raw === '') return 'auto';
+  if (typeof raw === 'string' && /^auto$/i.test(raw.trim())) return 'auto';
   const n = Number(raw);
-  if (!Number.isFinite(n)) return DEFAULT_PHASE_B_PARALLEL_TABS;
+  if (!Number.isFinite(n)) return 'auto';
   return Math.max(MIN_PHASE_B_PARALLEL_TABS, Math.min(MAX_PHASE_B_PARALLEL_TABS, Math.floor(n)));
+}
+
+/**
+ * バッチサイズに応じて最終的な parallel tab 数を決定する。
+ * - 'auto' (default): min(batchSize, MAX) — 3 社バッチなら 3 並列
+ * - 明示数値: そのまま (1〜3 にクランプ済み)
+ * - batchSize を渡せない呼び出し (UI 表示用など) は legacy 動作で 1 を返す
+ */
+function resolvePhaseBParallelTabs(batchSize?: number): number {
+  const raw = readPhaseBParallelTabsRaw();
+  if (raw === 'auto') {
+    if (!Number.isFinite(batchSize) || (batchSize as number) <= 0) {
+      return DEFAULT_PHASE_B_PARALLEL_TABS;
+    }
+    return Math.max(MIN_PHASE_B_PARALLEL_TABS, Math.min(MAX_PHASE_B_PARALLEL_TABS, Math.floor(batchSize as number)));
+  }
+  return raw;
+}
+
+// 旧 API: batchSize 不明な呼び出し向け (UI 表示・診断ログ用)。
+function getPhaseBParallelTabs(): number {
+  return resolvePhaseBParallelTabs(undefined);
 }
 
 const MANAGED_AI_BATCH_POLL_MS = 5000;
@@ -5560,6 +5598,9 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
 
   // Phase 3: batch_rules を Locale Pack から取得する。
   // 多数決で決まった batchLocale を採用する (バッチ内の社数比率で ja/en 切替)。
+  // v2.0.51: parallelTabs を batchSize に応じて auto-resolve するため、ここで
+  // companies.length を渡す。3 社バッチなら 3 並列指示が batch_rules に入る。
+  const effectiveParallelTabs = resolvePhaseBParallelTabs(Array.isArray(companies) ? companies.length : 0);
   let batchRuleLines: string[] = [];
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -5568,7 +5609,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     if (pack && pack.cliPrompts && typeof pack.cliPrompts.buildBatchRules === 'function') {
       batchRuleLines = pack.cliPrompts.buildBatchRules({
         autoSendSafe,
-        parallelTabs: getPhaseBParallelTabs(),
+        parallelTabs: effectiveParallelTabs,
       });
     }
   } catch (_) { /* Locale Pack 不在時は ja パックを再試行する */ }
@@ -5580,7 +5621,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
       if (pack && pack.cliPrompts && typeof pack.cliPrompts.buildBatchRules === 'function') {
         batchRuleLines = pack.cliPrompts.buildBatchRules({
           autoSendSafe,
-          parallelTabs: getPhaseBParallelTabs(),
+          parallelTabs: effectiveParallelTabs,
         });
       }
     } catch (_) { /* 最終 fallback は空配列 */ }
@@ -6981,6 +7022,10 @@ function buildPage() {
 <link rel="stylesheet" href="/assets/vendor/js/xterm.css">
 <script src="/assets/vendor/js/xterm.js" defer></script>
 <script src="/assets/vendor/js/xterm-addon-fit.js" defer></script>
+<!-- v2.0.52: VS Code 同等品質のためのアドオン -->
+<script src="/assets/vendor/js/xterm-addon-web-links.js" defer></script>
+<script src="/assets/vendor/js/xterm-addon-search.js" defer></script>
+<script src="/assets/vendor/js/xterm-addon-unicode11.js" defer></script>
 <style>
 ${renderStyles()}
 </style>

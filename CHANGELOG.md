@@ -1,5 +1,79 @@
 # Changelog
 
+## 2.0.52 - 2026-05-20 — ターミナル品質を VS Code 水準に引き上げ
+
+ユーザー報告: 「表示崩れが起きる」「コマンド打った時にまた表示崩れする」
+「ログインした時の URL が押しづらい・コピペしづらい」「VS Code Editor のター
+ミナルくらい使えるようにしたい」。本リリースで xterm.js に標準アドオン群を
+追加し、VS Code が使っているものと同等の構成に揃えた。
+
+### 修正内容
+
+- **WebLinksAddon を追加** (`src/ui/client-scripts/cli-terminal.ts`,
+  `assets/vendor/js/xterm-addon-web-links.js`) — URL を hover で下線、
+  クリックで外部ブラウザを開く。Claude の `/login` 案内 URL がコピペでき
+  ない問題を解消。
+- **Unicode11Addon を追加** — 絵文字・全角文字の文字幅を Unicode 11 仕様で
+  計算。日本語混在ターミナルの表示崩れを大幅軽減。
+- **SearchAddon を追加 + Ctrl+F バインド** — `Ctrl+F` でプロンプト経由の
+  ターミナル内検索。
+- **コピペ品質の改善** — `Ctrl+C` は選択時にコピー / 空選択時に SIGINT、
+  `Ctrl+V` で clipboard 貼り付け (bracketed paste 経由)、右クリックは
+  VS Code / Windows Terminal 同等の「選択ありならコピー、なければ貼り付け」。
+- **xterm 設定を VS Code 同等に** —
+  - フォント: `"Cascadia Code","JetBrains Mono","Fira Code","Menlo","Consolas"` の優先順位
+  - fontSize 13.5 / lineHeight 1.15 (ASCII と日本語の高さ揃え)
+  - cursorStyle 'bar' + cursorWidth 2 (細いカーソル)
+  - drawBoldTextInBrightColors=false (太字を「色」で表現しない → 表示崩れ防止)
+  - scrollback 10000 / scrollOnUserInput / rightClickSelectsWord
+  - allowProposedApi=true (Unicode11 / WebLinks に必要)
+  - Windows では `windowsMode: true` (ConPTY との整合)
+- **リサイズ debounce** — ResizeObserver の連発で fit() を毎フレーム呼ぶと
+  カーソル位置がズレる事象に対応。`requestAnimationFrame` で 1 フレーム
+  1 回に抑えてリサイズイベントを集約。
+- **build-assets.ts に新規アドオン copy を追加** — オフライン同梱を維持。
+
+### 互換性
+
+- 既存セッション・PTY ロジックには触れていない。アドオン読込が失敗した
+  場合も既存の素の xterm.js + FitAddon は動く (graceful degradation)。
+- `Ctrl+C` の挙動が変わるが、空選択時は従来どおり PTY に SIGINT が届く。
+  選択中の `Ctrl+C` だけがクリップボードコピーに割り当てられる。
+
+## 2.0.51 - 2026-05-20 — Phase B 並列化 (3 社バッチを本領発揮)
+
+実機メトリクス分析 (`ai-run-metrics.jsonl` 101 batch / 中央値 160 秒/社) で
+3 社バッチが 6-10 分かかっている原因を特定。Phase B (フォーム入力) の
+`parallelTabs` が default=1 のまま逐次処理されていたため、3 社分を順番に
+進めていた。本リリースでバッチサイズに応じて並列度を自動拡張する。
+
+### 修正内容
+
+- **`parallelTabs` の default を `auto` 化** (`src/dashboard-server.ts`) —
+  ユーザー明示設定がない場合は `Math.min(batchSize, 3)` を採用。
+  3 社バッチなら 3 並列、5 社バッチでも上限 3 並列で navigate 待ち時間を
+  オーバーラップ。明示設定 (`preferences.parallelTabs` / 環境変数
+  `SALES_CLAW_PHASE_B_PARALLEL_TABS`) があればそちらを優先する。
+- **batch_rules の並列指示を強化** (`src/locale-pack/ja/cli-prompts.ts`,
+  `src/locale-pack/en/cli-prompts.ts`) — 「起動直後にまず N 社分のタブを
+  立て続けに開いて navigate を並行発行」「各社の入力・スクショ・ログは
+  会社単位で完結」「snapshot は社ごとに最小限 (form 構造 1 回 + 確認画面
+  1 回が標準)」を明示。CLI が pipeline を正しく組めるよう書き直した。
+
+### 期待効果
+
+- 3 社バッチ 実測 8 分 → 並列化後 3-4 分 (理論上の最善は 1/3 だが、Claude
+  の context は 1 つなので navigate 待ち時間のオーバーラップ分のみが効く)。
+- 5-10 社バッチでも上限 3 並列のため極端な競合は発生せず、安定動作を維持。
+- リソース競合リスクは batch_rules で「同時に N+1 社以上のタブを開かない」
+  ガードを CLI に渡しているため小さい。
+
+### 互換性
+
+- 既存ユーザーで `preferences.parallelTabs` を明示設定している場合は
+  変更なし (=1 のままなら逐次のまま、=2 や 3 なら従来通り並列)。
+- 1 社バッチではこれまでと同じ「逐次・最小プロンプト」で動作する。
+
 ## 2.0.50 - 2026-05-20 — Claude /login 認証保持 + UI キャッシュ即時無効化 + CLI 操作ヒント
 
 ユーザー報告 3 点に対する修正リリース:
