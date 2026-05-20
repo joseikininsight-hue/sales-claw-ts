@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.0.53 - 2026-05-20 — MCP Playwright pre-check + Phase B prompt 圧縮
+
+ユーザー報告: 「3 社処理してログが残らない」「動かしてもダッシュボードに何も
+記録されない」。実機 managed_home (`%APPDATA%/sales-claw/runtime/data/
+provider-homes/claude/.claude/settings.json`) を確認したところ
+`mcpServers: {}` が空のままだった。`response.md` にも 過去に「MCP Playwright
+サーバーが接続されていません」エラーが Claude から返っていた痕跡があり、
+これが「ログが残らない」の根本原因と特定。
+
+### 修正内容
+
+- **Claude のフォーム入力前に MCP 登録を必ず verify**
+  (`src/dashboard-server.ts`) — 旧仕様では `['codex', 'gemini']` のみ
+  事前チェック対象で、Claude は startManagedAiSession 内でしか
+  `ensureProviderPlaywrightMcp` を呼ばなかった。claudePty が既起動で
+  startManagedAiSession がスキップされるパスでは MCP 確認が一切走らず、
+  managed_home の `mcpServers:{}` が空のまま Claude が起動し続け、
+  バッチ送信時に「MCP 未接続」error response → curl /api/log-action
+  も叩かれず、ダッシュボードに一切ログが残らない事故が発生していた。
+  新仕様: ai-form-fill 投入直前に Claude も含めて mcp list を verify、
+  未登録なら `claude mcp add --scope user` で書き込む。さらに新規 add
+  した際に PTY が既起動中なら snapshot 保存 → PTY 張り直しで新設定を反映。
+- **Phase B 初回プロンプトの instructions + curl 例を圧縮**
+  (`src/dashboard-server.ts`) — 旧仕様は 13 行の instructions + 4 種類の
+  curl 例 (各 200+ chars) で計 ~3500 chars。session_contract と重複する
+  CAPTCHA / awaiting_approval ルールを除去し、curl も 1 テンプレ + JSON
+  差し替え形式に統一して ~1200 chars に圧縮。Phase B prompt 中央値
+  13K chars → 10.7K chars 目標。
+
+### 期待効果
+
+- 3 社処理が「実行したのにログ無し」の事故が消える (= MCP 確実に有効化)
+- Phase B プロンプトが ~17% 削減 → Claude 入力トークン約 2300 chars 短縮
+- v2.0.51 の parallelTabs auto と組み合わせて、3 社バッチ 8 分が
+  3-4 分台に到達することを期待
+
+### 互換性
+
+- 既存 managed_home に MCP が正しく登録済みの環境では PTY 再起動なし。
+- 未登録環境は初回フォーム入力時に 1 度だけ PTY 自動張り直しが入る
+  (10-15 秒、ログにも警告として出る)。
+- 2 回目以降のバッチは contract injection と同じく省略経路でそのまま動作。
+
 ## 2.0.52 - 2026-05-20 — ターミナル品質を VS Code 水準に引き上げ
 
 ユーザー報告: 「表示崩れが起きる」「コマンド打った時にまた表示崩れする」

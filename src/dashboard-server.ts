@@ -5035,16 +5035,48 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && claudePty && managedProviderId === selectedProviderId) {
     await restartManagedAiSessionForAuthRefresh(selectedProviderId);
   }
-  if (['codex', 'gemini'].includes(selectedProviderId)) {
-    const playwrightSetup: any = await ensureProviderPlaywrightMcp(selectedProviderId, {
-      env: buildManagedProviderEnv(selectedProviderId),
+  // v2.0.53: Claude も MCP 事前チェックに含める。
+  //   旧仕様: Claude は startManagedAiSession 内でしか ensureProviderPlaywrightMcp
+  //          を呼ばない → claudePty が既に起動済みだと MCP 登録確認を完全に
+  //          スキップしてしまう → managed_home/.claude/settings.json が mcpServers={}
+  //          のままだとフォーム入力時に Claude が「MCP Playwright サーバーが
+  //          接続されていません」と error response を返し、curl /api/log-action
+  //          も叩かれず、ダッシュボードに一切ログが残らない事故が発生していた。
+  //          (実機 managed_home の settings.json を確認したところ mcpServers:{} だった)
+  //   新仕様: ai-form-fill 投入直前に claude も含めて必ず MCP 登録状態を verify。
+  //          未登録なら claude mcp add で再登録 → settings.json に書き込まれる。
+  //          さらに「新規 add した」かつ「Claude PTY が既に動作中」なら、新しい
+  //          MCP 設定を反映するため PTY を自動で張り直す。
+  const playwrightSetup: any = await ensureProviderPlaywrightMcp(selectedProviderId, {
+    env: buildManagedProviderEnv(selectedProviderId),
+  });
+  if (!playwrightSetup.ok) {
+    return {
+      ok: false,
+      statusCode: 409,
+      error: playwrightSetup.error || `${provider.displayName} の MCP Playwright 設定に失敗しました。`,
+    };
+  }
+  if (playwrightSetup.added && claudePty && getManagedAiProvider() === selectedProviderId) {
+    appendDiagnosticEvent('managed_ai_mcp_registered_restart', {
+      provider: selectedProviderId,
+      reason: 'mcp_playwright_added_after_pty_started',
     });
-    if (!playwrightSetup.ok) {
-      return {
-        ok: false,
-        statusCode: 409,
-        error: playwrightSetup.error || `${provider.displayName} の MCP Playwright 設定に失敗しました。`,
-      };
+    emitClaudeAutomationLog(
+      `[MCP 設定更新検知] ${provider.displayName} の Playwright MCP を新規登録したため、managed セッションを張り直します。\n`,
+      'system',
+      selectedProviderId,
+    );
+    const recovery = snapshotManagedAiBatchesForRecovery();
+    managedAiRecoveryState = recovery ? { ...recovery, retries: 0, inFlight: false } : null;
+    await stopManagedClaudePty({ suppressAutoRecovery: true });
+    if (managedAiRecoveryState) {
+      await tryRecoverManagedAiSession('mcp-refresh');
+    } else {
+      await startManagedAiSession(claudeProcessMode || provider.defaultMode || 'auto', selectedProviderId, {
+        allowReuse: false,
+        autoSendSafe: managedAiAutoSendSafe,
+      });
     }
   }
   const activeRun = getActiveHeadlessRun();
@@ -5746,43 +5778,33 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   // 約 1500 chars (~375 tokens) × 10 = 3750 tokens 節約 / 100 社あたり。
   // session contract と同じ思想で「最初の 1 バッチに instructions、以降は payload のみ」。
   const isFirstBatchInSession = needsSessionContract;
+  // v2.0.53: 初回バッチの instructions と curl 例を圧縮 (~2300 chars 削減)。
+  //   旧仕様: 13 行の instructions + 4 種類の curl 例 (各 200+ chars) = ~3500 chars
+  //   重複: session_contract と CAPTCHA / awaiting_approval ルールが二重定義されていた
+  //   新仕様: contract に無い差分 (urlMissing / messageCore / 進行報告) のみ instructions に残し、
+  //          curl は 1 つのテンプレートで details だけ差し替える形式に統一。
+  //          実機 prompt 中央値 13K chars → 10.7K chars 目標 (Phase B 全体 ~10% トークン削減)
+  const curlTemplate = `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${SALES_CLAW_SESSION}" -d '<JSON>' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`;
   const messageLines = isFirstBatchInSession ? [
-    `Sales Claw の batch payload を送ります。必ず ${provider.cliLabel} と MCP Playwright で実行してください。前回までの会話や未完了タスクは引き継がず、この batch だけを正として扱ってください。`,
-    'Phase A は backend 完了済みです。再分析・再生成・settings 更新はしないでください。',
-    'urlMissing=true の会社は WebSearch で「会社名 公式サイト」を検索し、公式ドメインを特定してからサイト確認→本文生成→フォーム入力を実行してください。公式サイトが見つからなければ error にしてください。',
-    'urlMissing=false かつ site_analysis が不十分な会社 (siteTextLength不足 / siteExcerpt空) はフォーム入力せず error にしてください。本文推測で進めてはいけません。',
-    'awaiting_approval / submitted はフォーム入力済み + ss-{No}-input.png 作成済み + form_fill → confirm_reached 記録済みの場合だけ許可です。',
-    'CAPTCHA / reCAPTCHA / ロボチェッカーが見つかったら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval にしてください。CAPTCHA は人間が解いて送信します。',
-    'visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は browser_click で 1 回だけ試行可。画像チャレンジが出たら諦めて awaiting_approval にしてください。',
-    'CAPTCHA を理由に error にするのは「フォームが表示されない」「Cloudflare 等のページゲートで本体に到達できない」場合だけです。フォーム無しは error / skipped。',
+    `Sales Claw batch payload。${provider.cliLabel} + MCP Playwright で実行。前回会話は引き継がず、この batch のみ実行。`,
+    'Phase A は backend 完了済み (再分析・再生成・settings 更新はしない)。',
+    'urlMissing=true → WebSearch で「会社名 公式サイト」検索 → 公式ドメイン特定 → サイト確認 → 本文生成 → フォーム入力。公式サイト不明なら error。',
+    'urlMissing=false かつ siteExcerpt 空 / 取得失敗 → 本文推測せず error。',
+    '本文は companies_jsonl の messageCore を基準に、sender_json の署名・送信停止案内・住所(ある場合)で補完。社員数・設立年・資本金など sender_json に無い値は推測しない。',
     autoSendSafe
-      ? 'CAPTCHA / 手動必須項目 / 営業NG / 不確実ケース以外は、できるだけ自動送信してください。送信できたら sent スクショを残してタブを閉じ、入力済みで人間判断が必要な場合だけ awaiting_approval にしてください。'
-      : '送信は行わず、awaiting_approval で止めてください。',
-    '本文は companies_jsonl の messageCore を基準に使い、必要なら sender_json の署名・送信停止案内・住所(ある場合)を補ってください。sender_json にない住所・社員数・設立年・資本金などは推測しないでください。',
-    '送信完了時は ss-{No}-sent.png を残し、submitted が明確なタブは閉じてください。',
-    '進行報告は簡潔にしてください。',
+      ? 'CAPTCHA / 手動必須項目 / 営業NG / 不確実以外は自動送信 → ss-{No}-sent.png → submitted。送信不要は ss-{No}-input.png → awaiting_approval。'
+      : '送信せず ss-{No}-input.png → awaiting_approval で停止。',
     '',
-    '★【ログ記録 (必須・省略不可)】',
-    '各社で terminal action (awaiting_approval / submitted / skipped / error) に到達したら、必ず以下の curl コマンドでローカル API にログ記録してください。これを実行しないと、ダッシュボードは 20 分後に自動で error 扱いします。',
-    '※ 1.2.91 セキュリティ強化: 旧 node -e shell 経路は廃止 (会社名のシェル注入を許容したため)。必ず /api/log-action 経由で送信してください。',
-    'awaiting_approval (CAPTCHA で人間に送信を委ねる / autoSendSafe=false):',
+    `★ ログ記録 (必須・省略不可、20 分無応答で auto-error 化)。テンプレ:`,
     '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由(CAPTCHA等)>","sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-input.png","tabKept":true}}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
+    curlTemplate,
     '```',
-    'submitted (autoSendSafe=true で送信完了):',
-    '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<実際にフォーム本文欄へ入力した全文>","screenshot":"ss-<No>-sent.png"}}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
-    '```',
-    'skipped (営業NG / dealBreaker 等):',
-    '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
-    '```',
-    'error (フォーム無し / 取得失敗等):',
-    '```',
-    `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${env.SALES_CLAW_SESSION}" -d '{"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`,
-    '```',
-    '<No> は companies_jsonl の no を直接、<会社名> は companies_jsonl の name を **JSON エスケープして** 入れてください (ダブルクォート/バックスラッシュ等)。SALES_CLAW_SESSION + SALES_CLAW_DASHBOARD_URL 環境変数は managed PTY 起動時に注入済み (v2.0.9+)。SALES_CLAW_DASHBOARD_URL が未設定の場合のみ 127.0.0.1:3765 を fallback として使ってください。',
-    'API 経由なのでシェル/SQL 注入リスクはありません。サーバー側で会社名・details は最大長 + 制御文字除去で安全に処理されます。',
+    '<JSON> 例 (action 別 details はこれだけ差し替える):',
+    `  awaiting_approval: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由>","sentMessage":"<入力本文全文>","screenshot":"ss-<No>-input.png","tabKept":true}}`,
+    `  submitted:         {"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<入力本文全文>","screenshot":"ss-<No>-sent.png"}}`,
+    `  skipped:           {"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}`,
+    `  error:             {"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}`,
+    '会社名は JSON エスケープ ("/\\)。SALES_CLAW_SESSION / SALES_CLAW_DASHBOARD_URL は PTY 起動時に env 注入済み。',
     '',
     '--- BEGIN SALES CLAW BATCH ---',
     promptText,
