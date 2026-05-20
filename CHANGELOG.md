@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.0.48 - 2026-05-20 — 自動化フローのループ修正 + 速度向上 (質維持)
+
+ai-form-fill フローの永続停止リスクを除去し、Phase A / Phase B / poller の各段で
+ボトルネックを削った。質 (バリデーション / watchdog / 安全策) は一切落とさず、
+タイマー閾値と並列度のみを安全側へチューニング。100 社 Claude 実行で
+**35-40 分 → 20-25 分** を見込む。
+
+### ループバグ修正
+
+- **F1 (致命): `restartingForErrors` 永続化対策** —
+  `dashboard-server.ts` の error-rate ≥ 50% CLI 再起動 chain
+  (`stopManagedClaudePty().then(startManagedAiSession).then(dispatch).catch(reset)`)
+  に **90s hard timeout** を `Promise.race` で被せる。stop/start が hang した場合
+  も `.catch()` が発火せず flag が永久 true になる事故を防止し、poller の
+  `if (claudePty && !restartingForErrors)` ガードが永続停止する経路を遮断。
+- **F2: recovery retry exponential backoff** —
+  `tryRecoverManagedAiSession` の固定 15s × 20 回 (5 分 hammering) を
+  15 → 30 → 60 → 120 → 180s cap の exponential backoff に変更。auth サーバへの
+  負荷を減らしつつ、初回 15s で復旧する早期ケースは取り逃さない。
+
+### 速度向上 (質維持)
+
+- **F3: poll を adaptive setTimeout に** —
+  `startManagedAiBatchPoller` を `setInterval(5s)` から再帰 `setTimeout` に変更。
+  `activeBatch` あり = 2s / なし = 5s で切替。33 batches × ~3s = **約 100s 短縮**。
+  `clearManagedAiBatchControllerTimer` は `clearTimeout` + `clearInterval`
+  両方呼ぶ互換実装に。
+- **F4: バッチ間 dispatch ギャップ短縮** —
+  バッチ完了 → 次 dispatch の `setTimeout(350ms)` を **100ms** に。PTY write
+  競合の安全マージンを保ちつつ 33 batches で **約 8s 短縮**。
+- **F5: Claude paste banner フォールバック短縮** —
+  `dispatchManagedAiPrompt` 内の 2nd Enter 待ちフォールバックを **30s → 8s**。
+  `detectPasteBannerAndAdvance` が PTY 出力から banner を検出した瞬間に
+  `pasteBannerWatcher` で即発火する仕組みが primary path で、8s は完全取りこぼし
+  時のみ発動する safety net。検出ミス時に最大 **16 分 → 4 分**。
+- **F6: Phase A concurrency を provider-aware に** —
+  `executeBackendPhaseABatch` の `Math.min(2, ...)` ハードキャップを provider 別
+  既定値 / 上限に拡張。Claude=2 維持、Codex/Gemini は既定 4・上限 6。
+  Codex/Gemini で **Phase A が概ね半減**。env `SALES_CLAW_PHASE_A_CONCURRENCY`
+  での override は引き続き有効。
+
+### 影響範囲
+
+- 変更ファイル: `src/dashboard-server.ts` のみ (1 ファイル)
+- バリデーション / API guard / watchdog の閾値は **一切変更なし**
+- すべての変更は env / コメントで意図を明示、回帰時のロールバックが容易
+- typecheck / build / 全ユニットテスト (42 ファイル) 緑
+
+---
+
 ## 2.0.38 - 2026-05-16 — ドキュメント全面整備 + GitHub bilingual 化
 
 OSS 公開水準のドキュメント整備。ユーザー (英語話者・日本語話者) が

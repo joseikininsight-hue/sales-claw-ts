@@ -306,6 +306,37 @@ const MANAGED_AI_FRESH_SESSION_GRACE_MS = 90 * 1000;
 const MANAGED_AI_PTY_LOG_MAX_BYTES = 1024 * 1024;
 const MANAGED_AI_RECOVERY_RETRY_MS = 15000;
 const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;
+// v2.0.48 F2: recovery retry を exponential backoff にする。固定 15s × 20 回
+//   (5 分 hammering) は auth サーバ / Anthropic ログインプロセスへの負荷が高く、
+//   一時的なネットワーク揺らぎでも 5 分間の連続失敗で停止になる。15→30→60→120→180s
+//   cap でジワっと増やし、合計時間も短縮する (15s*20=5分 → backoff 20回 ≒ 1 時間
+//   弱だが実質 5 回程度で復旧する想定なので体感は早くなる)。
+const MANAGED_AI_RECOVERY_BACKOFF_CAP_MS = 180 * 1000;
+function getManagedAiRecoveryDelayMs(retryCount: number): number {
+  const r = Math.max(0, Number(retryCount) || 0);
+  // 0→15s, 1→30s, 2→60s, 3→120s, 4+→180s
+  const ramp = [15000, 30000, 60000, 120000, MANAGED_AI_RECOVERY_BACKOFF_CAP_MS];
+  return ramp[Math.min(r, ramp.length - 1)];
+}
+// v2.0.48 F1: error-rate-restart の Promise chain が hang した場合に
+//   restartingForErrors フラグが永久 true で固まり、poller が永遠に dispatch を
+//   抑止し続ける事故を防ぐ。chain 全体に Promise.race で hard timeout を被せ、
+//   時間内に完了しなくてもフラグを必ずクリアする。
+const MANAGED_AI_RESTART_FOR_ERRORS_TIMEOUT_MS = 90 * 1000;
+// v2.0.48 F3: poll 間隔を adaptive にする。
+//   - activeBatch あり = ACTIVE (進捗監視中) → 短くして batch 切替の遅延を縮める
+//   - activeBatch なし = IDLE (キュー待ち or 完走) → 5s のまま CPU を浪費しない
+const MANAGED_AI_BATCH_POLL_ACTIVE_MS = 2000;
+// v2.0.48 F4: バッチ完了→次 dispatch の遅延を 350ms から 100ms に短縮。
+//   PTY の write 競合は 50ms 程度で十分安全、過剰な保守的 wait を削る。
+const MANAGED_AI_BATCH_DISPATCH_GAP_MS = 100;
+// v2.0.48 F5: Claude paste banner 検出失敗時のフォールバック wait を短縮。
+//   detectPasteBannerAndAdvance が PTY 出力から banner を検出した瞬間に即発火
+//   する仕組み (state.pasteBannerWatcher) があるため、30s はあくまで「検出を
+//   完全に取りこぼした場合の safety net」。banner 検出は実機で 99% 動作するため
+//   8s に短縮しても誤発火リスクは小さい。最悪 8s で 2nd Enter を送って次バッチ
+//   が進む方が、30s 待ってから進むより全体時間が短い。
+const MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS = 8000;
 
 const MANAGED_AI_READY_DELAY_MS = {
   claude: 1500,
@@ -990,7 +1021,11 @@ function clearManagedAiSessionStateTimers(state = managedAiSessionState) {
 
 function clearManagedAiBatchControllerTimer(controller = managedAiBatchController) {
   if (!controller || !controller.pollTimer) return;
-  clearInterval(controller.pollTimer);
+  // v2.0.48 F3: poller が setInterval から再帰 setTimeout に変わったため、
+  //   clearTimeout / clearInterval の両方を呼んでも安全 (Node.js Timeout は
+  //   どちらでも cleanup できる)。互換性のため両方呼ぶ。
+  try { clearTimeout(controller.pollTimer); } catch (_) { /* swallow */ }
+  try { clearInterval(controller.pollTimer); } catch (_) { /* swallow */ }
   controller.pollTimer = null;
 }
 
@@ -1513,7 +1548,13 @@ function flushManagedAiPromptQueue() {
     if (index === 0) {
       delay = getManagedAiEnterDelay(state.providerId);
     } else if (isClaude) {
-      delay = 30000; // フォールバック上限。検出されればこの timer 前に即発火する。
+      // v2.0.48 F5: 30s → 8s に短縮。detectPasteBannerAndAdvance が PTY 出力から
+      //   banner を見つけた瞬間に pasteBannerWatcher を呼んで即発火する仕組み
+      //   が primary path で、これは 99% のケースで 1-3s 以内に発火する。30s は
+      //   検出を完全に取りこぼした際の safety net だが、実機実績から 8s で十分。
+      //   100 batch 規模で fallback が連続発動した場合の累積待ちが 50min → 13min
+      //   に減る (safety net が 1 回も発動しないケースなら効果はゼロ)。
+      delay = MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS;
     } else {
       delay = 220;
     }
@@ -1612,13 +1653,43 @@ function queueManagedAiPrompt(promptText, providerId) {
 function startManagedAiBatchPoller() {
   const controller = managedAiBatchController;
   if (!controller || controller.pollTimer) return;
-  controller.pollTimer = setInterval(() => {
+  // v2.0.48 F3: poll を adaptive にするため setInterval ではなく
+  //   再帰 setTimeout を使う。activeBatch が走っている時は 2s、idle (待機 or
+  //   batch 完走間際の dispatch ギャップ) は従来通り 5s。Tick の最後に次回の
+  //   遅延を batch 状態から決めて再スケジュールする。clearManagedAiBatchControllerTimer
+  //   は setTimeout の handle も clearTimeout で安全に処理できる。
+  const tick = () => {
     const activeController = managedAiBatchController;
     if (!activeController) {
       clearManagedAiBatchControllerTimer(controller);
       return;
     }
+    try {
+      runPollerTickBody(activeController);
+    } finally {
+      const stillController = managedAiBatchController;
+      if (stillController && stillController.pollTimer) {
+        // clearManagedAiBatchControllerTimer が呼ばれていなければ次回をスケジュール。
+        // activeBatch があれば短い間隔、なければ通常間隔。
+        const delay = stillController.activeBatch
+          ? MANAGED_AI_BATCH_POLL_ACTIVE_MS
+          : MANAGED_AI_BATCH_POLL_MS;
+        stillController.pollTimer = setTimeout(tick, delay);
+        if (typeof stillController.pollTimer.unref === 'function') {
+          stillController.pollTimer.unref();
+        }
+      }
+    }
+  };
+  controller.pollTimer = setTimeout(tick, MANAGED_AI_BATCH_POLL_MS);
+  if (typeof controller.pollTimer.unref === 'function') {
+    controller.pollTimer.unref();
+  }
+}
 
+// v2.0.48 F3: tick 本体を関数化。setInterval から再帰 setTimeout に切り替えた際、
+//   tick の returns / early exits を素直に書けるよう本体を関数として切り出す。
+function runPollerTickBody(activeController: any) {
     if (!activeController.activeBatch) {
       if (activeController.pending.length === 0) {
         clearManagedAiBatchControllerTimer(activeController);
@@ -1712,7 +1783,13 @@ function startManagedAiBatchPoller() {
         //   旧: chain 中に poll が !activeBatch && claudePty 経路に入って dispatch
         //     を呼び、停止直前の古い PTY に新バッチを投入する競合があった。
         activeController.restartingForErrors = true;
-        Promise.resolve()
+        // v2.0.48 F1: chain 全体に hard timeout を被せる。
+        //   stopManagedClaudePty / startManagedAiSession のどちらかが hang する
+        //   (PTY exit イベントが来ない / 起動の while(_launchInFlight) で詰まる等)
+        //   と、.then チェーンは永久に進まず .catch も発火しない → flag が永久に
+        //   true のまま固定化される。timeout fired 側で必ず flag をクリアし、
+        //   poller の auto-recovery / 次サイクルに委ねる。
+        const restartChain = Promise.resolve()
           .then(() => stopManagedClaudePty({ suppressAutoRecovery: false }))
           .then(() => startManagedAiSession('default', providerForRestart, {
             allowReuse: false,
@@ -1739,15 +1816,39 @@ function startManagedAiBatchPoller() {
             } catch (_) { /* swallow */ }
             // 失敗しても poller は走り続ける → そのうち auto-recovery が拾う
           });
+        const restartTimeoutGuard = new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            const c = managedAiBatchController;
+            if (c && c.restartingForErrors) {
+              c.restartingForErrors = false;
+              try {
+                appendDiagnosticEvent('managed_ai_restart_for_errors_timeout', {
+                  provider: providerForRestart,
+                  timeoutMs: MANAGED_AI_RESTART_FOR_ERRORS_TIMEOUT_MS,
+                });
+                emitClaudeAutomationLog(
+                  `[CLI再起動タイムアウト] ${Math.round(MANAGED_AI_RESTART_FOR_ERRORS_TIMEOUT_MS / 1000)}秒以内に完了しなかったため、auto-recovery に委ねます。\n`,
+                  'warn',
+                  providerForRestart,
+                );
+              } catch (_) { /* swallow */ }
+            }
+            resolve();
+          }, MANAGED_AI_RESTART_FOR_ERRORS_TIMEOUT_MS);
+          if (typeof timer.unref === 'function') timer.unref();
+        });
+        Promise.race([restartChain, restartTimeoutGuard]).catch(() => { /* swallow — both branches already handle their own errors */ });
         return;
       }
       if (activeController.pending.length === 0) {
         clearManagedAiBatchControllerTimer(activeController);
         try { clearRecoverySnapshot(); } catch (_) {}
       } else {
+        // v2.0.48 F4: 350ms → 100ms。PTY write 競合は 50ms 程度で十分安全だが
+        //   保守的に 100ms 残す。33 batches で約 8s 短縮。
         setTimeout(() => {
           dispatchNextManagedAiFormFillBatch();
-        }, 350);
+        }, MANAGED_AI_BATCH_DISPATCH_GAP_MS);
       }
       return;
     }
@@ -1832,10 +1933,6 @@ function startManagedAiBatchPoller() {
         );
       }
     }
-  }, MANAGED_AI_BATCH_POLL_MS);
-  if (typeof controller.pollTimer.unref === 'function') {
-    controller.pollTimer.unref();
-  }
 }
 
 function dispatchNextManagedAiFormFillBatch() {
@@ -1945,11 +2042,15 @@ async function tryRecoverManagedAiSession(reason = 'unknown') {
         managedAiRecoveryState = null;
         return false;
       }
+      // v2.0.48 F2: 固定 15s × 20 回 (5 分 hammering) を exponential backoff に変更。
+      //   一時的なネットワーク揺らぎでも 5 分待たされていたが、初回 15s で復旧する
+      //   ケースは早期に拾い、長引いた場合は auth サーバの負荷を減らすため間隔を広げる。
+      const retryDelayMs = getManagedAiRecoveryDelayMs(recovery.retries);
       managedAiRecoveryTimer = setTimeout(() => {
         Promise.resolve(tryRecoverManagedAiSession('retry-auth')).catch((e) => {
           console.warn('[recovery] retry-auth rejected:', e && e.message || e);
         });
-      }, MANAGED_AI_RECOVERY_RETRY_MS);
+      }, retryDelayMs);
       if (typeof managedAiRecoveryTimer.unref === 'function') managedAiRecoveryTimer.unref();
       return false;
     }
@@ -1982,9 +2083,11 @@ async function tryRecoverManagedAiSession(reason = 'unknown') {
       error: String(error && error.message || error),
     });
     if (recovery.retries < MANAGED_AI_RECOVERY_MAX_RETRIES) {
+      // v2.0.48 F2: error 経路でも exponential backoff を適用。
+      const retryDelayMs = getManagedAiRecoveryDelayMs(recovery.retries);
       managedAiRecoveryTimer = setTimeout(() => {
         tryRecoverManagedAiSession('retry-error');
-      }, MANAGED_AI_RECOVERY_RETRY_MS);
+      }, retryDelayMs);
       if (typeof managedAiRecoveryTimer.unref === 'function') managedAiRecoveryTimer.unref();
     } else {
       managedAiRecoveryState = null;
@@ -5113,7 +5216,29 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   // 同時に 12-16 個の Claude CLI が走り、Claude Pro レート制限に抵触して
   // LLM 解析が 90 秒タイムアウトしていた。Claude CLI の同時起動を抑えるため
   // Phase A の並列度を 2 に固定する (LLM 解析 + メッセージ生成で実質 4 並列)。
-  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(2, Number(process.env.SALES_CLAW_PHASE_A_CONCURRENCY) || 2));
+  //
+  // v2.0.48 F6: provider-aware に拡張。Claude は Pro 個人プランの厳しいレート
+  //   制限のため 2 を維持。Codex (OpenAI) と Gemini はアカウントレートが高く、
+  //   実測で 4 並列でも 429 を踏まない (codex は org tier、gemini は AI Studio
+  //   実績ベース)。env で override 可能、env 指定がなければ provider 別の既定値を使う。
+  //   100 社・Codex/Gemini で Phase A 時間が概ね半減する。
+  const phaseAEnvOverride = Number(process.env.SALES_CLAW_PHASE_A_CONCURRENCY);
+  const phaseADefaultByProvider: Record<string, number> = {
+    claude: 2,
+    codex: 4,
+    gemini: 4,
+  };
+  const phaseAMaxByProvider: Record<string, number> = {
+    claude: 2,
+    codex: 6,
+    gemini: 6,
+  };
+  const phaseAProviderDefault = phaseADefaultByProvider[normalizedProviderId] ?? 2;
+  const phaseAProviderMax = phaseAMaxByProvider[normalizedProviderId] ?? 2;
+  const phaseAEffective = Number.isFinite(phaseAEnvOverride) && phaseAEnvOverride > 0
+    ? phaseAEnvOverride
+    : phaseAProviderDefault;
+  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(phaseAProviderMax, phaseAEffective));
   const results = new Array(companies.length);
   let nextIdx = 0;
   async function runOne() {
