@@ -35,10 +35,11 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     lines.push('- Process companies one at a time and keep status reports concise.');
   } else {
     lines.push(
-      `- ★ Tab-parallel pipeline (max ${tabs} tabs in flight): at session start, open ${tabs} company tabs back-to-back via browser_evaluate(window.open) / browser_tabs and issue navigate to each formUrl (fall back to official homepage → contact path when formUrl is unresolved) so the navigations overlap.`,
-      `- Never have more than ${tabs + 1} tabs open simultaneously (Claude's state tracking breaks down). Keep each company's input, screenshot, and log strictly per-company.`,
-      `- Once all navigations settle, walk through the companies in order: browser_snapshot → browser_fill_form → browser_take_screenshot → curl /api/log-action. Use the minimum snapshots per company (one for structure, one for confirmation screen is the norm).`,
-      `- Pipelining is only allowed for navigation-bound steps / waits. CAPTCHA analysis, body generation, and final-send decisions must be done one company at a time.`,
+      `- ★★ MUST use parallel tool_use. Claude can emit multiple tool_use blocks in a single thinking. On the first response, fire ${tabs} browser_navigate calls **in parallel within the same assistant message**. Sequential "company 1 → wait → company 2" is forbidden.`,
+      `- Parallel sequence: first thinking decides "open ${tabs} tabs simultaneously" → immediately emit ${tabs} browser_navigate (or first one as browser_navigate, the remaining ${tabs - 1} as browser_evaluate(window.open) + browser_tabs(select)) as parallel tool_use.`,
+      `- Wait until all ${tabs} navigations settle → then issue ${tabs} parallel browser_snapshot calls → then ${tabs} parallel browser_fill_form calls (Claude API supports parallel calls of the same tool kind).`,
+      `- Screenshots / curl are per-company but emit ${tabs} parallel calls when possible. Never exceed ${tabs + 1} concurrent tabs (resource contention).`,
+      `- Parallel emission applies only to tools with the same precondition / same decision axis. CAPTCHA analysis, body finalization, send-decision must be per-company sequential.`,
       `- Each company's awaiting_approval / submitted log MUST include the finalFormTab URL.`,
     );
   }

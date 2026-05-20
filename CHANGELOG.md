@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.0.54 - 2026-05-20 — parallel tool_use 強制で実機 Phase B 並列化
+
+実機 v2.0.52 で 3 社処理 (No.47/57/67) を計測 → 合計 **8 分 01 秒 (481 秒)**、
+過去中央値と完全一致。form_fill 開始間隔が No.47→57 が 1:42、No.57→67 が
+2:20 で **完全な逐次処理**だった。v2.0.51 で実装した parallelTabs auto +
+batch_rules の「並列許可」指示は実機で効いていなかった。
+
+### 根本原因
+
+Claude (Sonnet) は本来 1 つの assistant message 内に複数の tool_use ブロックを
+含めて **parallel tool calls** を発行できる (Anthropic API 標準機能)。しかし
+batch_rules の旧文言 (「タブ並列 pipeline 許可」「navigate を発行したら次
+の社の navigate に進む」) では Claude が「逐次に navigate を順番に発行する」
+と解釈してしまい、本来の parallel tool_use を活用していなかった。
+
+### 修正内容
+
+`src/locale-pack/ja/cli-prompts.ts`, `src/locale-pack/en/cli-prompts.ts`:
+- 「許可」を「**必須**」に格上げ。
+- 「Claude は 1 つの thinking で複数の tool_use ブロックを同時発行できる。
+  最初の応答で N 社分の browser_navigate を **同一 assistant message の中
+  に並列に発行**する」を明示。
+- 並列発行手順を明文化: thinking で「N 社同時オープン」と決定 → 直後に
+  N 個の browser_navigate を parallel tool_use として発行。
+- snapshot / fill_form / screenshot も「N 個並列」で発行するよう明示。
+- 「逐次に "1 社目→完了待ち→2 社目" と進めるのは禁止」を追加。
+
+### 期待効果
+
+- 3 社分の navigate を並列発行 → 待ち時間オーバーラップで navigate フェーズ
+  は ~5 秒 (= 1 社分の navigate 時間)
+- snapshot / fill_form も並列 → 各 ~10-20 秒で 3 社処理
+- 想定: 3 社合計 8 分 → **3-4 分**に短縮 (50% 短縮目標)
+
+### 互換性
+
+- prompt 文言の変更のみ。コードロジックの変更なし。
+- parallelTabs=1 (明示設定) では従来通り逐次処理。
+- parallelTabs auto / >=2 でのみ parallel tool_use 指示が出る。
+
 ## 2.0.53 - 2026-05-20 — MCP Playwright pre-check + Phase B prompt 圧縮
 
 ユーザー報告: 「3 社処理してログが残らない」「動かしてもダッシュボードに何も

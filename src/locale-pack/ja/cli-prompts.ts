@@ -40,11 +40,12 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     lines.push('- 1社ずつ処理し、結果報告は簡潔にする');
   } else {
     lines.push(
-      `- ★ タブ並列 pipeline (最大 ${tabs} 並列): 起動直後にまず ${tabs} 社分のタブを browser_evaluate(window.open) / browser_tabs で立て続けに開き、それぞれの form URL (formUrl 未解決なら公式トップ → contact path) に並行 navigate せよ。navigate を発行したら次の社の navigate に進み、待ち時間をオーバーラップさせる`,
-      `- 同時に ${tabs + 1} 社以上のタブを開かない (Claude の状態管理が混乱する)。各社の入力・スクショ・ログ記録は会社単位で完結させて混同しない`,
-      `- 全社の navigate 完了後、browser_snapshot → browser_fill_form → browser_take_screenshot → curl /api/log-action を社順に進める。snapshot は社ごとに最小限の呼び出しで済ませる (form 構造把握用 1 回 + 確認画面確認 1 回が標準)`,
-      `- pipeline で並行できるのは navigate / 待機局面のみ。CAPTCHA 解析・本文生成・最終送信判断は 1 社ずつ集中する`,
-      `- 会社ごとの awaiting_approval / submitted ログには finalFormTab URL を含める`,
+      `- ★★ 並列ツール呼び出し (parallel tool_use) を必ず使用すること。Claude は 1 つの thinking で複数の tool_use ブロックを同時発行できる。最初の応答で ${tabs} 社分の browser_navigate を **同一 assistant message の中に並列に発行**する。逐次に「1 社目→完了待ち→2 社目」と進めるのは禁止。`,
+      `- 並列発行手順: 最初の thinking ブロックで「3 社分を同時に開く」と決定 → 直後に ${tabs} 個の browser_navigate (または最初の 1 社だけ browser_navigate、残り ${tabs - 1} 社は browser_evaluate(window.open) + browser_tabs(select)) を **同じ tool_use ブロック群として並列発行**。`,
+      `- ${tabs} 社の navigate が全て完了するまで待機 → その後 browser_snapshot を ${tabs} 社並列発行 → browser_fill_form を ${tabs} 社並列発行 (Claude API は同種ツールを並列に呼べる)。`,
+      `- screenshot / curl は社ごとに発行するが、可能なら ${tabs} 社分まとめて並列発行。同時タブは ${tabs + 1} 個まで (それ以上はリソース競合)。`,
+      `- 並列発行が効くのは「同じ前提条件・同じ判断軸で進むツール」のみ。CAPTCHA 解析・本文最終化・送信可否判断など「社ごとに違う思考が必要な工程」は 1 社ずつ集中する。`,
+      `- 各社の awaiting_approval / submitted ログには finalFormTab URL を必ず含める。`,
     );
   }
 
