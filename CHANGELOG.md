@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.0.49 - 2026-05-20 — Phase A 認証失効時の即時 abort (401 ループ解消)
+
+実機ログで「自動再起動を停止しました」WRN の後も Phase A workers が次々と
+社の site_analysis / site_discovery を続行し、社ごとに 401 を踏み続ける
+バグを観測。v2.0.45 で managed PTY (Phase B) 側は止まるようになっていたが、
+Phase A の subprocess (`parallel-analysis.js`) は別プロセス経路で claude を
+spawn するため停止信号を受け取れなかった。
+
+### 修正内容
+
+- **グローバル auth-fail flag を追加** (`globalClaudeAuthFailureAt`) —
+  Claude 認証失効状態を全 worker で共有する single source of truth。
+- **走行中の Phase A child を追跡** (`activePhaseAChildProcesses` Set) —
+  `runParallelAnalysisWorker` が spawn 時に登録、close/error で削除。
+- **401 検知の双方向接続**:
+  1. managed PTY (Phase B) で 401 を検知 → `markClaudeAuthFailed()` →
+     走行中の Phase A subprocess を全て SIGTERM + flag セット
+  2. Phase A subprocess の stdout/stderr/error に 401 文言を発見 → 同じ flag セット
+- **`runOne` ループの early-exit** —
+  各 iteration の冒頭で flag を確認、立っていれば残り社を `skipped:
+  claude_auth_failed` で埋めて即 break。1 社目の 401 で残り 99 社の
+  401 ログを抑止する。
+- **flag クリア経路** —
+  `startManagedAiSession({allowReuse: false})` (= UI「AI を起動」/
+  recovery 経路) で `clearClaudeAuthFailedFlag()` + `managedAiSuppressAutoRecovery=false`
+  を同時に解除。ユーザーが /login を済ませた前提で再開可能に。
+- **UI 通知** —
+  Phase A が auth で中断したら `[Phase A 中断] 残り N社の分析をスキップしました`
+  を `emitClaudeAutomationLog('warn')` で出す。
+
+### 影響範囲
+
+- 変更ファイル: `src/dashboard-server.ts` のみ
+- 既存 401 検出ロジック (`cli-issue-classifier.ts` の
+  `Claude認証失効/レート上限` ルール) は未変更、ハンドラから新 helper
+  を呼ぶだけの最小差分
+- `executeBackendPhaseABatch` の戻り値構造に `skipped[]` への
+  `skipKind: 'claude_auth_failed'` エントリが増える程度の互換変更
+  (既存の skipped 処理経路に乗る)
+
+---
+
 ## 2.0.48 - 2026-05-20 — 自動化フローのループ修正 + 速度向上 (質維持)
 
 ai-form-fill フローの永続停止リスクを除去し、Phase A / Phase B / poller の各段で

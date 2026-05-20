@@ -180,6 +180,51 @@ let managedAiRecoveryState: any = null;
 let managedAiRecoveryTimer: any = null;
 let managedAiSuppressAutoRecovery = false;
 
+// v2.0.49: Phase A subprocess (parallel-analysis.js) は managed PTY とは別経路で
+//   Claude を spawn するため、PTY 側で auth 失効 (401) を検知して auto-recovery を
+//   止めても Phase A workers は走り続けて社ごとに同じ 401 を踏み続けるバグがあった
+//   (実機ログで複数社の site_analysis / site_discovery が「自動再起動を停止」後も
+//   続行することを観測)。グローバル flag で「Claude が現在 auth 失敗状態」を共有し:
+//     - 走行中の Phase A workers は次の社に進む前にこの flag を確認して early exit
+//     - 進行中の subprocess は SIGTERM で即時 kill (401 は時間で回復しないので待っても無駄)
+//     - 失効解除 (ユーザーが /login → 「AI を起動」) は startManagedAiSession の
+//       allowReuse=false 経路で flag をクリアする
+let globalClaudeAuthFailureAt = 0;
+const activePhaseAChildProcesses = new Set<any>();
+function isClaudeAuthCurrentlyFailed(): boolean {
+  return globalClaudeAuthFailureAt > 0;
+}
+function markClaudeAuthFailed(reason: string): void {
+  if (globalClaudeAuthFailureAt > 0) return; // 既に立っていれば二重発火を防ぐ
+  globalClaudeAuthFailureAt = Date.now();
+  try { appendDiagnosticEvent('claude_auth_failed_global', { reason, at: globalClaudeAuthFailureAt }); } catch (_) { /* swallow */ }
+  let killed = 0;
+  for (const child of Array.from(activePhaseAChildProcesses)) {
+    try {
+      if (child && !child.killed && typeof child.kill === 'function') {
+        child.kill('SIGTERM');
+        killed++;
+      }
+    } catch (_) { /* swallow */ }
+  }
+  if (killed > 0) {
+    try { appendDiagnosticEvent('phase_a_workers_killed_on_auth_fail', { killed }); } catch (_) { /* swallow */ }
+  }
+}
+function clearClaudeAuthFailedFlag(): void {
+  if (globalClaudeAuthFailureAt === 0) return;
+  const wasAt = globalClaudeAuthFailureAt;
+  globalClaudeAuthFailureAt = 0;
+  try { appendDiagnosticEvent('claude_auth_failed_cleared', { wasAt, at: Date.now() }); } catch (_) { /* swallow */ }
+}
+// auth-failure を示す文字列か判定する。Phase A subprocess の stdout/stderr/error
+// テキストから検出する用。cli-issue-classifier.ts の 'Claude認証失効/レート上限'
+// パターンと同等。
+function isClaudeAuthFailureText(text: string): boolean {
+  if (typeof text !== 'string' || text.length < 5) return false;
+  return /(?:Please\s+run\s+\/login|API\s+Error:\s*401|Invalid\s+authentication\s+credentials)/i.test(text);
+}
+
 // v2.0.14: Phase B が走っている間 Windows を sleep させない。
 // 100 社規模で 3-6 時間連続実行が必要なので、ノート PC が省電力で
 // sleep に入ると Claude PTY も MCP Playwright も停止し、queue が
@@ -1463,6 +1508,11 @@ function detectCliIssuesFromOutput(rawData, providerId) {
   //     3. UI / SSE に明示メッセージを出す
   if (classified.rule.label === 'Claude認証失効/レート上限') {
     try {
+      // v2.0.49: PTY 側だけでなく Phase A subprocess workers にも止まるよう通知。
+      //   activePhaseAChildProcesses を SIGTERM して runOne ループに早期 exit
+      //   させる。これがないと 100 社 Phase A が走ってる場合に全 100 社が個別に
+      //   401 を踏むまで止まらない。
+      markClaudeAuthFailed('managed-pty-401');
       // 既存の recovery 予定をキャンセル
       if (typeof clearManagedAiRecoveryTimer === 'function') clearManagedAiRecoveryTimer();
       managedAiRecoveryState = null;
@@ -5111,6 +5161,10 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    // v2.0.49: auth-failure 検知時に Set 経由で SIGTERM できるよう追跡。
+    //   markClaudeAuthFailed() が呼ばれると全 child を kill して Phase A workers を
+    //   即座に止める。close で必ず remove (kill 経由でも close は発火する)。
+    activePhaseAChildProcesses.add(child);
     let stdout = '';
     let stderr = '';
 
@@ -5121,6 +5175,7 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
       stderr += String(chunk || '');
     });
     child.on('error', (error) => {
+      activePhaseAChildProcesses.delete(child);
       resolve({
         ok: false,
         companyNo: company.no,
@@ -5132,6 +5187,7 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
       });
     });
     child.on('close', (exitCode) => {
+      activePhaseAChildProcesses.delete(child);
       const parsed = extractPromptJsonLine(stdout);
       if (parsed && parsed.ok) {
         resolve({
@@ -5173,6 +5229,12 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
       const errorText = parsedError
         || trimOneLineText(stderr || stdout || `parallel-analysis exited with code ${exitCode || 0}`, 240)
         || 'parallel-analysis failed';
+      // v2.0.49: Phase A subprocess の出力に 401 が混じっていたら global flag を立てる。
+      //   これを見て executeBackendPhaseABatch の runOne が次の社に進む前に early exit
+      //   する。1 社目で踏んだ 401 で残り 99 社の 401 ログを抑止する。
+      if (isClaudeAuthFailureText(errorText) || isClaudeAuthFailureText(stderr) || isClaudeAuthFailureText(stdout)) {
+        markClaudeAuthFailed('phase-a-subprocess-401');
+      }
       resolve({
         ok: false,
         companyNo: company.no,
@@ -5241,8 +5303,33 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   const PHASE_A_CONCURRENCY = Math.max(1, Math.min(phaseAProviderMax, phaseAEffective));
   const results = new Array(companies.length);
   let nextIdx = 0;
+  let phaseAAuthAbortedCount = 0;
   async function runOne() {
     while (true) {
+      // v2.0.49: Claude auth 失効 (global flag) を検知したら以降の社をスキップする。
+      //   1 社目で 401 を踏んだ時点で markClaudeAuthFailed() が立ち、走行中の
+      //   全 worker は次の iteration でここに到達して break する。残り社は
+      //   results[idx] = undefined のままになるが、後段の forEach で
+      //   failures に分類されて UI に明示メッセージが出る。
+      if (isClaudeAuthCurrentlyFailed()) {
+        // remaining 社を skipped 扱いで埋めて、UI 側に「auth 失効で中断」を伝える
+        while (nextIdx < companies.length) {
+          const remIdx = nextIdx++;
+          results[remIdx] = {
+            ok: false,
+            skipped: true,
+            skipKind: 'claude_auth_failed',
+            reason: 'Claude 認証失効 / レート上限のため Phase A を中断しました',
+            no: companies[remIdx].no,
+            companyNo: companies[remIdx].no,
+            companyName: companies[remIdx].companyName || companies[remIdx].name || '',
+            elapsedMs: 0,
+            error: 'claude_auth_failed',
+          };
+          phaseAAuthAbortedCount++;
+        }
+        break;
+      }
       const idx = nextIdx++;
       if (idx >= companies.length) break;
       const result = await runParallelAnalysisWorker(companies[idx], nodeExecutable);
@@ -5258,6 +5345,21 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   const workerCount = Math.min(PHASE_A_CONCURRENCY, companies.length);
   for (let i = 0; i < workerCount; i++) workers.push(runOne());
   await Promise.all(workers);
+  // v2.0.49: auth 失効で Phase A を中断した社数を診断 + UI に通知。
+  if (phaseAAuthAbortedCount > 0) {
+    try {
+      appendDiagnosticEvent('phase_a_auth_aborted', {
+        provider: normalizedProviderId,
+        abortedCount: phaseAAuthAbortedCount,
+        totalCount: companies.length,
+      });
+      emitClaudeAutomationLog(
+        `[Phase A 中断] Claude 認証失効/レート上限を検知したため、残り ${phaseAAuthAbortedCount}社の分析をスキップしました。/login またはレート枠リセット後に「AI を起動」してください。\n`,
+        'warn',
+        normalizedProviderId,
+      );
+    } catch (_) { /* swallow */ }
+  }
   const successes: any[] = [];
   const failures: any[] = [];
   const skipped: any[] = [];
@@ -5830,6 +5932,14 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
   const cols = Math.max(2, Math.min(PTY_MAX_COLS, Math.floor(Number(options.cols) || 120)));
   const rows = Math.max(1, Math.min(PTY_MAX_ROWS, Math.floor(Number(options.rows) || 30)));
   const allowReuse = options.allowReuse !== false;
+  // v2.0.49: allowReuse=false は「ユーザーが新規セッションを意図して起動した」を
+  //   意味する (UI の「AI を起動」ボタン / auto-recovery 経路)。ユーザーが /login を
+  //   済ませた前提で auth 失効 flag をクリアし、Phase A workers が再開できるようにする。
+  if (!allowReuse) {
+    clearClaudeAuthFailedFlag();
+    // suppressAutoRecovery も同時に解除 (auth 復旧したのでまた recover してよい)
+    managedAiSuppressAutoRecovery = false;
+  }
   const autoSendSafe = typeof options.autoSendSafe === 'boolean'
     ? options.autoSendSafe
     : getConfiguredAiAutoSendSafe();
