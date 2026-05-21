@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.55 - 2026-05-21 — urlMissing 案件の WebSearch を 1 回 30 秒に制限
+
+v2.0.54 実機で 3 社処理 (No.69/79/80) を計測したところ、PTY ログで Claude が
+parallel tool_use を実行していることは確認できた (02:59:34 「3 社並列スタート」
+発話、Called playwright 多発)。ただしバッチ全体は依然 11 分以上かかり、
+個社の遅延要因は **3 社全て urlMissing=true** で各社が Phase B で WebSearch
++ サイト再分析 + 公式ドメイン特定を直列で行っていたため。
+
+### 修正内容
+
+`src/locale-pack/ja/cli-prompts.ts`, `src/locale-pack/en/cli-prompts.ts`:
+- urlMissing=true 案件の WebSearch を **1 回限り** (単一クエリ、リトライ禁止、
+  候補ごとの navigate 試行禁止、wikipedia 経由検索禁止)
+- **30 秒以内** に公式ドメインが確定しなければ即 error
+- 1 社の WebSearch ループが他 2 社の navigate / fill_form を完全に阻害する
+  事象を防ぐ
+
+### 期待効果
+
+- urlMissing 案件が全部 error / 早期失敗するため、batch 全体の最遅社時間が
+  改善される。
+- 3 社全て urlMissing=true のケースでも、最大 30 秒 × 3 並列 = 90 秒で
+  Phase B が決まり、その後 form_fill 段階に進める。
+
+### 関連
+
+- `parallel-analysis.ts` の `resolveOfficialSiteByCompanyName` (Bing RSS) は
+  既に Phase A で動作中。実機で 3 社失敗したケースでは Bing が会社名と
+  公式サイトを結びつけられなかった (= 名前変更、登録情報の食い違いなど)。
+  根本的な URL 解決の質向上には別途 SerpApi / Google Custom Search の
+  オプション追加が必要だが、本リリースでは Phase B 側の上限化のみで対処。
+
 ## 2.0.54 - 2026-05-20 — parallel tool_use 強制で実機 Phase B 並列化
 
 実機 v2.0.52 で 3 社処理 (No.47/57/67) を計測 → 合計 **8 分 01 秒 (481 秒)**、

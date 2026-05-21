@@ -21,7 +21,7 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
 
   const lines: string[] = [
     '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
-    '- ★ urlMissing=true の会社は WebSearch で「会社名 公式サイト」を検索して公式ドメインを特定→サイト分析→本文生成→フォーム入力と進む。公式サイトが見つからなければ error にする',
+    '- ★ urlMissing=true の会社: WebSearch を **1 回だけ** (「会社名 公式サイト」のクエリ 1 本) 実行 → 上位 3 件から公式ドメインを判定 → 確定したら即 navigate (再検索禁止)。30 秒以内に決まらない or 公式が見つからない → **即 error**。WebSearch のリトライ・候補を 1 件ずつ navigate 試行・wikipedia 経由検索は全て禁止。',
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
     '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
     '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',

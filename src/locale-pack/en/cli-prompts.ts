@@ -16,7 +16,7 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
 
   const lines: string[] = [
     '- Phase A is already done by the backend. Do NOT re-analyze the target site unless the form URL is unresolved.',
-    '- ★ For companies with urlMissing=true, run a WebSearch for "<company name> official site", identify the official domain, then site-analyze → draft → fill the form. If you cannot find an official site, mark as error.',
+    '- ★ urlMissing=true companies: run WebSearch **exactly once** (single query "<company name> official site"), pick the official domain from the top 3 results, navigate directly. No retries. No per-candidate navigate-and-check loops. No wikipedia detours. If not decided within 30 seconds OR no official found, **mark as error immediately**.',
     '- ★ For companies with urlMissing=false but with empty siteExcerpt or failed site fetch, do NOT contact. Stop and mark as error. NEVER guess content and proceed to awaiting_approval / submitted.',
     '- ★ awaiting_approval / submitted is only accepted by the API when Phase A site_analysis collected sufficient site text AND form_fill → confirm_reached have already been logged.',
     '- When messagePrompt is provided, use it to finalize the body for this specific company before filling the form.',
