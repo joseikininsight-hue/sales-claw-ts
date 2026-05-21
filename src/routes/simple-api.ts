@@ -442,6 +442,62 @@ module.exports = function createSimpleApiRoutes(ctx) {
             for (const c of cands) {
               if (typeof c === 'string' && c.trim().length > 0) { sentMsg = c.trim(); break; }
             }
+            // v2.0.58: ファイル経由で sentMessage を渡す経路を追加。
+            //   背景: curl の -d 引数で複数行 JSON を escape するのが鬼門で、
+            //   Claude が \n/quote/特殊文字を含む長文 sentMessage を渡すと
+            //   shell escape ミスで本文末尾が truncate される事故が頻発した。
+            //   解決: 本文をファイルに書いて curl では path だけ渡す。
+            //   サーバ側で fs.readFileSync して sentMsg に格納する。
+            //   パストラバーサル防止: 絶対パス + 既知の安全ディレクトリ配下のみ許可。
+            const filePath = typeof detailsRaw.sentMessageFile === 'string' && detailsRaw.sentMessageFile.trim()
+              ? detailsRaw.sentMessageFile.trim()
+              : (typeof detailsRaw.bodyFile === 'string' ? detailsRaw.bodyFile.trim() : '');
+            if (!sentMsg && filePath) {
+              try {
+                const fs = require('fs');
+                const path = require('path');
+                const absPath = path.resolve(filePath);
+                // 安全ディレクトリ確認: data 配下 / tmp 配下のみ許可
+                let dataDir = '';
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  const dp = require('../data-paths');
+                  if (typeof dp.resolveDataPath === 'function') dataDir = path.resolve(dp.resolveDataPath(''));
+                } catch (_) { /* dataDir empty - tempDir only */ }
+                const tempDir = path.resolve(require('os').tmpdir());
+                const userDataDir = process.env.SALES_CLAW_USER_DATA_DIR ? path.resolve(process.env.SALES_CLAW_USER_DATA_DIR) : '';
+                const safeRoots = [dataDir, tempDir, userDataDir].filter(Boolean);
+                const isSafe = safeRoots.some((root: any) => absPath.startsWith(root + path.sep) || absPath === root);
+                if (!isSafe) {
+                  res.writeHead(422, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    ok: false,
+                    error: 'sentMessageFile must reside under sales-claw data dir or system temp dir.',
+                    hint: 'BOM 無し UTF-8 で os.tmpdir() (Windows: %TEMP%, Linux: /tmp) に書き出してから path を渡してください。',
+                  }));
+                  return;
+                }
+                if (fs.statSync(absPath).size > 64 * 1024) {
+                  res.writeHead(422, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    ok: false,
+                    error: 'sentMessageFile too large (>64KB).',
+                  }));
+                  return;
+                }
+                const raw = fs.readFileSync(absPath, 'utf8');
+                // BOM 除去
+                sentMsg = raw.replace(/^﻿/, '').trim();
+              } catch (e: any) {
+                res.writeHead(422, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  ok: false,
+                  error: 'sentMessageFile read failed: ' + (e && e.message || e),
+                  hint: 'ファイルが存在し、サーバから読める permission か確認してください。BOM 無し UTF-8 推奨。',
+                }));
+                return;
+              }
+            }
           }
           if (!sentMsg) {
             res.writeHead(422, { 'Content-Type': 'application/json' });

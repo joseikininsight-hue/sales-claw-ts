@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.58 - 2026-05-21 — sentMessageFile 経由でファイル受け取り (curl shell escape 根本解消)
+
+v2.0.57 で 30→10 chars に緩和したが、curl の `-d` 引数で複数行 JSON を扱う
+shell escape 問題そのものは残っていた。Claude が `\n`/quote/特殊文字を含む長文
+sentMessage を渡すと依然 truncate or JSON 構文エラーで 422 → リトライ → 進まず
+という根本原因を解決するため、ファイル経由の受け取り経路を追加した。
+
+### 修正内容
+
+**`src/routes/simple-api.ts` handleLogAction**:
+- `details.sentMessageFile` または `details.bodyFile` にファイル絶対パスを
+  指定できる新パラメータを追加
+- サーバ側で `fs.readFileSync` で本文を読み取り `sentMessage` に格納
+- BOM (UTF-8 BOM) は自動除去
+- セキュリティ: 絶対パス + 「Sales Claw data dir / OS temp dir / SALES_CLAW_USER_DATA_DIR」
+  配下のみ許可 (パストラバーサル防止)
+- ファイルサイズ 64KB 上限 (DoS 防止)
+
+**`src/dashboard-server.ts` queueClaudeFormFillInManagedSession** (Phase B prompt):
+- 「複数行・引用符を含む長文 sentMessage は curl 直渡しで shell escape ミス
+  しやすい」「一時ファイルに BOM 無し UTF-8 で書き出し、details に
+  `sentMessageFile` を指定するのが推奨」を batch_rules に追加
+- Windows / Linux 両 path 例を明示
+
+### 期待効果
+
+- Claude が長文を file 経由で渡す → curl の -d 引数は短い JSON だけ → shell
+  escape ミスゼロ
+- 「メッセージが短すぎるエラー」422 リトライループが完全消滅
+- batch dispatcher が滞らず順次進行 → 200 社投入も最後まで完走
+
+### 互換性
+
+- 既存の `details.sentMessage` 経路は無変更で動作
+- `sentMessageFile` は **追加** 経路 (どちらか一方があれば OK)
+- 同時指定の場合は `sentMessage` を優先 (旧仕様維持)
+
 ## 2.0.57 - 2026-05-21 — sentMessage 30 chars ガード緩和 (リトライループ解消)
 
 実機 PTY ログ (2026-05-21 08:00 周辺) で **「メッセージが短すぎるエラー」リトライ
