@@ -5,19 +5,48 @@
 // 自動化指示をまとめる。日本語企業を相手にする際の現状文言をそのまま保持し、
 // 日本語ユーザーの挙動が変わらないようにする。
 
+interface FormPreferences {
+  preferredKeywords?: string[];   // 優先的に選ぶフォーム名キーワード (例: パートナー, 協業, alliance)
+  avoidKeywords?: string[];       // 避けるフォーム名キーワード (例: FAQ, support, 採用)
+  approachLabel?: string;         // ユーザーのアプローチ趣旨 (例: 「パートナー営業」「人材紹介」「IR」)
+}
+
 interface BuildBatchRulesOpts {
   autoSendSafe: boolean;
   parallelTabs: number;
+  formPreferences?: FormPreferences;
+}
+
+// v2.0.59: デフォルトのフォーム優先順位 (パートナー営業向け)。
+// settings.json で messageTemplates.formPreferences を上書きできる。
+const DEFAULT_PREFERRED_KEYWORDS = ['パートナー', '協業', '取引', 'アライアンス', 'Partner Inquiry', 'Business Inquiry', 'Corporate Inquiry'];
+const DEFAULT_AVOID_KEYWORDS = ['FAQ', 'カスタマーサポート', '製品サポート', 'Customer Support', 'Product Support', 'Help Center'];
+const DEFAULT_APPROACH_LABEL = 'パートナー / 協業 営業';
+
+function buildFormSelectionRule(pref: FormPreferences | undefined): string {
+  const preferred = (pref && Array.isArray(pref.preferredKeywords) && pref.preferredKeywords.length > 0)
+    ? pref.preferredKeywords : DEFAULT_PREFERRED_KEYWORDS;
+  const avoid = (pref && Array.isArray(pref.avoidKeywords) && pref.avoidKeywords.length > 0)
+    ? pref.avoidKeywords : DEFAULT_AVOID_KEYWORDS;
+  const label = (pref && typeof pref.approachLabel === 'string' && pref.approachLabel.trim())
+    ? pref.approachLabel.trim() : DEFAULT_APPROACH_LABEL;
+  const preferredStr = preferred.map((k: any) => `「${k}」`).join(' / ');
+  const avoidStr = avoid.map((k: any) => `「${k}」`).join(' / ');
+  return `- ★ フォーム選択優先順位 (アプローチ趣旨: ${label}): ① ${preferredStr} 系の専用フォームが見つかればそれを最優先で使う。② 一般 Contact / お問い合わせ系は **①が無い場合の fallback**。③ ${avoidStr} 系は B2B 営業先として **不適切なので避ける** (例: faq.oracle.co.jp/app/ask/referer_id/contact は一般 Q&A 受付で営業窓口ではない)。`;
 }
 
 /**
  * CLI フォーム入力プロンプトの batch_rules 配列を返す。
  * 出力結果は dashboard-server で `'batch_rules:'` セクションの行として
  * そのまま join される。
+ *
+ * v2.0.59: formPreferences (preferred/avoid keywords + approachLabel) を
+ * settings.json から受け取り、ユーザー固有のフォーム選好を prompt に反映できる。
  */
 function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   const tabs = Number.isFinite(opts && opts.parallelTabs) ? Number(opts.parallelTabs) : 1;
   const autoSendSafe = !!(opts && opts.autoSendSafe);
+  const formPref = opts && opts.formPreferences;
 
   const lines: string[] = [
     '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
@@ -29,6 +58,7 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
     '- sender_json にない送信者情報は追加しない',
     '- 本文末尾には sender_json の会社名/担当者/連絡先/住所(ある場合)と送信停止案内を必ず含める。住所が無い場合は推測しない',
+    buildFormSelectionRule(formPref),
     '- unresolved form は site から Contact/お問い合わせ または common path を浅く確認する',
     '- awaiting_approval はフォーム入力済み + ss-{No}-input.png 作成済みの場合だけ許可',
     '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',

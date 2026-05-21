@@ -243,6 +243,11 @@
       "header": "",
       "footer": "",
       "format": "A4"
+    },
+    "formPreferences": {
+      "approachLabel": "パートナー / 協業 営業",
+      "preferredKeywords": ["パートナー", "協業", "取引", "アライアンス", "Partner Inquiry", "Business Inquiry", "Corporate Inquiry"],
+      "avoidKeywords": ["FAQ", "カスタマーサポート", "製品サポート", "Customer Support", "Product Support", "Help Center"]
     }
   },
   "preferences": {

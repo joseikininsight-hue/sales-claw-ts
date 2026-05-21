@@ -5633,6 +5633,22 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
   // v2.0.51: parallelTabs を batchSize に応じて auto-resolve するため、ここで
   // companies.length を渡す。3 社バッチなら 3 並列指示が batch_rules に入る。
   const effectiveParallelTabs = resolvePhaseBParallelTabs(Array.isArray(companies) ? companies.length : 0);
+  // v2.0.59: ユーザー設定 (messageTemplates.formPreferences) からフォーム選好を取得。
+  //   preferredKeywords: 優先するフォーム名キーワード (例: パートナー, alliance)
+  //   avoidKeywords: 避けるフォーム名キーワード (例: FAQ, support)
+  //   approachLabel: アプローチ趣旨ラベル (例: 「パートナー営業」「人材紹介」)
+  //   未設定なら locale-pack のデフォルト (= パートナー営業向け) が適用される。
+  let formPreferences: any = undefined;
+  try {
+    const mt = messageTemplates || {};
+    if (mt.formPreferences && typeof mt.formPreferences === 'object') {
+      formPreferences = {
+        preferredKeywords: Array.isArray(mt.formPreferences.preferredKeywords) ? mt.formPreferences.preferredKeywords : undefined,
+        avoidKeywords: Array.isArray(mt.formPreferences.avoidKeywords) ? mt.formPreferences.avoidKeywords : undefined,
+        approachLabel: typeof mt.formPreferences.approachLabel === 'string' ? mt.formPreferences.approachLabel : undefined,
+      };
+    }
+  } catch (_) { /* 設定欠如時は default を使う */ }
   let batchRuleLines: string[] = [];
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -5642,6 +5658,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
       batchRuleLines = pack.cliPrompts.buildBatchRules({
         autoSendSafe,
         parallelTabs: effectiveParallelTabs,
+        formPreferences,
       });
     }
   } catch (_) { /* Locale Pack 不在時は ja パックを再試行する */ }
@@ -5654,6 +5671,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
         batchRuleLines = pack.cliPrompts.buildBatchRules({
           autoSendSafe,
           parallelTabs: effectiveParallelTabs,
+          formPreferences,
         });
       }
     } catch (_) { /* 最終 fallback は空配列 */ }

@@ -154,6 +154,20 @@ const DEFAULT_SETTINGS = {
       footer: '',                 // 書面フッター（「敬具」等）
       format: 'A4',              // 'A4' | 'letter'
     },
+    // v2.0.59: フォーム選択のパーソナライズ設定。
+    //   Claude が複数のお問い合わせフォーム (一般 / パートナー / 採用 / IR 等)
+    //   を持つ B2B サイトに到達したとき、どれを優先・回避するかをユーザーが定義。
+    //
+    //   利用例:
+    //   - パートナー営業 (default): preferredKeywords=["パートナー","協業","alliance"]
+    //   - 人材紹介:                 preferredKeywords=["採用","HR","career","recruit"]
+    //   - IR / 投資家対応:         preferredKeywords=["IR","investor","株主"]
+    //   - 取材/PR:                  preferredKeywords=["広報","PR","press","media"]
+    formPreferences: {
+      approachLabel: 'パートナー / 協業 営業',
+      preferredKeywords: ['パートナー', '協業', '取引', 'アライアンス', 'Partner Inquiry', 'Business Inquiry', 'Corporate Inquiry'],
+      avoidKeywords: ['FAQ', 'カスタマーサポート', '製品サポート', 'Customer Support', 'Product Support', 'Help Center'],
+    },
   },
 
   // === 環境設定（詳細） ===

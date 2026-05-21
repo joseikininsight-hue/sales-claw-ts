@@ -5,14 +5,40 @@
 // Semantically equivalent to the Japanese rules; do not introduce extra
 // behavior that would diverge between locales.
 
+interface FormPreferences {
+  preferredKeywords?: string[];
+  avoidKeywords?: string[];
+  approachLabel?: string;
+}
+
 interface BuildBatchRulesOpts {
   autoSendSafe: boolean;
   parallelTabs: number;
+  formPreferences?: FormPreferences;
+}
+
+// v2.0.59: default form preference (partnership outreach).
+// Override via settings.json: messageTemplates.formPreferences.
+const DEFAULT_PREFERRED_KEYWORDS_EN = ['partnership', 'partner', 'cooperation', 'alliance', 'business inquiry', 'corporate inquiry'];
+const DEFAULT_AVOID_KEYWORDS_EN = ['FAQ', 'customer support', 'product support', 'help center', 'customer service'];
+const DEFAULT_APPROACH_LABEL_EN = 'partnership / cooperation outreach';
+
+function buildFormSelectionRuleEn(pref: FormPreferences | undefined): string {
+  const preferred = (pref && Array.isArray(pref.preferredKeywords) && pref.preferredKeywords.length > 0)
+    ? pref.preferredKeywords : DEFAULT_PREFERRED_KEYWORDS_EN;
+  const avoid = (pref && Array.isArray(pref.avoidKeywords) && pref.avoidKeywords.length > 0)
+    ? pref.avoidKeywords : DEFAULT_AVOID_KEYWORDS_EN;
+  const label = (pref && typeof pref.approachLabel === 'string' && pref.approachLabel.trim())
+    ? pref.approachLabel.trim() : DEFAULT_APPROACH_LABEL_EN;
+  const preferredStr = preferred.map((k: any) => `"${k}"`).join(' / ');
+  const avoidStr = avoid.map((k: any) => `"${k}"`).join(' / ');
+  return `- ★ Form selection priority (outreach intent: ${label}): (1) Use ${preferredStr} forms when present. (2) Fall back to generic Contact only if (1) does not exist. (3) Avoid ${avoidStr} forms — they are end-user channels, not B2B sales destinations (e.g. faq.oracle.co.jp/app/ask/referer_id/contact is a general Q&A intake, not a partner channel).`;
 }
 
 function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   const tabs = Number.isFinite(opts && opts.parallelTabs) ? Number(opts.parallelTabs) : 1;
   const autoSendSafe = !!(opts && opts.autoSendSafe);
+  const formPref = opts && opts.formPreferences;
 
   const lines: string[] = [
     '- Phase A is already done by the backend. Do NOT re-analyze the target site unless the form URL is unresolved.',
@@ -24,6 +50,7 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     '- Even when rewriting the body, do NOT add facts not present in messagePrompt / analysisHints / siteExcerpt. Never invent figures (employee count, founding year, capital, etc.) that are not in sender_json.',
     '- Do not add sender information that is not in sender_json.',
     '- The body MUST end with the sender company name / contact / email / phone / address (if any) from sender_json plus a clear opt-out notice. If address is unset, do not invent one.',
+    buildFormSelectionRuleEn(formPref),
     '- For unresolved forms, shallowly check the site for Contact / Get in touch / Inquiries pages or common paths.',
     '- awaiting_approval is only allowed once the form has been filled AND ss-{No}-input.png has been captured.',
     '- If you encounter a CAPTCHA, do NOT stop. Fill all fields you can → take ss-{No}-input.png → mark as awaiting_approval (a human will solve the CAPTCHA and submit).',

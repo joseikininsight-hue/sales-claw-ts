@@ -148,6 +148,26 @@ export interface LetterTemplate {
   format: LetterFormat;
 }
 
+/**
+ * v2.0.59: ユーザーごとのフォーム選択設定。
+ *
+ * Claude が複数のお問い合わせフォーム (一般 Contact / パートナー / 採用 / IR 等)
+ * を持つ B2B サイトに到達したとき、どれを優先・回避するかをユーザーが定義できる。
+ *
+ * 未設定なら locale-pack のデフォルト (= パートナー営業向け) が適用される。
+ *
+ * 利用例:
+ * - パートナー営業 (default): preferredKeywords=["パートナー","協業","alliance"]
+ * - 人材紹介:                preferredKeywords=["採用","HR","career","recruit"]
+ * - IR / 投資家対応:        preferredKeywords=["IR","investor","株主"]
+ * - 取材/PR:                 preferredKeywords=["広報","PR","press","media"]
+ */
+export interface FormPreferences {
+  approachLabel?: string;        // 「パートナー営業」「人材紹介」等の表示ラベル
+  preferredKeywords?: string[];  // 優先するフォーム名キーワード
+  avoidKeywords?: string[];      // 避けるフォーム名キーワード
+}
+
 export interface MessageTemplates {
   style: MessageStyle;
   inquiryTypes: string[];
@@ -167,6 +187,8 @@ export interface MessageTemplates {
    * ja のままなら従来挙動と完全互換。
    */
   language?: 'auto' | 'ja' | 'en';
+  /** v2.0.59: フォーム選択のパーソナライズ設定 */
+  formPreferences?: FormPreferences;
 }
 
 export type EmailProvider = 'outlook' | 'gmail' | 'other';

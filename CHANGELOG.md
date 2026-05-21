@@ -1,5 +1,67 @@
 # Changelog
 
+## 2.0.59 - 2026-05-21 — フォーム選択をユーザーごとにパーソナライズ可能化
+
+ユーザー報告: 「faq.oracle.co.jp には会社とパートナーシップの問い合わせがあるのに、
+違うコンタクト (導入支援のほう) から入っている」+「いろんな人が使うからパーソナ
+ライズできるように」。
+
+実機ログ (2026-05-21T09:04-09:05 No.157 日本オラクル):
+- form_fill: `https://faq.oracle.co.jp/app/ask/referer_id/contact` ← 一般 Q&A 受付
+- submitted: 同上
+
+target list で No.157 は Website URL / Form URL ともに空 (urlMissing=true) のため
+Claude が WebSearch で公式サイトを探索 → Oracle FAQ サイトの一般 contact フォームに
+到達して送信していた。本来は B2B 営業先として partnerships 窓口を選ぶべき。
+
+### 修正内容
+
+**フォーム選択優先順位を `settings.json` でユーザーごとに定義可能に**:
+
+```json
+{
+  "messageTemplates": {
+    "formPreferences": {
+      "approachLabel": "パートナー / 協業 営業",
+      "preferredKeywords": ["パートナー","協業","取引","アライアンス","Partner Inquiry"],
+      "avoidKeywords": ["FAQ","カスタマーサポート","Customer Support"]
+    }
+  }
+}
+```
+
+未設定なら **パートナー営業向けデフォルト** が自動適用される。
+
+### 利用シナリオ別の設定例
+
+| アプローチ | preferredKeywords |
+|---|---|
+| パートナー営業 (default) | `["パートナー","協業","取引","アライアンス","Partner Inquiry","Business Inquiry"]` |
+| 人材紹介 | `["採用","HR","career","recruit","ヘッドハント"]` |
+| IR / 投資家対応 | `["IR","investor","株主","投資家"]` |
+| 取材 / PR | `["広報","PR","press","media","取材"]` |
+| SaaS 営業 | `["導入","trial","デモ","商談","sales inquiry"]` |
+
+### 変更ファイル
+
+- `src/types/settings.ts`: `FormPreferences` 型を追加
+- `src/settings-manager.ts`: `DEFAULT_SETTINGS.messageTemplates.formPreferences` を追加
+- `src/locale-pack/ja/cli-prompts.ts`, `src/locale-pack/en/cli-prompts.ts`:
+  - `BuildBatchRulesOpts.formPreferences` を受け取り、`buildFormSelectionRule()` で
+    動的に prompt 行を生成
+  - 設定なしの場合は locale ごとのデフォルト (= パートナー営業向け) を使う
+- `src/dashboard-server.ts`: `queueClaudeFormFillInManagedSession` が settings から
+  `messageTemplates.formPreferences` を取得して buildBatchRules に渡す
+- `data/sample-settings.json`: パートナー営業向けデフォルト値を追加
+
+### 期待効果
+
+- 大企業 (Oracle, IBM 等) で複数の問い合わせ窓口がある場合に、ユーザーが指定した
+  種類のフォームを Claude が選択するようになる
+- FAQ / サポート窓口への誤送信が削減 (= 営業 NG / cooler 化リスク回避)
+- ユーザーごとの営業趣旨 (パートナー / 採用 / IR / PR / SaaS 等) に応じた
+  挙動カスタマイズが可能
+
 ## 2.0.58 - 2026-05-21 — sentMessageFile 経由でファイル受け取り (curl shell escape 根本解消)
 
 v2.0.57 で 30→10 chars に緩和したが、curl の `-d` 引数で複数行 JSON を扱う
