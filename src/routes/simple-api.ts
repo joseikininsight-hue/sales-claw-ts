@@ -161,7 +161,23 @@ module.exports = function createSimpleApiRoutes(ctx) {
     const minSiteTextLength = idealCustomer && Number.isFinite(Number(idealCustomer.minSiteTextLength))
       ? Math.max(0, Math.floor(Number(idealCustomer.minSiteTextLength)))
       : 800;
+    // v2.0.56: form_fill + confirm_reached がそろえば site_analysis ログが
+    //   無くても awaiting_approval を許可する。
+    //   旧仕様: site_analysis が必須 → Phase A をスキップした社 / Phase A 結果が
+    //          古くて action-log から消失した社 (再起動・log rotation 等) で、
+    //          Claude が MCP Playwright で実際にフォーム入力 + 確認画面到達まで
+    //          成功させたにもかかわらず error 化される事故が頻発していた
+    //          (実機ログで No.84, 86 などで「フォーム入力済み・確認ページ到達済み。
+    //           ただし API が site_analysis を要求」と error 化を確認)。
+    //   新仕様: form_fill + confirm_reached の両方がある = Phase B で
+    //          MCP Playwright でサイト確認 → フォーム入力 → 確認画面到達まで
+    //          成功した証拠なので、site_analysis 無しでも通過させる。
+    //          sentMessage 品質は次の validateSentMessageQuality で別途検査される。
+    const filledAndReached = hasFormFill && hasConfirmReached;
     if (!latest) {
+      if (filledAndReached) {
+        return { ok: true };
+      }
       return {
         ok: false,
         error: 'site_analysis log is required before awaiting_approval/submitted.',
@@ -173,13 +189,6 @@ module.exports = function createSimpleApiRoutes(ctx) {
     // urlMissing=true の場合でも form_fill + confirm_reached 記録済みであれば
     // Phase B で CLI が WebSearch を通じて公式サイトを特定・入力したとみなして通過させる。
     const isUrlMissingButFilled = analysis.urlMissing === true && hasFormFill;
-    // v2.0.32: form_fill + confirm_reached 両方ある = Claude が実際に MCP Playwright で
-    // サイト確認 → フォーム入力 → 確認画面到達まで成功させた証拠。siteTextLength が
-    // 800 字未満でも、最終的な sentMessage 品質は次の validateSentMessageQuality で
-    // 別途チェックする。site_analysis 厳密バリデーションを優先して拒否すると、
-    // 「フォーム入力済 + スクショ済 + 確認画面到達済」を全部捨てて error 化してしまい、
-    // ユーザーには「永久に awaiting_approval にならない」状態に見える。
-    const filledAndReached = hasFormFill && hasConfirmReached;
     if (!isUrlMissingButFilled && !filledAndReached && siteTextLength < minSiteTextLength) {
       return {
         ok: false,

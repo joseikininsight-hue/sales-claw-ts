@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.0.56 - 2026-05-21 — フォーム入力成功が error 化される site_analysis ガード修正
+
+実機ログ分析で「フォーム入力済み・確認ページ到達済み (form_fill + confirm_reached
+両方記録) なのに awaiting_approval が API で reject されて error 化」する事象を
+発見 (例: No.84 三井住友 MJS、No.86 メディカアド)。原因は `/api/log-action` の
+`validateTerminalActionPrerequisites` 関数で **site_analysis ログを必須** にして
+いたため、Phase A スキップ社 / log rotation で site_analysis が消失した社で
+永久に awaiting_approval にならない状態だった。これがユーザーが感じる
+「v1.2 系より遅い・動かない」体感の主因と特定。
+
+### 修正内容
+
+`src/routes/simple-api.ts` `validateTerminalActionPrerequisites`:
+- form_fill + confirm_reached の両方がある場合は site_analysis ログ無しでも
+  awaiting_approval を許可
+- 旧仕様: site_analysis ログが latest=null だと無条件 reject
+- 新仕様: latest=null でも `filledAndReached === true` なら通過 (Phase B で
+  MCP Playwright が実フォーム入力 + 確認画面到達まで成功した証拠)
+
+### 影響範囲
+
+- 既存正常フロー (site_analysis あり) は無変更
+- form_fill / confirm_reached いずれかが無い不正な awaiting_approval は依然
+  reject (安全側ガード維持)
+- sentMessage 品質は `validateSentMessageQuality` で別途検査されるため緩和なし
+
+### 関連実機データ
+
+- 2026-05-21 04:27 No.84 MJS: 04:19 form_fill → 04:22 confirm_reached → 04:27 error
+  「ただし API が site_analysis を要求」← 本修正で awaiting_approval に
+- 2026-05-21 04:27 No.86 メディカアド: 同上 + reCAPTCHA 設定エラー
+- 2026-05-21 03:53 No.82 テクノプロ: action-log に entry なし (= API reject 後
+  curl 自体打たれず) → 本修正で記録される見込み
+
 ## 2.0.55 - 2026-05-21 — urlMissing 案件の WebSearch を 1 回 30 秒に制限
 
 v2.0.54 実機で 3 社処理 (No.69/79/80) を計測したところ、PTY ログで Claude が
