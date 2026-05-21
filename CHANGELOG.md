@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.57 - 2026-05-21 — sentMessage 30 chars ガード緩和 (リトライループ解消)
+
+実機 PTY ログ (2026-05-21 08:00 周辺) で **「メッセージが短すぎるエラー」リトライ
+ループ**を観測。Claude が curl の `-d` 引数で複数行 JSON を渡す際に shell escape
+ミスで本文末尾が truncate → 30 chars 未満 → 422 reject → 同じ短いメッセージで
+リトライ → 永久ループ → dispatcher が次の社に進めず。
+
+ユーザー報告「3 社しかやってない」「stop → restart のバグ?」の真因は実は別で、
+**67 batch (約 200 社) が enqueue 済みだが Claude PTY が 1 batch の 1-2 社で
+422 リトライループに陥り全体が停滞**していた。
+
+### 修正内容
+
+`src/routes/simple-api.ts` handleLogAction:
+- `sentMessage` の最小長 **30 chars → 10 chars** に緩和
+- TEL/MAIL ダンプだけの縮退本文は依然弾けるが、署名 + 本文短縮ケースは通過
+- placeholder 検出 / `validateSentMessageQuality` は後段で別途バリデーションを
+  維持しているため安全性は確保
+
+### 影響範囲
+
+- 30 chars 未満の sentMessage は今後通過 (10-29 chars)
+- shell escape ミスで truncate された本文も dashboard に記録される
+- 結果として「動かない・捨てられる」が大幅減少 → batch dispatcher が次に進む
+
+### 関連実機ログ
+
+- 2026-05-21T08:00:32 No.153 ワークスアプリケーションズ: 422 → curl リトライ
+- 2026-05-21T08:00 周辺: 「メッセージが短すぎるエラー」「BOM あり。UTF8NoBOM
+  で書き直します」を 10 回以上発話して停滞
+- 08:08 以降 12 分以上 dispatch 進捗ゼロ (No.156, 151 の 2 社で stuck)
+
 ## 2.0.56 - 2026-05-21 — フォーム入力成功が error 化される site_analysis ガード修正
 
 実機ログ分析で「フォーム入力済み・確認ページ到達済み (form_fill + confirm_reached

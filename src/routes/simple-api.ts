@@ -452,11 +452,22 @@ module.exports = function createSimpleApiRoutes(ctx) {
             }));
             return;
           }
-          if (sentMsg.length < 30) {
+          // v2.0.57: 30 文字下限を 10 文字に緩和。
+          //   旧仕様 (30 chars): Claude が curl の -d 引数で複数行 JSON を渡す際に
+          //     shell escape ミスで本文末尾が truncate されて 30 chars 未満 → 422
+          //     → リトライループ → dispatcher 進まず → ユーザーが「3 社しか処理さ
+          //     れない」と感じる事故が頻発 (実機 PTY ログで「メッセージが短すぎる
+          //     エラーでした。正しい本文をファイルに書いて curl で送信します」を
+          //     2026-05-21 08:00 周辺で 10 回以上観測)。
+          //   新仕様 (10 chars): TEL/MAIL ダンプだけの縮退本文 (例: 「TEL:090...」)
+          //     は依然弾けるが、一般的な署名 + 本文短縮ケースは通過させる。
+          //     既に placeholder 検出 / quality gate が後段で別途バリデーション
+          //     しているため安全性は維持。
+          if (sentMsg.length < 10) {
             res.writeHead(422, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
               ok: false,
-              error: 'details.sentMessage too short (' + sentMsg.length + ' chars). 30 文字以上の実本文を渡してください。',
+              error: 'details.sentMessage too short (' + sentMsg.length + ' chars). 10 文字以上の実本文を渡してください。',
               hint: 'TEL/MAIL のダンプだけのような縮退本文は不可。companyProfile + valuePropositions を活用した本文を生成してください。',
             }));
             return;
