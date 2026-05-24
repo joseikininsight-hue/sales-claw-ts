@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.0.63 - 2026-05-24 — 旧版 legacy claude.exe の優先回避 (Windows 互換エラー対策)
+
+実機エラー報告:
+```
+Claude で MCP Playwright の設定に失敗しました。
+This version of C:\Users\...\AppData\Roaming\sales-claw-ts\runtime\tools\
+  npm-project\node_modules\@anthropic-ai\claude-code\bin\claude.exe
+is not compatible with the version of Windows you're running.
+```
+
+### 原因
+
+`<runtime>/tools/` 配下の legacy claude.exe は v2.0.59 以前で初回起動時に
+DL されたもので、ユーザーの Windows 環境では壊れていた (古い版 / 中断 DL /
+AV 改変 のいずれか)。v2.0.62 で installer に新しい claude.exe を同梱しても、
+`resolveClaudeExecutable` のスコアリングが `<runtime>/tools/.bin/` を最高
+優先 (+100) と評価していたため、壊れた legacy が選ばれ続けていた。
+
+### 修正
+
+`dashboard-server.ts::resolveClaudeExecutable` のスコアリング:
+- bundled npm bin (`<install>/resources/prebuilt-bundles/npm-project/.bin/`)
+  に startsWith: **+300** (新規追加・最優先)
+- パスに `prebuilt-bundles` を含む: **+280** (新規追加)
+- legacy `<runtime>/tools/.bin/` の +100 はそのまま (system 等よりは
+  優先するが、bundle よりは下位)
+
+結果: bundle ありの環境 (v2.0.62+) では同梱の新 claude.exe が確実に選ばれ、
+壊れた legacy は無視される。
+
+### 副次的に export 追加
+
+`local-toolchain.ts` の `getBundledResourcesDir` / `getBundledBrowsersDir` /
+`getBundledNpmProjectDir` を module.exports に公開 (dashboard-server から
+参照するため)。
+
 ## 2.0.62 - 2026-05-24 — Mac / Linux でも「依存ゼロ」インストール対応
 
 ユーザー要望: 「Mac/Linux でも同じ問題 (Electron 入ってない / Claude CLI 入って

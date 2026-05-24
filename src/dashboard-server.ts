@@ -4702,6 +4702,12 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
   }
 
   const localNpmBin = `${localToolchain.getNpmBinDir()}${path.sep}`.toLowerCase();
+  const bundledNpmBin = (() => {
+    try {
+      const dir = localToolchain.getBundledNpmProjectDir && localToolchain.getBundledNpmProjectDir();
+      return dir ? `${path.join(dir, 'node_modules', '.bin')}${path.sep}`.toLowerCase() : null;
+    } catch (_) { return null; }
+  })();
   const candidates = Array.from(new Set([
     ...localToolchain.getProviderExecutableCandidates(provider.id).filter((entry: any) => fs.existsSync(entry)),
     ...discoveredCandidates,
@@ -4710,6 +4716,15 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
     function score(entry) {
       const normalized = String(entry || '').toLowerCase();
       let value = 0;
+      // v2.0.63: installer 同梱の prebuilt-bundles を最優先する。
+      //   旧版 (v2.0.59 以前) で <runtime>/tools/ に DL された claude.exe が
+      //   壊れていた事例 (Windows: "not compatible with the version of Windows
+      //   you're running") があり、新規 install / アップグレード後でも legacy
+      //   runtime/tools/ の方が高スコアで選ばれ、壊れた exe が使われ続けてしまった。
+      //   同梱バンドルは CI で常にクリーンビルドするので確実に動作する。
+      if (bundledNpmBin && normalized.startsWith(bundledNpmBin)) value += 300;
+      if (normalized.includes('\\prebuilt-bundles\\')) value += 280;
+      if (normalized.includes('/prebuilt-bundles/')) value += 280;
       if (normalized.startsWith(localNpmBin)) value += 100;
       if (normalized.includes('\\.sales-claw\\tools\\npm-project\\node_modules\\.bin\\')) value += 90;
       if (normalized.includes('/.sales-claw/tools/npm-project/node_modules/.bin/')) value += 90;
@@ -4718,6 +4733,7 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
       if (normalized.includes('\\.local\\bin\\')) value += 50;
       if (normalized.includes('\\windowsapps\\')) value -= 40;
       // node_modules 内の直接バイナリは npm ラッパーが壊れたとき不安定なため低く評価
+      // ただし prebuilt-bundles の場合は上で +280 を入れているので最終的に高評価のまま
       if (normalized.includes('\\node_modules\\')) value -= 10;
       if (normalized.endsWith('.cmd')) value += 20;
       else if (normalized.endsWith('.exe')) value += 15;
