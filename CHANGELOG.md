@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.61 - 2026-05-24 — 2.0.60 CI 失敗のリリース修正
+
+CI で 2 つ問題が出たため修正版を切る:
+
+1. **Windows NSIS ビルド失敗**: `build/installer.nsh` で使った `${IfSilent}` は
+   LogicLib.nsh の wrapper で、electron-builder 内蔵 NSIS には customInstall
+   マクロスコープで auto-include されていなかった。NSIS ネイティブ命令
+   `IfSilent customInstall_end` に置き換え。
+2. **macOS Claude CLI prefetch 失敗**: `@anthropic-ai/claude-code` の
+   `npm install` 後に `bin/claude` が生成されない (postinstall がプラット
+   フォーム依存)。v2.0.61 の優先プラットフォームは Windows なので、
+   macOS/Linux では Claude CLI prefetch を best-effort 扱いにし、見つから
+   なくても warn だけで継続 (runtime の初回 DL にフォールバック)。Windows で
+   見つからない場合のみ throw する。
+
 ## 2.0.60 - 2026-05-24 — インストーラ後の自動起動 + Playwright/Claude CLI 同梱 + 英語版利用規約
 
 ユーザー報告 (note.com コメント): 「Windows でインストーラやってみましたが起動せず」

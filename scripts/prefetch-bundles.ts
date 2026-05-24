@@ -138,12 +138,46 @@ function installClaudeCli() {
     15 * 60 * 1000
   );
 
-  const exeName = process.platform === 'win32' ? 'claude.exe' : 'claude';
-  const exePath = path.join(NPM_PROJECT_DIR, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', exeName);
-  if (!fs.existsSync(exePath)) {
-    throw new Error(`Claude CLI install completed but executable not found at ${path.relative(ROOT, exePath)}`);
+  // Detect the installed executable. The Claude Code npm package ships a
+  // postinstall step that drops a single platform-specific binary in
+  // `bin/`, but the exact path differs across platforms (and has changed
+  // between versions). Probe several candidates and warn rather than
+  // throw — the runtime detector in src/local-toolchain.ts already falls
+  // back to system PATH if the bundle is incomplete.
+  //
+  // The primary use case for v2.0.60 is Windows: that's where note.com
+  // users reported the AV-blocked download issue. macOS/Linux users keep
+  // the existing first-run download flow if the bundle isn't produced.
+  const cliRoot = path.join(NPM_PROJECT_DIR, 'node_modules', '@anthropic-ai', 'claude-code');
+  const candidateExeNames = process.platform === 'win32'
+    ? ['claude.exe', 'claude']
+    : ['claude', 'claude.exe'];
+  const candidatePaths: string[] = [];
+  for (const name of candidateExeNames) {
+    candidatePaths.push(path.join(cliRoot, 'bin', name));
+    candidatePaths.push(path.join(NPM_PROJECT_DIR, 'node_modules', '.bin', name));
   }
-  console.log(`✔ Claude CLI ready: ${path.relative(ROOT, exePath)}`);
+  const found = candidatePaths.find((p) => {
+    try { return fs.existsSync(p); } catch (_) { return false; }
+  });
+
+  if (found) {
+    console.log(`✔ Claude CLI ready: ${path.relative(ROOT, found)}`);
+    return;
+  }
+
+  // Bundle is incomplete on this platform. Warn so the build proceeds
+  // and the runtime falls back to first-run download.
+  console.warn(
+    `⚠ Claude CLI install completed but no executable found in expected locations.`,
+    `\n  Checked: ${candidatePaths.map((p) => path.relative(ROOT, p)).join(', ')}`,
+    `\n  This platform will fall back to first-run download.`,
+  );
+  if (process.platform === 'win32') {
+    // On Windows we *do* care — fail loudly. This is the platform we
+    // ship the bundle for.
+    throw new Error('Claude CLI bundle missing on Windows — refusing to publish an installer without it.');
+  }
 }
 
 function installChromium() {

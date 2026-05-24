@@ -25,10 +25,13 @@
   ; electron-updater during an auto-update. The updater calls
   ; `quitAndInstall()` which then relaunches the app on its own, so we
   ; must not double-launch.
+  ;
+  ; Note: use native `IfSilent` instruction (jumps if silent) rather than
+  ; the LogicLib `${IfSilent}` wrapper — electron-builder's NSIS script
+  ; does not auto-include LogicLib.nsh inside the customInstall macro
+  ; scope, so using ${IfSilent} produces "Invalid command" at compile time.
   ; -------------------------------------------------------------------------
-  ${IfSilent}
-    Goto customInstall_end
-  ${EndIf}
+  IfSilent customInstall_end
 
   ; -------------------------------------------------------------------------
   ; Wait until critical files are physically on disk.
