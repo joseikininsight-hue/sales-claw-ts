@@ -120,6 +120,13 @@ jobs:
       - name: Verify release readiness
         run: npm run verify:release
 
+      # v2.0.60: Playwright Chromium + Claude CLI を installer に同梱して
+      # 初回起動時のネットワーク DL (AV/EDR にブロックされる原因) を回避する。
+      # `predist:*` npm script は `npm run dist:*` 経由でしか発火しないため、
+      # CI で `npx electron-builder` を直接叩く前にここで明示的に実行する。
+      - name: Prefetch bundled Chromium + Claude CLI
+        run: npm run prefetch:bundles
+
       - name: Build & publish (Windows)
         if: matrix.os == 'windows-latest'
         env:
