@@ -178,12 +178,16 @@ module.exports = function createAiRuntimeRoutes(ctx) {
       const rows = Math.max(1, Math.min(120, Math.floor(Number(body.rows) || 30)));
       const autoSendSafe = body.autoSendSafe === true;
       const providerId = normalizeProviderId(body.provider || getSelectedAiProvider());
-      // v2.0.31: 120秒に拡張。MCP playwright re-add (stale entry 検知 →
-      // remove + add + verify) のワーストケースは ensureProviderPlaywrightMcp
-      // 内のサブタイムアウト合計で最大 90s。旧 75s だとここに先にぶつかって
-      // 「AI が永久に起動しない」状態になっていた (インストール版 ↔ dev mode を
-      // 切り替えると毎回 stale 判定で再 add ループが発生する)。
-      const LAUNCH_TIMEOUT_MS = 120000;
+      // v2.0.64: 180 秒に再拡張。実機で `managed_ai_launch_cancel_requested
+      //   reason:"timeout" ageMs:119990` が複数回観測された。原因は ensureClaude
+      //   AutomationReady 内で「未準備」検出 → 自動 Chromium 準備 (~30s)
+      //   → ensureProviderPlaywrightMcp (remove + add + verify, 最大 90s)
+      //   → startManagedAiSession (~30s) の連鎖で 120s では不足する場合があった。
+      //   180 秒なら自動回復経路を含めても余裕で完走できる。
+      //   合わせて MANAGED_AI_LAUNCH_LOCK_STALE_MS (現 130s) も 200s に上げる必要あり。
+      // v2.0.31: 120 秒に拡張 (旧 75s は MCP playwright re-add のワーストケース 90s
+      //   に先にぶつかって AI が永久に起動しない状態になっていた)。
+      const LAUNCH_TIMEOUT_MS = 180000;
       let timedOut = false;
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {

@@ -106,11 +106,14 @@ const SCRIPT = `(function(){
   var launchAbortController = null;
   var launchAbortReason = null;
   var launchTimeoutTimer = null;
-  // server 側 MANAGED_AI_LAUNCH_LOCK_STALE_MS (130s) と揃える。
-  // server LAUNCH_TIMEOUT_MS (120s) より長くして、サーバが先に timeout を
-  // 検出して 200 + 構造化エラーを返すのを許す (client がタイムアウトすると
-  // overlay が「ローディング中」のまま固まる)。
-  var LAUNCH_REQUEST_TIMEOUT_MS = 130000;
+  // server 側 MANAGED_AI_LAUNCH_LOCK_STALE_MS (200s) と揃える。
+  // server LAUNCH_TIMEOUT_MS (180s) より長くして、サーバが先に timeout を
+  // 検出して 200 + 構造化エラーを返すのを許す (client が先にタイムアウトすると
+  // overlay が「ローディング中」のまま固まる UX 事故になる)。
+  // v2.0.64: 自動 Chromium 準備 (+30s) を含めるため client/server とも +60s 拡張。
+  //   client 200s > server 180s > 最悪セットアップ (Chromium prep 30s +
+  //   mcp re-add 90s + startManagedAiSession 30s = 150s) の不変条件を維持。
+  var LAUNCH_REQUEST_TIMEOUT_MS = 200000;
 
   var PROVIDER_LABELS = {
     claude: 'Claude',

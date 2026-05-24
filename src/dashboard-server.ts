@@ -128,10 +128,12 @@ const AI_DIAGNOSTICS_CACHE_TTL_MS = 30000;
 // かかる場合がある (CLI 側の git fetch / npm 解決待ちで遅延)。
 // さらに stale entry 検知時は remove(20s) + add(30s) + verify(20s) = 70s
 // が ensureProviderPlaywrightMcp 内で連続する。
-// stale lock 判定 (130s) > server LAUNCH_TIMEOUT_MS (120s) > mcp setup 最大 90s
+// v2.0.64: 自動 Chromium 準備 (+30s) を追加したため、LAUNCH_TIMEOUT_MS を
+//   120s → 180s に拡張。それに合わせて stale lock も 130s → 200s。
+// stale lock 判定 (200s) > server LAUNCH_TIMEOUT_MS (180s) > mcp setup + chromium prep 最大 120s
 // の順で大小を維持し、「client がタイムアウトする前に stale 判定が走る」
 // 状態を避ける。
-const MANAGED_AI_LAUNCH_LOCK_STALE_MS = 130000;
+const MANAGED_AI_LAUNCH_LOCK_STALE_MS = 200000;
 const PTY_MAX_COLS = 300;
 const PTY_MAX_ROWS = 120;
 
@@ -3809,6 +3811,14 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
     //   強制 finish する。これをやらないと再キュー時に「既に処理中」エラーで弾かれる。
     cleanupStaleManagedAiMonitorEvents(0, { force: true });
     stopPowerSaveBlockerIfActive();
+    // v2.0.64: ユーザー明示停止時のみ AI ステータスキャッシュを無効化する。
+    //   (自動 recovery / 内部 restart では cache を保持して再 probe surge を避ける)
+    // 旧バグ: stop 直後の状態が _aiStatusCache / _aiDiagnosticsCache に
+    //   "loggedIn:true, mcpReady:true" のまま 15-30s 残り、その間に再起動
+    //   しようとすると stale なキャッシュを根拠に「準備済」と判定し、しかし
+    //   実際の PTY は死んでいるため Playwright MCP 確認で「未準備」エラーを
+    //   出す不安定状態に陥っていた。明示停止 = キャッシュ全 wipe で統一する。
+    try { invalidateAiStatusCache(getManagedAiProvider() || null); } catch (_) { /* swallow */ }
     queueClearStats = { activeCleared: hadActive, pendingCleared: pendingCount };
     if (pendingCount > 0 || hadActive) {
       appendDiagnosticEvent('managed_ai_stop_cleared_queue', {
@@ -5034,13 +5044,53 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
       error: `${provider.cliLabel} が未ログインです。先に ${provider.displayName} を起動してログインを完了してください。`,
     };
   }
-  const playwrightPackage: any = await probePlaywrightPackageStatus();
+  let playwrightPackage: any = await probePlaywrightPackageStatus();
   if (!playwrightPackage.available || !playwrightPackage.browserInstalled) {
-    return {
-      ok: false,
-      statusCode: 409,
-      error: `Playwright MCP / Chromium が未準備です。ダッシュボードの「AI CLI を準備」ボタンで ${provider.displayName} と Playwright をセットアップしてください。`,
-    };
+    // v2.0.64: 旧仕様は「未準備です」エラーを返してユーザーに再度ボタン押下を強いていた。
+    // 実機ログ: 1 回目「未準備」→ ユーザー操作 → 2 回目「未準備」→ 数分後にやっと成功、
+    // という「2 回押し」UX バグの根本原因。
+    // 新仕様: ここで自動で installPlaywrightChromium を呼び、その結果を含めて再 probe する。
+    // installer 同梱 bundle (v2.0.60+) があれば即座に成功するし、無くても 1 度の API 呼び出し
+    // で済む。
+    appendDiagnosticEvent('ai_form_fill_auto_install_playwright', {
+      provider: selectedProviderId,
+      reason: !playwrightPackage.available ? 'mcp-unavailable' : 'chromium-missing',
+    });
+    emitClaudeAutomationLog(
+      `[自動準備] Playwright MCP / Chromium が未準備のため自動セットアップを開始します...\n`,
+      'system',
+      selectedProviderId,
+    );
+    try {
+      const installResult: any = await localToolchain.installPlaywrightChromium();
+      if (installResult && installResult.ok) {
+        emitClaudeAutomationLog(
+          installResult.bundled
+            ? `[自動準備] 同梱 Chromium を検出しました (再 DL 不要)。\n`
+            : `[自動準備] Chromium の準備が完了しました。\n`,
+          'system',
+          selectedProviderId,
+        );
+      }
+    } catch (autoInstallErr: any) {
+      appendDiagnosticEvent('ai_form_fill_auto_install_failed', {
+        provider: selectedProviderId,
+        error: autoInstallErr && autoInstallErr.message ? autoInstallErr.message : String(autoInstallErr),
+      });
+    } finally {
+      // v2.0.64: 成功/失敗どちらでもキャッシュを必ず invalidate して再 probe する。
+      // install 中に部分的にファイルシステムが変わっている可能性があるので、
+      // stale な playwrightPackage snapshot を握ったまま 409 を返すと UX 誤判定。
+      invalidateAiStatusCache(selectedProviderId);
+      playwrightPackage = await probePlaywrightPackageStatus();
+    }
+    if (!playwrightPackage.available || !playwrightPackage.browserInstalled) {
+      return {
+        ok: false,
+        statusCode: 409,
+        error: `Playwright MCP / Chromium の自動準備に失敗しました。ダッシュボードの「AI CLI を準備」ボタンで ${provider.displayName} と Playwright を手動セットアップしてください。`,
+      };
+    }
   }
   if (selectedProviderId === 'codex') {
     ensureCodexWorkspaceTrusted(PROJECT_ROOT);

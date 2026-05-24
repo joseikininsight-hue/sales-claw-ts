@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.0.64 - 2026-05-24 — AI 連携の安定性 3 点改善 (2 回押し / Stop 後不安定 / 起動タイムアウト)
+
+実機 dashboard-diagnostics.jsonl から確認した 3 つの UX 事故をまとめて修正:
+
+### 1. 「AI 送信」を 2 回押さないと進まないバグ
+
+**現象**: ai-form-fill 投入時に Playwright/Chromium 未準備を検出すると 409 で
+ユーザーに「AI CLI を準備ボタンを押せ」と返していた → ユーザーが手動で準備
+ボタンを押し → 再度 AI 送信を押す → やっと走る、という UX 事故。
+
+**ログ証拠**: 11:16:28 → 11:16:45 → ... → 11:25:38 まで何度も「未準備」
+エラーが繰り返され、10 分後にやっと走る。
+
+**修正** (dashboard-server.ts:ensureClaudeAutomationReady):
+未準備を検出したら自動で `installPlaywrightChromium()` を呼んで再 probe
+する。同梱バンドル (v2.0.60+) があれば 1ms で帰るので透過的に成功。失敗
+した時だけ 409 を返して手動セットアップを促す。
+
+### 2. AI ストップ後の不安定 / Playwright 未インストールエラー
+
+**現象**: AI 停止後、`_aiStatusCache` (15s TTL) と `_aiDiagnosticsCache`
+(30s TTL) に stale な "ready:true" が残ったまま PTY だけ死んでいる状態に
+なり、次の再起動で「未準備」エラーが返る不安定状態。
+
+**修正** (dashboard-server.ts:stopManagedClaudePty):
+userInitiated stop の `if (userInitiated)` ブロックで
+`invalidateAiStatusCache(provider)` を必ず呼ぶ。自動 recovery 時は cache
+保持のまま (re-probe surge 回避)。
+
+### 3. AI 起動タイムアウト 2 分が短すぎる
+
+**現象**: `managed_ai_launch_cancel_requested reason:"timeout" ageMs:119990`
+が複数回観測。120 秒では (自動 Chromium prep + MCP re-add + start session)
+の合計をカバーできなかった。
+
+**修正**:
+- `LAUNCH_TIMEOUT_MS` 120000 → **180000** (ai-runtime-api.ts)
+- `MANAGED_AI_LAUNCH_LOCK_STALE_MS` 130000 → **200000** (dashboard-server.ts)
+- `LAUNCH_REQUEST_TIMEOUT_MS` (client) 130000 → **200000** (cli-terminal.ts)
+- 不変条件 `client 200s > server 180s > 最悪セットアップ 150s > stale_lock 200s` を維持
+
+### 並列実行の安全化
+
+ai-form-fill が並列で呼ばれた時に install-browser サブプロセスが 2 個
+spawn されないよう、`installPlaywrightChromium` に in-flight Promise
+ガードを追加 (local-toolchain.ts)。bundle 検出 (~1ms) では発火しないが、
+bundle 欠落時の DL 経路 (~30s) で重要。
+
 ## 2.0.63 - 2026-05-24 — 旧版 legacy claude.exe の優先回避 (Windows 互換エラー対策)
 
 実機エラー報告:

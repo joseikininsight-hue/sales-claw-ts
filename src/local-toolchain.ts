@@ -495,43 +495,62 @@ function findChromiumExecutable(root = getPlaywrightBrowsersDir()) {
   return null;
 }
 
-async function installPlaywrightChromium(options: Record<string, any> = {}) {
-  ensureToolchainFiles();
-  const existing = findChromiumExecutable();
-  if (existing && !options.force) {
-    // 同梱パスの場合は browsersDir もそちらを返す。
-    // (runtime <runtime>/tools/browsers/ を空のまま返すと、後段で「DL 済みなのに空」
-    //  と誤判定される)
-    const bundledBrowsers = getBundledBrowsersDir();
-    const fromBundle = !!(bundledBrowsers && existing.startsWith(bundledBrowsers));
-    return {
-      ok: true,
-      reused: true,
-      bundled: fromBundle,
-      browser: 'chromium',
-      executablePath: existing,
-      browsersDir: fromBundle ? bundledBrowsers : getPlaywrightBrowsersDir(),
-      command: fromBundle ? 'prebuilt-bundles/browsers' : 'bundled @playwright/mcp install-browser chromium',
-    };
-  }
+// v2.0.64: 並列 ai-form-fill 呼び出しが同じ install-browser サブプロセスを 2 個 spawn
+// すると Playwright の DL/解凍が衝突して両方失敗するため、in-flight Promise を共有する。
+// 通常は bundle 検出 (~1ms) で即帰るので発火しないが、bundle 欠落時の DL 経路で重要。
+let _installPlaywrightChromiumInFlight: Promise<any> | null = null;
 
-  const result: any = await runEmbeddedNode([getPlaywrightMcpCliPath(), 'install-browser', 'chromium'], {
-    timeout: options.timeout || PROCESS_TIMEOUT_MS,
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  const executablePath = findChromiumExecutable();
-  return {
-    ok: result.ok && !!executablePath,
-    reused: false,
-    browser: 'chromium',
-    executablePath,
-    browsersDir: getPlaywrightBrowsersDir(),
-    code: result.code,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    error: result.ok && executablePath ? null : String(result.stderr || result.stdout || result.error?.message || 'Chromium installation did not complete.').trim(),
-    command: 'bundled @playwright/mcp install-browser chromium',
-  };
+async function installPlaywrightChromium(options: Record<string, any> = {}) {
+  // force=true は明示的な再 install を要求しているので共有しない。
+  if (_installPlaywrightChromiumInFlight && !options.force) {
+    return _installPlaywrightChromiumInFlight;
+  }
+  const inFlight = (async () => {
+    ensureToolchainFiles();
+    const existing = findChromiumExecutable();
+    if (existing && !options.force) {
+      // 同梱パスの場合は browsersDir もそちらを返す。
+      // (runtime <runtime>/tools/browsers/ を空のまま返すと、後段で「DL 済みなのに空」
+      //  と誤判定される)
+      const bundledBrowsers = getBundledBrowsersDir();
+      const fromBundle = !!(bundledBrowsers && existing.startsWith(bundledBrowsers));
+      return {
+        ok: true,
+        reused: true,
+        bundled: fromBundle,
+        browser: 'chromium',
+        executablePath: existing,
+        browsersDir: fromBundle ? bundledBrowsers : getPlaywrightBrowsersDir(),
+        command: fromBundle ? 'prebuilt-bundles/browsers' : 'bundled @playwright/mcp install-browser chromium',
+      };
+    }
+
+    const result: any = await runEmbeddedNode([getPlaywrightMcpCliPath(), 'install-browser', 'chromium'], {
+      timeout: options.timeout || PROCESS_TIMEOUT_MS,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    const executablePath = findChromiumExecutable();
+    return {
+      ok: result.ok && !!executablePath,
+      reused: false,
+      browser: 'chromium',
+      executablePath,
+      browsersDir: getPlaywrightBrowsersDir(),
+      code: result.code,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      error: result.ok && executablePath ? null : String(result.stderr || result.stdout || result.error?.message || 'Chromium installation did not complete.').trim(),
+      command: 'bundled @playwright/mcp install-browser chromium',
+    };
+  })();
+  if (!options.force) _installPlaywrightChromiumInFlight = inFlight;
+  try {
+    return await inFlight;
+  } finally {
+    if (_installPlaywrightChromiumInFlight === inFlight) {
+      _installPlaywrightChromiumInFlight = null;
+    }
+  }
 }
 
 async function probePlaywrightMcpStatus() {
