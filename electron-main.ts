@@ -53,8 +53,8 @@ interface StartupCleanupModule {
 }
 
 interface LocalToolchainModule {
-  installPlaywrightChromium: () => Promise<InstallerOutcome | void>;
-  installProviderCli: (provider: string) => Promise<InstallerOutcome | void>;
+  installPlaywrightChromium: () => Promise<InstallerOutcome & { reused?: boolean; bundled?: boolean } | void>;
+  installProviderCli: (provider: string) => Promise<InstallerOutcome & { reused?: boolean; bundled?: boolean } | void>;
   [key: string]: unknown;
 }
 
@@ -380,6 +380,34 @@ async function firstRunSetup(): Promise<void> {
   if (!fs.existsSync(settingsPath) && fs.existsSync(samplePath)) {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.copyFileSync(samplePath, settingsPath);
+
+    // 同梱バンドル (prebuilt-bundles/) で Playwright Chromium と Claude CLI が
+    // 既に揃っているなら、ネットワーク DL ダイアログを出さずに静かにスキップする。
+    // installer に同梱した分だけで初回起動可能 = AV ブロックも DL 待ちも無し。
+    //
+    // 重要: ユーザーが事前に `npm install -g @anthropic-ai/claude-code` などで
+    // システムグローバルに CLI を入れているケースでは status.ok=true になるが、
+    // それは「installer 同梱で揃っている」とは別物。同梱バンドル経由 (bundled=true)
+    // のみをダイアログ skip の根拠にする。
+    const installer = localToolchain as unknown as {
+      probeAiToolchainStatus?: (providerId: string) => Promise<{
+        ok?: boolean;
+        cli?: { installed?: boolean; bundled?: boolean };
+        browser?: { installed?: boolean; bundled?: boolean };
+      }>;
+    };
+    let bundledReady = false;
+    try {
+      if (typeof installer.probeAiToolchainStatus === 'function') {
+        const status = await installer.probeAiToolchainStatus('claude');
+        bundledReady = !!(
+          status?.cli?.installed && status.cli.bundled &&
+          status?.browser?.installed && status.browser.bundled
+        );
+      }
+    } catch (_err) { /* 失敗時は従来パスへフォールバック */ }
+
+    if (bundledReady) return;
 
     const choice = await dialog.showMessageBox({
       type: 'info',

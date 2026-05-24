@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.0.60 - 2026-05-24 — インストーラ後の自動起動 + Playwright/Claude CLI 同梱 + 英語版利用規約
+
+ユーザー報告 (note.com コメント): 「Windows でインストーラやってみましたが起動せず」
+「既存(依存)関係のインストールがセットアップ時に起きるのがセキュリティに引っかかる
+から防止していた」。
+
+3 点まとめて対応:
+
+### 1. インストール完了直後の自動起動 (NSIS customInstall)
+
+`nsis.runAfterFinish: false` は v1.2.18 以降そのまま (auto-launch が
+ファイル展開を追い越して `Cannot find module` を引き起こした事故対策)。
+代わりに `build/installer.nsh` のカスタムマクロで以下を実行:
+
+1. `electron-main.js` + `electron-updater/package.json` の存在チェック
+   (最大 ~6 秒, 300ms 毎にリトライ)
+2. ファイル整合性が取れたら 1.5s 追加 sleep (低速 SSD / AV scan 対策)
+3. `ExecShell "" "$INSTDIR\Sales Claw.exe"` で非昇格ユーザー権限で起動
+
+silent install (electron-updater 経由のサイレント更新) では `${IfSilent}`
+で skip するため、二重起動を避ける。
+
+### 2. Playwright Chromium + Claude Code CLI を installer に同梱
+
+初回起動時の AV ブロックの根治。
+
+実装:
+- `scripts/prefetch-bundles.ts` がビルド前に
+  `prebuilt-bundles/browsers/` に Chromium を、
+  `prebuilt-bundles/npm-project/` に `@anthropic-ai/claude-code` を展開。
+- `electron-builder.yml` の `extraResources` で `prebuilt-bundles/` を
+  `<install-dir>/resources/prebuilt-bundles/` に同梱。
+- `src/local-toolchain.ts` の検出ロジックに `getBundledResourcesDir()` を追加し、
+  `findChromiumExecutable()` / `getProviderExecutableCandidates()` /
+  `getPlaywrightMcpCommandSpec()` の全 3 経路で同梱パスを最優先で参照。
+- `installPlaywrightChromium()` / `installProviderCli()` は同梱を検出したら
+  ネットワーク `npm install` を完全スキップして `{ reused: true, bundled: true }`
+  を返す。
+- `electron-main.ts::firstRunSetup()` は同梱で全部揃っていれば
+  「準備しますか？」ダイアログ自体を表示しない (静かに完了する)。
+
+トレードオフ: installer サイズ ~200MB → ~500-600MB (LZMA 圧縮後)。
+  - Chromium (chrome.exe + 依存) : 408MB raw / ~150MB 圧縮
+  - Claude CLI (claude.exe single binary) : 224MB raw / ~180MB 圧縮
+  - 除外したもの: chromium_headless_shell (266MB raw, @playwright/mcp は使わない)
+AV ブロックゼロ + オフラインインストール可 + 初回 90 秒の Chromium DL 待ち
+なし、を優先。
+
+### 3. 初回セットアップ画面の英語版 利用規約
+
+`src/onboarding-wizard.ts` で 12 項目の `TERMS_BULLETS` が日本語のみ
+ハードコードだったため、English を選んでも日本語のままだった。
+`TERMS_BULLETS_JA` / `TERMS_BULLETS_EN` に分離し、`preferredLanguage` で
+切り替えるようにした。
+
 ## 2.0.59 - 2026-05-21 — フォーム選択をユーザーごとにパーソナライズ可能化
 
 ユーザー報告: 「faq.oracle.co.jp には会社とパートナーシップの問い合わせがあるのに、

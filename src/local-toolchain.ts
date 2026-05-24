@@ -41,6 +41,53 @@ function getPlaywrightBrowsersDir() {
   return path.join(getToolchainRoot(), 'browsers');
 }
 
+/**
+ * Prebuilt bundles directory shipped inside the installer.
+ *
+ * Populated at build time by `scripts/prefetch-bundles.ts` and copied
+ * into `<install-dir>/resources/prebuilt-bundles/` via the
+ * `extraResources` rule in electron-builder.yml.
+ *
+ * Returns null when running outside Electron (e.g. unit tests) or when
+ * the bundle directory was not produced for this build.
+ *
+ * Path resolution:
+ *   1. `process.resourcesPath/prebuilt-bundles`
+ *      - Packaged Electron app: `<install>/resources/prebuilt-bundles/` ✓
+ *      - Dev (`npm start`): resolves to Electron's own resources dir
+ *        (e.g. `node_modules/electron/dist/resources/`) where the bundle
+ *        is NOT present → falls through to step 2.
+ *   2. `<repo>/prebuilt-bundles` derived from this file's compiled location.
+ *      - Compiled to `dist-ts/src/local-toolchain.js`, so __dirname is
+ *        `<repo>/dist-ts/src` and two-level-up reaches `<repo>/`.
+ *      - In packaged mode, __dirname is `<install>/resources/app/dist-ts/src`
+ *        so the fallback resolves to `<install>/resources/app/prebuilt-bundles/`
+ *        — that directory does not exist (we only ship the bundle as
+ *        extraResources, not inside files/app/), so the existence check
+ *        returns null and the primary `process.resourcesPath` lookup wins.
+ */
+function getBundledResourcesDir() {
+  const candidates: string[] = [];
+  if (typeof process !== 'undefined' && (process as any).resourcesPath) {
+    candidates.push(path.join((process as any).resourcesPath, 'prebuilt-bundles'));
+  }
+  candidates.push(path.join(__dirname, '..', '..', 'prebuilt-bundles'));
+  for (const candidate of candidates) {
+    try { if (fs.existsSync(candidate)) return candidate; } catch (_) { /* swallow */ }
+  }
+  return null;
+}
+
+function getBundledBrowsersDir() {
+  const root = getBundledResourcesDir();
+  return root ? path.join(root, 'browsers') : null;
+}
+
+function getBundledNpmProjectDir() {
+  const root = getBundledResourcesDir();
+  return root ? path.join(root, 'npm-project') : null;
+}
+
 function packageRoot(packageName) {
   return path.dirname(require.resolve(`${packageName}/package.json`));
 }
@@ -384,11 +431,15 @@ function findChromiumExecutable(root = getPlaywrightBrowsersDir()) {
       ? [['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
       : [['chrome-linux64', 'chrome'], ['chrome-linux', 'chrome']];
 
-  // 検索対象のルート: 引数 root + Playwright 標準パス + env で上書きされたパス
-  //   ユーザーが手動で `npx playwright install chromium` した場合、
-  //   ブラウザは Playwright のデフォルトパスに入る (sales-claw toolchain では無い)。
-  //   そちらも見ないと「Chromium 未インストール」と誤判定される。
+  // 検索対象のルート: 引数 root + 同梱バンドル + Playwright 標準パス + env で上書きされたパス
+  //   - 同梱バンドル: installer に含めた prebuilt-bundles/browsers/ を最優先で見る。
+  //     これがあれば初回起動時の Chromium DL が不要 (AV ブロック / オフライン対応)。
+  //   - ユーザーが手動で `npx playwright install chromium` した場合、
+  //     ブラウザは Playwright のデフォルトパスに入る (sales-claw toolchain では無い)。
+  //     そちらも見ないと「Chromium 未インストール」と誤判定される。
   const searchRoots = new Set<string>();
+  const bundledBrowsers = getBundledBrowsersDir();
+  if (bundledBrowsers) searchRoots.add(bundledBrowsers);
   if (root) searchRoots.add(root);
 
   // Playwright 標準パス
@@ -437,13 +488,19 @@ async function installPlaywrightChromium(options: Record<string, any> = {}) {
   ensureToolchainFiles();
   const existing = findChromiumExecutable();
   if (existing && !options.force) {
+    // 同梱パスの場合は browsersDir もそちらを返す。
+    // (runtime <runtime>/tools/browsers/ を空のまま返すと、後段で「DL 済みなのに空」
+    //  と誤判定される)
+    const bundledBrowsers = getBundledBrowsersDir();
+    const fromBundle = !!(bundledBrowsers && existing.startsWith(bundledBrowsers));
     return {
       ok: true,
       reused: true,
+      bundled: fromBundle,
       browser: 'chromium',
       executablePath: existing,
-      browsersDir: getPlaywrightBrowsersDir(),
-      command: 'bundled @playwright/mcp install-browser chromium',
+      browsersDir: fromBundle ? bundledBrowsers : getPlaywrightBrowsersDir(),
+      command: fromBundle ? 'prebuilt-bundles/browsers' : 'bundled @playwright/mcp install-browser chromium',
     };
   }
 
@@ -521,12 +578,20 @@ function getPlaywrightMcpCommandSpec() {
   // cmd.exe console window to appear (the parent has no way to pass
   // windowsHide:true through Claude Code's MCP spawn). Electron exe is a
   // proper exe, so no console window is created.
+  //
+  // PLAYWRIGHT_BROWSERS_PATH: 同梱バンドルがあればそちら、無ければ runtime tools。
+  //   同梱優先にしないと、Playwright が runtime tools 配下に空ディレクトリだけ見て
+  //   「Chromium が無い」と判断して再 DL を始めてしまう。
+  const bundledBrowsers = getBundledBrowsersDir();
+  const browsersPath = bundledBrowsers && findChromiumExecutable(bundledBrowsers)
+    ? bundledBrowsers
+    : getPlaywrightBrowsersDir();
   return {
     command: process.execPath,
     args: [getPlaywrightMcpWrapperPath()],
     env: {
       ELECTRON_RUN_AS_NODE: '1',
-      PLAYWRIGHT_BROWSERS_PATH: getPlaywrightBrowsersDir(),
+      PLAYWRIGHT_BROWSERS_PATH: browsersPath,
       PLAYWRIGHT_MCP_BROWSER: 'chromium',
     },
   };
@@ -592,6 +657,30 @@ function getProviderExecutableCandidates(providerId) {
   names.add(provider.id);
 
   const candidates: unknown[] = [];
+
+  // 0) 同梱バンドル (installer に含めた prebuilt-bundles/npm-project/...)
+  //    存在すれば最優先。初回起動時の npm install 不要 (AV ブロック / オフライン対応)。
+  //    具体的には node_modules/.bin と node_modules/<package>/bin の両方を見る。
+  const bundledNpmDir = getBundledNpmProjectDir();
+  if (bundledNpmDir) {
+    const bundledBinDirs = [
+      path.join(bundledNpmDir, 'node_modules', '.bin'),
+      // パッケージ固有 bin (provider.installPackage から推測)
+      path.join(bundledNpmDir, 'node_modules', '@anthropic-ai', 'claude-code', 'bin'),
+      path.join(bundledNpmDir, 'node_modules', provider.installPackage || '', 'bin'),
+    ];
+    for (const dir of bundledBinDirs) {
+      for (const name of names) {
+        if (!name) continue;
+        candidates.push(path.join(dir, name));
+        if (process.platform === 'win32' && !/\.(cmd|exe|ps1)$/i.test(name)) {
+          candidates.push(path.join(dir, `${name}.cmd`));
+          candidates.push(path.join(dir, `${name}.exe`));
+          candidates.push(path.join(dir, `${name}.ps1`));
+        }
+      }
+    }
+  }
 
   // 1) Sales Claw 内蔵 toolchain (`<runtime>/tools/...`)
   for (const name of names) {
@@ -661,6 +750,29 @@ function getProviderExecutableCandidates(providerId) {
 async function installProviderCli(providerId, options: Record<string, any> = {}) {
   const provider = getProvider(normalizeProviderId(providerId));
   ensureToolchainFiles();
+
+  // 同梱バンドル優先: prebuilt-bundles/npm-project に既に CLI があればそれを使う。
+  // 初回起動時の `npm install` が走らないので、AV / EDR の検知を回避できる。
+  if (!options.force) {
+    const bundledCandidates = getProviderExecutableCandidates(provider.id)
+      .filter((p: any) => {
+        const bundledNpm = getBundledNpmProjectDir();
+        return bundledNpm && p.startsWith(bundledNpm) && fs.existsSync(p);
+      });
+    if (bundledCandidates.length > 0) {
+      return {
+        ok: true,
+        reused: true,
+        bundled: true,
+        provider: provider.id,
+        providerLabel: provider.displayName,
+        packageName: provider.installPackage,
+        executablePath: bundledCandidates[0],
+        command: 'prebuilt-bundles/npm-project',
+      };
+    }
+  }
+
   const npmStatus: any = await probeEmbeddedNpmStatus();
   if (!npmStatus.available) {
     return {
@@ -754,11 +866,21 @@ async function probeAiToolchainStatus(providerId) {
   const cliCandidates = getProviderExecutableCandidates(provider.id).filter((p: any) => fs.existsSync(p));
   const cliInstalled = cliCandidates.length > 0;
   const cliExecutablePath = cliCandidates[0] || null;
-  const cliBundled = !!(cliExecutablePath && cliExecutablePath.includes(getToolchainRoot()));
+  // "bundled" = Sales Claw が管理する場所 (installer 同梱 prebuilt-bundles または runtime toolchain)。
+  // システム PATH / npm-global にあるユーザー独自インストールと区別するためのフラグ。
+  const bundledNpmDir = getBundledNpmProjectDir();
+  const cliBundled = !!(cliExecutablePath && (
+    cliExecutablePath.includes(getToolchainRoot()) ||
+    (bundledNpmDir && cliExecutablePath.startsWith(bundledNpmDir))
+  ));
 
-  // Chromium 検出 — Sales Claw 内蔵 + Playwright 標準パスの両方を検索
+  // Chromium 検出 — Sales Claw 内蔵 + 同梱 + Playwright 標準パスを検索
   const chromium = findChromiumExecutable();
-  const chromiumBundled = !!(chromium && chromium.includes(getToolchainRoot()));
+  const bundledBrowsersDir = getBundledBrowsersDir();
+  const chromiumBundled = !!(chromium && (
+    chromium.includes(getToolchainRoot()) ||
+    (bundledBrowsersDir && chromium.startsWith(bundledBrowsersDir))
+  ));
 
   // npm 内蔵モジュール検出 (新規インストール時に必要)
   let npmReady = false;

@@ -58,7 +58,7 @@ const PRESET_STRENGTHS = [
  * 利用規約 (本文)。OSS 利用にあたって押さえるべき責任分界を 12 項目で網羅する。
  * 「上記内容を理解し、自己責任で使用」のチェックで合意とする。
  */
-const TERMS_BULLETS = [
+const TERMS_BULLETS_JA = [
   '送信先企業の問い合わせフォーム利用規約 / 営業お断り表記の遵守',
   '特定電子メール法 / 個人情報保護法 / GDPR など適用法令の遵守',
   '誤送信・不適切な文面・誤った相手への送信に起因する損害',
@@ -71,6 +71,21 @@ const TERMS_BULLETS = [
   '送信履歴・スクリーンショット・ログは全てローカルに残るためバックアップ責任',
   '送信先からの返信・連絡対応・クレーム処理はユーザー側で行う',
   '紛争が生じた場合の準拠法は日本法、合意管轄は東京地方裁判所',
+];
+
+const TERMS_BULLETS_EN = [
+  'Comply with each target company’s contact-form terms of use and any no-solicitation notices',
+  'Comply with applicable laws such as Japan’s Anti-Spam Act, personal information protection laws, and GDPR',
+  'Damages resulting from mis-sends, inappropriate content, or wrong recipients are the user’s responsibility',
+  'Responsibility for AI-generated content (misinformation, defamation, copyright infringement, etc.) lies with the user',
+  'Comply with the pricing and terms of AI providers (Anthropic / OpenAI / Google)',
+  'Spam-like sending, mass blasting, and impersonation are prohibited',
+  'The legality of how target lists were obtained (public info or lawfully acquired) is the user’s responsibility',
+  'This software is provided “AS IS” with no warranty (MIT license)',
+  'Warnings from Windows SmartScreen / antivirus tools may appear (this build is unsigned)',
+  'Sending history, screenshots, and logs are kept locally — the user is responsible for backups',
+  'Replies, follow-ups, and complaint handling from recipients are the user’s responsibility',
+  'Governing law is Japanese law; the Tokyo District Court has exclusive jurisdiction for any dispute',
 ];
 
 function escapeHtml(s) {
@@ -96,7 +111,7 @@ function renderOnboardingPage(ctx: { sessionToken?: string; savedProgress?: Reco
   const savedProgress = ctx.savedProgress || null;
   const preferredLanguage = ctx.preferredLanguage === 'en' ? 'en' : 'ja';
   const presetJson = JSON.stringify(PRESET_STRENGTHS);
-  const termsJson = JSON.stringify(TERMS_BULLETS);
+  const termsJson = JSON.stringify(preferredLanguage === 'en' ? TERMS_BULLETS_EN : TERMS_BULLETS_JA);
   const progressJson = JSON.stringify(savedProgress || {});
 
   return `<!doctype html>
@@ -1383,5 +1398,6 @@ body {
 module.exports = {
   renderOnboardingPage,
   PRESET_STRENGTHS,
-  TERMS_BULLETS,
+  TERMS_BULLETS_JA,
+  TERMS_BULLETS_EN,
 };

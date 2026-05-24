@@ -36,12 +36,34 @@ extraResources:
       - icon.ico
       - tray.png
       - vendor/**
+  # 同梱バンドル: 初回起動時の Playwright Chromium + Claude CLI ネットワーク取得を不要にする。
+  # `scripts/prefetch-bundles.ts` がビルド前に生成し、ここで installer に同梱される。
+  # 配置先: <install-dir>/resources/prebuilt-bundles/
+  #   - browsers/      … Playwright Chromium
+  #   - npm-project/   … @anthropic-ai/claude-code (CLI)
+  # 検出: src/local-toolchain.ts の getBundledResourcesDir() が
+  #   process.resourcesPath/prebuilt-bundles を最優先で見る。
+  # 注: prebuilt-bundles ディレクトリが存在しない場合 electron-builder は警告のみで失敗しない。
+  - from: prebuilt-bundles
+    to: prebuilt-bundles
+    filter:
+      - "**/*"
+      # ビルド時の npm download cache (再現には不要)
+      - "!.npm-cache/**"
+      # Sales Claw は @playwright/mcp を headed Chromium で動かすため
+      # headless shell は不要 (266MB 節約)
+      - "!browsers/chromium_headless_shell-*/**"
+      - "!browsers/chromium-headless-shell-*/**"
 
 # パッケージに含めるファイル
 files:
   - "**/*"
   - "!dist/**"
   - "!dist-released/**"
+  # prebuilt-bundles は extraResources 経由で resources/prebuilt-bundles/ に同梱する。
+  # files の default パスにも入ると resources/app/ にも二重展開されて installer が
+  # 倍のサイズになるため、ここで明示的に除外。
+  - "!prebuilt-bundles/**"
   - "!.git/**"
   - "!.github/**"
   - "!.gemini/**"
@@ -125,12 +147,15 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Sales Claw
-  # Disable auto-launch right after install — there is a race where NSIS
-  # finishes the silent install (uninstall old → write new files) but the
-  # auto-launch fires before all files are flushed, producing
-  # "Cannot find module 'electron-updater'" / 'universalify' / etc errors.
-  # User opens the app from the tray / Start menu after install completes.
+  # electron-builder の標準 runAfterFinish は意図的に false のまま。
+  # 過去 v1.2.5〜v1.2.8 で「auto-launch がファイル展開を追い越して
+  # Cannot find module」が 3 回連続で出たため。
+  # 代わりに build/installer.nsh の customInstall マクロで
+  # ファイル整合性チェック (electron-main.js + electron-updater) と
+  # ~1.5s の余裕 sleep を挟んでから ExecShell で起動する。
+  # silent install (auto-updater 経由) では起動しない (二重起動防止)。
   runAfterFinish: false
+  include: build/installer.nsh
   # 差分インストールを無効化し、毎回フルインストーラを転送する。
   # NSIS の blockmap-based 差分は「既存インストールが CI ビルドと完全一致」
   # 前提で動くため、ローカルbuild経由で入った v1.2.5 などからの差分更新で
