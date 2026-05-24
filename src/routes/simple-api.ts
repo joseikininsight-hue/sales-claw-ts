@@ -369,11 +369,30 @@ module.exports = function createSimpleApiRoutes(ctx) {
           res.end(JSON.stringify({ ok: false, error: 'Invalid no' }));
           return;
         }
-        const action = String(data.action || '').trim();
+        let action = String(data.action || '').trim();
         if (!ALLOWED_ACTIONS.has(action)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: 'Invalid action. Allowed: ' + [...ALLOWED_ACTIONS].join(',') }));
           return;
+        }
+        // v2.0.65: no-solicitation / 営業お断り検出時の action 正規化。
+        //   CLAUDE.md 仕様: 営業お断り表記検出時は skipped action として記録。
+        //   実機ログで CLI が action="error" + details.reason="no-solicitation" を
+        //   投げてくるケースがあり、error 統計を不当にインフレさせていた (本来は
+        //   営業お断り = 正常な skip)。サーバ側で reason をスキャンして正規化する。
+        if (action === 'error') {
+          const detailText = typeof data.details === 'string'
+            ? data.details
+            : (data.details && typeof data.details === 'object'
+                ? JSON.stringify(data.details)
+                : '');
+          const isNoSolicitation = /no[-_ ]?solicitation/i.test(detailText)
+            || /営業[のお].*?(お断り|ご遠慮)/.test(detailText)
+            || /営業.*?(目的)?.*?(問い合わせ|連絡).*?(ご遠慮|お断り)/.test(detailText)
+            || /採用専用|IR専用|報道専用|既存顧客専用/.test(detailText);
+          if (isNoSolicitation) {
+            action = 'skipped';
+          }
         }
         // サニタイズ: 会社名・details は最大長で truncate。Control char (0x00-0x1f) を除去。
         const name = String(data.name || '').slice(0, MAX_NAME_LEN).replace(/[\x00-\x1f\x7f]/g, ' ');

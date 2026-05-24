@@ -1239,7 +1239,17 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
     latestMonitorByCompany.set(key, entry);
   });
 
-  const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error']);
+  // v2.0.65: confirm_reached も terminal 扱いに追加。
+  //   旧バグ: CLI がフォーム入力 + 確認画面到達まで進めた (confirm_reached を log) のに、
+  //     後続の awaiting_approval を log し損ねたケースで、batch が永久に未完了状態に
+  //     なり、watchdog の 20分タイムアウトを発火 → 同じ batch の別社まで巻き添えで
+  //     error 化される事故 (実機 2026-05-21 [182, 187, 189] 件)。
+  //   方針: confirm_reached = フォーム入力 + スクショ完了済み (ユーザーが
+  //     ダッシュボードで確認 / 手動承認できる状態)。terminal として扱って batch を
+  //     進ませ、UI 側で「確認画面到達 - 手動レビュー推奨」を出す。
+  //   注: 1319 行目の terminalStates (live-monitor cleanup 用) はこちらには
+  //     入れない。confirm_reached の active event は 20 分以上残しておきたい。
+  const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error', 'confirm_reached']);
   let terminalCount = 0;
   let latestActivityAt = 0;
   const statuses: any[] = [];
@@ -1546,7 +1556,15 @@ function detectCliIssuesFromOutput(rawData, providerId) {
   //     1. recovery state をクリア (これ以上 PTY を立ち上げない)
   //     2. pending バッチは保持 (ユーザーが /login 後に再開できる)
   //     3. UI / SSE に明示メッセージを出す
-  if (classified.rule.label === 'Claude認証失効/レート上限') {
+  // v2.0.65: スパム抑制ガードを追加。
+  //   旧バグ: Claude CLI が認証切れ後 "Please run /login · API Error: 401" を
+  //     30 秒間隔で繰り返し出力する → 1 日 106 件の claude_auth_failure_detected が
+  //     log に溜まる + SSE/emitClaudeAutomationLog がスパムされる。
+  //   markClaudeAuthFailed() 自体は二重発火ガード済みだが、その他の処理
+  //     (diagnostic / SSE / emit) は毎回走っていた。
+  //   修正: isClaudeAuthCurrentlyFailed() で早期 return。次の managed_ai_ready
+  //     等で clearClaudeAuthFailedFlag() されてから再度ハンドリング可能。
+  if (classified.rule.label === 'Claude認証失効/レート上限' && !isClaudeAuthCurrentlyFailed()) {
     try {
       // v2.0.49: PTY 側だけでなく Phase A subprocess workers にも止まるよう通知。
       //   activePhaseAChildProcesses を SIGTERM して runOne ループに早期 exit

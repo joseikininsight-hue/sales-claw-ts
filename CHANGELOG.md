@@ -1,5 +1,64 @@
 # Changelog
 
+## 2.0.65 - 2026-05-24 — バッチ進行詰まり / auth スパム / no-solicitation / UX 4 件追加修正
+
+実機 dashboard-diagnostics.jsonl のさらなる分析で見つかった追加バグ:
+
+### A. batch-watchdog の 20 分タイムアウト誤発火
+
+**現象**: ある社が `confirm_reached` (フォーム入力 + 確認画面到達) を log
+した後、後続の `awaiting_approval` を log し損ねると、batch が永久に
+未完了状態になり、watchdog の 20 分タイムアウトを発火 → 同 batch の
+別社まで巻き添えで error 化される事故。
+
+**証拠**: 2026-05-21 [182, 187, 189] バッチ — 182 が confirm_reached
+止まりだが terminal:false 扱いされ、187/189 (action="") が
+managed_ai_batch_auto_failed で error 化。実機で 10 件発生。
+
+**修正** (dashboard-server.ts: 1242 terminalStates):
+`confirm_reached` を terminal 扱いに追加。batch が完了できるようになり、
+別社を巻き添えにしなくなる。UI には「確認画面到達 - 手動レビュー」
+として残るので失われない。
+(1319 行目の live-monitor cleanup 用 terminalStates はこちらには
+入れない — confirm_reached の active event を 20 分以上残したいため。)
+
+### B. Claude auth 切れ時の `/login` スパム
+
+**現象**: Claude セッション切れを検知した後も同じ "Please run /login"
+ラインが 30 秒間隔で繰り返し出力されるたびに、`claude_auth_failure_detected`
+diagnostic / SSE 通知 / log 出力が毎回トリガーされていた。
+1 日 106 件のスパム log。
+
+**修正** (dashboard-server.ts: 1559 auth failure handler):
+`isClaudeAuthCurrentlyFailed()` で早期 return。
+`markClaudeAuthFailed()` 自体には二重発火ガードがあったが、
+diagnostic / SSE / emit はガード外で毎回走っていた。次の
+`startManagedAiSession({ allowReuse: false })` で
+`clearClaudeAuthFailedFlag()` されてから再ハンドリング可能。
+
+### C. no-solicitation を error → skipped に正規化
+
+**現象**: 「営業お断り」「採用専用」等の no-solicitation 検出時、
+CLAUDE.md 仕様では `skipped` action として記録するべきだが、CLI が
+`action="error"` + `details.reason="no-solicitation"` を投げる
+ケースがあった。error 統計を不当にインフレ。
+
+**修正** (routes/simple-api.ts: handleLogAction):
+サーバ側で action="error" のとき details テキストをスキャンして
+`no-solicitation` / `営業.*お断り` / `採用専用` / `IR専用` 等のパターンを検出
+したら自動的に `skipped` に正規化。CLI 側プロンプトの修正に依存しない。
+
+### D. Target list が削除/移動された時の UX
+
+**現象**: `target-list.xlsx` を リネーム / 削除すると ai-form-fill が
+"Target list file not found: <path>" だけ返してきて、ユーザーは
+どこで再選択すればいいか分からなかった。
+
+**修正** (routes/ai-form-fill-api.ts + ui/client-scripts/dashboard.ts):
+ENOENT 検出時に `code:"TARGET_LIST_MISSING"` + `hint:"設定 → ターゲット
+リストから再選択..."` を返す。UI 側で result.hint があれば toast に
+併記して表示。
+
 ## 2.0.64 - 2026-05-24 — AI 連携の安定性 3 点改善 (2 回押し / Stop 後不安定 / 起動タイムアウト)
 
 実機 dashboard-diagnostics.jsonl から確認した 3 つの UX 事故をまとめて修正:

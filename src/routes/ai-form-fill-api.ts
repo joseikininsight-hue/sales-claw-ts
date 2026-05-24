@@ -118,7 +118,20 @@ module.exports = function createAiFormFillRoutes(ctx) {
           provider: providerId,
           error: found.error || 'Target companies not found.',
         });
-        jsonResponse(res, 400, { ok: false, error: found.error || 'Target companies not found.' });
+        // v2.0.65: Target list が消えた/移動した時の UX 改善。
+        //   旧: 「Target list file not found: <path>」を返すだけで、ユーザーは
+        //     どこで再選択すればいいか分からなかった。
+        //   新: code:'TARGET_LIST_MISSING' を返し、UI 側でユーザー誘導バナーを出せるようにする。
+        const rawError = String(found.error || 'Target companies not found.');
+        const isMissingFile = /file not found|no such file|ENOENT/i.test(rawError);
+        jsonResponse(res, 400, {
+          ok: false,
+          error: rawError,
+          ...(isMissingFile ? {
+            code: 'TARGET_LIST_MISSING',
+            hint: '企業リスト (target-list.xlsx) が見つかりません。「設定」→「ターゲットリスト」から再選択するか、List Builder で新しいリストを作成してください。',
+          } : {}),
+        });
         return;
       }
 
