@@ -193,10 +193,24 @@ function installChromium() {
   );
 
   const exe = findChromiumExecutable(BROWSERS_DIR);
-  if (!exe) {
-    throw new Error(`Chromium install completed but executable not found under ${path.relative(ROOT, BROWSERS_DIR)}`);
+  if (exe) {
+    console.log(`✔ Chromium ready: ${path.relative(ROOT, exe)}`);
+    return;
   }
-  console.log(`✔ Chromium ready: ${path.relative(ROOT, exe)}`);
+
+  // Same best-effort policy as installClaudeCli: Windows must succeed
+  // (that's the platform where note.com users hit AV blocking on
+  // first-run download). On macOS the Chrome for Testing app is
+  // sometimes shipped as "Google Chrome for Testing.app" rather than
+  // "Chromium.app", which would also need a path-detector update — for
+  // now, fall back to first-run download on non-Windows.
+  console.warn(
+    `⚠ Chromium downloaded but executable not found under ${path.relative(ROOT, BROWSERS_DIR)}.`,
+    `\n  This platform will fall back to first-run download.`,
+  );
+  if (process.platform === 'win32') {
+    throw new Error('Chromium bundle missing on Windows — refusing to publish an installer without it.');
+  }
 }
 
 function findChromiumExecutable(root: string): string | null {
