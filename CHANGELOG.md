@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.0.62 - 2026-05-24 — Mac / Linux でも「依存ゼロ」インストール対応
+
+ユーザー要望: 「Mac/Linux でも同じ問題 (Electron 入ってない / Claude CLI 入って
+ない / 何か別のものが入ってないとインストールできない・起動しない) が起こら
+ないようにしたい。クロードにログインさえできれば誰でも使えるイメージ」。
+
+### 現状の依存関係 (確認結果)
+
+全部 installer に同梱済み:
+- Electron ランタイム (Node.js 内蔵)
+- npm (node_modules/npm)
+- node-pty native (prebuilds/win32-x64/)
+- Playwright Chromium (prebuilt-bundles/browsers/) — v2.0.60 で同梱
+- Claude Code CLI (prebuilt-bundles/npm-project/) — v2.0.60 で同梱
+
+ユーザー側で必要なのは:
+1. installer を実行
+2. アプリ起動後 Claude にログイン (`claude login` でブラウザ認証)
+
+それ以外は不要。Python (Scrapling) は optional 機能で settings で明示的に
+有効化した時のみ呼ばれるため、基本ユーザーは無視して OK。
+
+### このリリースで直したのは macOS Chromium 検出
+
+Playwright が 2024 年に macOS Chromium app の名前を "Chromium.app" から
+"Google Chrome for Testing.app" に変更したのに、Sales Claw の検出ロジック
+は古い "Chromium.app" 固定だった。
+
+修正箇所:
+- scripts/prefetch-bundles.ts::findChromiumExecutable
+- src/local-toolchain.ts::findChromiumExecutable (本体)
+- src/local-toolchain.ts::buildPlaywrightWrapperScript (埋め込みラッパー)
+
+すべて新名 → 旧名 の順でプローブする ("Google Chrome for Testing.app" が
+あればそちらを優先、なければ "Chromium.app" を見る)。
+
+### Mac x64 (Intel) について
+
+CI の macOS runner は arm64 (Apple Silicon) のみ。x64 DMG にも arm64 用の
+Chromium が同梱されるため、Intel Mac ユーザーは bundle を使えず、従来通り
+初回起動時の DL にフォールバックする (これは v2.0.60 以前と同じ挙動)。
+両 arch を CI でビルドする対応は将来課題。
+
 ## 2.0.61 - 2026-05-24 — 2.0.60 CI 失敗のリリース修正
 
 CI で 2 つ問題が出たため修正版を切る:

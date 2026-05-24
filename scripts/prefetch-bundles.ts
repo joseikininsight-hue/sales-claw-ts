@@ -214,10 +214,16 @@ function installChromium() {
 }
 
 function findChromiumExecutable(root: string): string | null {
+  // Playwright moved from "Chromium.app" to Chrome for Testing
+  // ("Google Chrome for Testing.app") around 2024. Probe both names
+  // because Playwright may pick either depending on browser channel.
   const subpaths = process.platform === 'win32'
     ? [['chrome-win64', 'chrome.exe'], ['chrome-win', 'chrome.exe']]
     : process.platform === 'darwin'
       ? [
+          ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+          ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+          ['chrome-mac', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
           ['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
           ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
           ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],

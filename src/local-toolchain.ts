@@ -168,10 +168,12 @@ const browsersPath = ${JSON.stringify(getPlaywrightBrowsersDir())};
 const mcpCliPath = ${JSON.stringify(getPlaywrightMcpCliPath())};
 
 function findChromiumExecutable(root) {
+  // Playwright のmacOSビルドは "Google Chrome for Testing.app" (2024-) と
+  // "Chromium.app" (legacy) の両方の名前を採る。両方プローブする。
   const subpaths = process.platform === 'win32'
     ? [['chrome-win64', 'chrome.exe'], ['chrome-win', 'chrome.exe']]
     : process.platform === 'darwin'
-      ? [['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
+      ? [['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'], ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'], ['chrome-mac', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'], ['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
       : [['chrome-linux64', 'chrome'], ['chrome-linux', 'chrome']];
   let entries = [];
   try {
@@ -425,10 +427,19 @@ async function probeEmbeddedNpmStatus() {
 }
 
 function findChromiumExecutable(root = getPlaywrightBrowsersDir()) {
+  // Playwright のmacOSビルドは "Google Chrome for Testing.app" (2024-) と
+  // "Chromium.app" (legacy) の両方の名前を採る。両方プローブする。
   const subpaths = process.platform === 'win32'
     ? [['chrome-win64', 'chrome.exe'], ['chrome-win', 'chrome.exe']]
     : process.platform === 'darwin'
-      ? [['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
+      ? [
+          ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+          ['chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+          ['chrome-mac', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+          ['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+          ['chrome-mac-x64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+          ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+        ]
       : [['chrome-linux64', 'chrome'], ['chrome-linux', 'chrome']];
 
   // 検索対象のルート: 引数 root + 同梱バンドル + Playwright 標準パス + env で上書きされたパス
