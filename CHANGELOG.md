@@ -1,5 +1,70 @@
 # Changelog
 
+## 2.0.70 - 2026-05-26 — Phase 3 完了 + 実機 30 社ベンチマーク 0 エラー (v2.1.0)
+
+### Phase 3 実装完了 (前回の TODO 全消化)
+- `browser_click`: Runtime.evaluate → **CDP `Input.dispatchMouseEvent` 移行**。
+  `isTrusted:true` で発火 → reCAPTCHA v2 checkbox 等が「ロボット判定」しにくい
+- `browser_handle_dialog`: CDP `Page.handleJavaScriptDialog` で alert/confirm/prompt 処理
+- `browser_drag`: source → destination の 5 step 補間 + mousePressed/Moved/Released
+- `browser_hover`: getBoundingClientRect → Input.dispatchMouseEvent {mouseMoved}
+- **`formFill.mode` default を `playwright` → `internal` に切替** (sample-settings.json)
+
+### 実機 ベンチマーク 結果 (本物の Electron + 本物の WebContentsView)
+
+合成企業 N=10 × 並列度 {1, 3, 5} = **計 30 社処理、全件成功、0 エラー、0 バグ**
+
+| 並列度 | 合計時間 | 1社平均 | 中央値 | P95 | スループット |
+|--:|--:|--:|--:|--:|--:|
+| 1 (順次) | **7.64s** | 754ms | 811ms | 1079ms | **78.5 社/分** |
+| 3 | **6.47s** | 1814ms | 697ms | 6436ms | **92.8 社/分** |
+| 5 | **5.92s** | 2741ms | 1354ms | 5910ms | **101.3 社/分** |
+
+各社処理ステップ内訳 (並列度 1 の平均):
+- WebContentsView 作成 + attach: 11ms
+- navigate (HTTP fetch + load): 602ms
+- getFormStructure (DOM スキャン): 7-30ms
+- fillForm (4 フィールド DOM mutation): 22ms 平均
+- DOM verify: 1-6ms
+- capturePage (実 PNG ~22KB): 103ms 平均
+
+### 検証範囲 (正直な開示)
+
+**実機検証済み**:
+- 本物の Electron 起動 → 本物の WebContentsView → 本物の HTTP fixture form
+- 本物の DOM mutation (executeJavaScript) → 値を直接 read-back で verify
+- 本物の PNG (magic byte 検証、18KB-25KB の実画像)
+- 30 社合計で 1 社の error / null / timeout もなし
+
+**本ベンチで実証していないもの (正直に区別)**:
+- 実在 B2B 企業の実サイトへの outreach (Claude CLI auth + 実企業協力が必要)
+- reCAPTCHA / Cloudflare bot gate / HubSpot iframe 等の実世界 form 構造
+- 長期運用での memory leak / Chromium クラッシュ
+- Mac / Linux 実機 (Windows のみ計測)
+
+これらは Phase 4 GA 後の実運用フィードバックで段階的に検証する想定。
+
+### 追加ファイル
+
+- `tests/benchmark-n-companies-runner.cjs` — Electron 内で N 合成企業を順次/並列処理
+- `tests/benchmark-n-companies.test.cjs` — 親 harness、parallelism {1,3,5} を一括実行
+- `benchmark-report.json` — 計測結果 (自動生成、git 管理外)
+
+### 全テスト pass (本リリース時点)
+- cdp-bridge 4/4, mcp-config-helpers 29/29, internal-mcp-integration 6/6
+- **electron-real-form 11/11** (real Electron, real WebContentsView)
+- **benchmark-n-companies 30/30** (real Electron x 3 並列度)
+- redact 64/64, mcp-idempotency 19/19, settings-cache 13/13
+- dashboard-runtime pass, playwright-wrapper-syntax 4/4
+
+### Phase 4 残作業 (今後別セッション)
+- 公式 `@modelcontextprotocol/sdk` + `zod` 採用 (手書き JSON-RPC からの移行)
+- isolated world での `evaluate` (現在は executeJavaScript)
+- 実在 B2B 企業での実 outreach 検証 (ユーザー操作必須)
+- Playwright MCP / Chromium バンドル物理削除 (v2.2.0)
+
+---
+
 ## 2.0.69 - 2026-05-26 — 実 Electron + 実 WebContentsView E2E 完遂 + 既存コードバグ Bug 7 修正
 
 v2.0.68 の mock-based 統合テストを **本物の Electron + 本物の WebContentsView**

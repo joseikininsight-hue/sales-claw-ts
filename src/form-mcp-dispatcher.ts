@@ -129,16 +129,36 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
 
   register('click', async (req: IpcRequest) => {
     const p = req.params as unknown as ClickParams;
-    const session = getSession(ctx, p.sessionId);
-    // Phase 2 簡易実装: Runtime.evaluate ベース。Phase 3 で CDP dispatchMouseEvent + getBoxModel に移行。
-    const script = `(function(){
-      const el=document.querySelector(${JSON.stringify(p.selector)});
-      if(!el)return{ok:false,reason:'not_found'};
-      el.click();
-      return{ok:true};
-    })()`;
-    const result = await session.view.webContents.executeJavaScript(script);
-    return result;
+    const session = await ensureAttached(ctx, p.sessionId);
+    // Phase 3: CDP Input.dispatchMouseEvent ベース。`isTrusted:true` で発火
+    //   されるため reCAPTCHA v2 checkbox 等が「ロボット判定」しにくい。
+    //   Bug fallback: 要素が viewport 外 / hidden の場合は scrollIntoView する
+    //   ために Runtime.evaluate で座標取得 + scrollIntoView 1 回試行。
+    const coordsResult = await session.view.webContents.executeJavaScript(`(function(){
+      var el=document.querySelector(${JSON.stringify(p.selector)});
+      if(!el)return null;
+      el.scrollIntoView({block:'center',inline:'center'});
+      var r=el.getBoundingClientRect();
+      return { x: r.left + r.width/2, y: r.top + r.height/2, w: r.width, h: r.height };
+    })()`);
+    if (!coordsResult) return { ok: false, reason: 'not_found' };
+    if (coordsResult.w === 0 || coordsResult.h === 0) {
+      return { ok: false, reason: 'zero_size' };
+    }
+    const button = p.button === 'right' ? 'right' : p.button === 'middle' ? 'middle' : 'left';
+    const clickCount = p.clickCount || 1;
+    // CDP Input.dispatchMouseEvent: mousePressed → mouseReleased を clickCount 回
+    for (let i = 0; i < clickCount; i++) {
+      await cdp.sendCommand(session.view.webContents, 'Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: coordsResult.x, y: coordsResult.y,
+        button, clickCount: i + 1,
+      });
+      await cdp.sendCommand(session.view.webContents, 'Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: coordsResult.x, y: coordsResult.y,
+        button, clickCount: i + 1,
+      });
+    }
+    return { ok: true, x: coordsResult.x, y: coordsResult.y };
   });
 
   register('type', async (req: IpcRequest) => {
@@ -288,15 +308,65 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     return { ok: true };
   });
 
-  // Phase 3 で完全化する stub 群
-  register('handle_dialog', async () => {
-    throw new Error('handle_dialog is not implemented in Phase 2 (TODO Phase 3)');
+  // Phase 3 完全実装
+
+  register('handle_dialog', async (req: IpcRequest) => {
+    const p = req.params as { sessionId: string; accept: boolean; promptText?: string };
+    const session = await ensureAttached(ctx, p.sessionId);
+    // CDP Page.handleJavaScriptDialog
+    await cdp.sendCommand(session.view.webContents, 'Page.handleJavaScriptDialog', {
+      accept: p.accept,
+      promptText: p.promptText || '',
+    });
+    return { ok: true };
   });
-  register('drag', async () => {
-    throw new Error('drag is not implemented in Phase 2 (TODO Phase 3)');
+
+  register('drag', async (req: IpcRequest) => {
+    const p = req.params as { sessionId: string; sourceSelector: string; targetSelector: string };
+    const session = await ensureAttached(ctx, p.sessionId);
+    const coords = await session.view.webContents.executeJavaScript(`(function(){
+      var src=document.querySelector(${JSON.stringify(p.sourceSelector)});
+      var dst=document.querySelector(${JSON.stringify(p.targetSelector)});
+      if(!src||!dst)return null;
+      var sr=src.getBoundingClientRect();
+      var dr=dst.getBoundingClientRect();
+      return {
+        sx: sr.left+sr.width/2, sy: sr.top+sr.height/2,
+        dx: dr.left+dr.width/2, dy: dr.top+dr.height/2,
+      };
+    })()`);
+    if (!coords) return { ok: false, reason: 'selector_not_found' };
+    const wc = session.view.webContents;
+    await cdp.sendCommand(wc, 'Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: coords.sx, y: coords.sy, button: 'left', clickCount: 1,
+    });
+    // Smoothing: 5 中間ステップで move
+    const STEPS = 5;
+    for (let i = 1; i <= STEPS; i++) {
+      const x = coords.sx + (coords.dx - coords.sx) * (i / STEPS);
+      const y = coords.sy + (coords.dy - coords.sy) * (i / STEPS);
+      await cdp.sendCommand(wc, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left' });
+    }
+    await cdp.sendCommand(wc, 'Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x: coords.dx, y: coords.dy, button: 'left', clickCount: 1,
+    });
+    return { ok: true };
   });
-  register('hover', async () => {
-    throw new Error('hover is not implemented in Phase 2 (TODO Phase 3)');
+
+  register('hover', async (req: IpcRequest) => {
+    const p = req.params as { sessionId: string; selector: string };
+    const session = await ensureAttached(ctx, p.sessionId);
+    const coords = await session.view.webContents.executeJavaScript(`(function(){
+      var el=document.querySelector(${JSON.stringify(p.selector)});
+      if(!el)return null;
+      var r=el.getBoundingClientRect();
+      return { x: r.left+r.width/2, y: r.top+r.height/2 };
+    })()`);
+    if (!coords) return { ok: false, reason: 'not_found' };
+    await cdp.sendCommand(session.view.webContents, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: coords.x, y: coords.y,
+    });
+    return { ok: true };
   });
 }
 
