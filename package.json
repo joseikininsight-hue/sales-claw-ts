@@ -1,8 +1,11 @@
 {
   "name": "sales-claw-ts",
-  "version": "2.0.66",
+  "version": "2.0.67",
   "description": "Automated B2B company outreach via web contact forms — TypeScript port (Electron main + dashboard server)",
   "main": "dist-ts/electron-main.js",
+  "bin": {
+    "sales-claw-form-mcp": "bin/sales-claw-form-mcp.cjs"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsx scripts/bundle-client-scripts.ts && tsx scripts/postbuild-copy.ts",
     "build:watch": "tsc -p tsconfig.json --watch",

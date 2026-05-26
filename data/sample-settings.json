@@ -278,6 +278,13 @@
     "autoSendEligibleForms": false,
     "exportFilenamePrefix": "outreach_progress"
   },
+  "formFill": {
+    "_comment": "Phase B form-fill mode. v2.1.0 introduces in-app WebContentsView. See docs/architecture/in-app-form-fill.md",
+    "mode": "playwright",
+    "_modeChoices": ["playwright", "internal", "both"],
+    "parallelism": 3,
+    "_parallelismRange": "1-5 (default 3). How many companies are filled in parallel during Phase B."
+  },
   "apiKeys": {
     "serpApi": "",
     "houjinBangou": "",

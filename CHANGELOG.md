@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.67 - 2026-05-26 — Phase 1 skeleton: in-app form-fill (WebContentsView + 内製 MCP server)
+
+外部 Chrome を起動する Playwright MCP モードから、Electron 内蔵
+WebContentsView + 内製 MCP server (CDP) へ移行するための **Phase 1 skeleton**
+を追加。Runtime 挙動は変更なし (`formFill.mode = "playwright"` がデフォルト)。
+
+設計書: `docs/architecture/in-app-form-fill.md` (v1.0)
+
+### 追加ファイル (10件、ランタイム未接続)
+
+- `src/cdp-bridge.ts` — `webContents.debugger.attach('1.3')` のシングルトンラッパ。
+  OOPIF auto-attach、isolated world cache、event listener registry を持つ。
+- `src/ipc-server.ts` — Named Pipe (Windows) / Unix Socket (mac/linux) で
+  MCP server プロセスから接続を受ける。length-prefixed JSON frame、
+  req/res mux、event broadcast。
+- `src/mcp-servers/sales-claw-form/server.cjs` — MCP server entry。
+  公式 SDK は Phase 2 で導入予定のため、現状は JSON-RPC 2.0 を手書きで実装
+  (initialize / tools/list / tools/call / ping)。
+- `src/mcp-servers/sales-claw-form/ipc-client.cjs` — Named Pipe client。
+  reconnect (3秒 × 5回)、request timeout 60秒。
+- `src/mcp-servers/sales-claw-form/tools/{navigate,snapshot,screenshot}.cjs` —
+  Phase 1 ツール 3 個。各 tool は schema validate + ipc-client.request() のみ。
+- `bin/sales-claw-form-mcp.cjs` — Claude CLI から spawn される薄い shim。
+  `process.execPath` (Node) で server.cjs を require。
+  `package.json::bin` に登録。
+- `src/mcp-config-helpers.ts` への `shouldOverrideInternalFormMcpConfig`
+  追加 — `shouldOverridePlaywrightMcpConfig` と同 pattern。
+- `tests/cdp-bridge.test.cjs` — `webContents.debugger` mock で
+  attach/sendCommand/ensureIsolatedWorld の signature 検証。全 4 ケース pass。
+
+### 設定追加
+
+- `data/sample-settings.json` に `formFill` block 追加:
+  - `mode`: `"playwright"` (default) | `"internal"` | `"both"`
+  - `parallelism`: 1-5 (default 3)
+- 既存ユーザーの `settings.json` は無変更で動作 (formFill 未設定なら playwright 互換)
+
+### Phase 2 で実装予定
+
+- 残り 12 tools (fill_form / click / type / select_option / tabs / evaluate /
+  wait_for / press_key / handle_dialog / file_upload / drag / hover)
+- form-session-manager.ts の Electron UI 復活 (右ペイン 55% dock)
+- awaiting_approval タブの「会社ごと WebContentsView 切替」UX
+- ensureProviderInternalFormMcp の dashboard-server.ts への組み込み
+
+### 検証
+
+- `npx tsc --noEmit -p tsconfig.json` グリーン
+- `node tests/cdp-bridge.test.cjs` 4/4 pass
+
+---
+
 ## 2.0.66 - 2026-05-26 — recovery discard の silent failure ガード + 日本語テンプレ文の自然化
 
 実機 2026-05-13 バッチ + 2026-05-14 セッションの diagnostics 解析で
