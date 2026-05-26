@@ -196,16 +196,23 @@ function buildProposalPoint(gaps, businessAreas, companyType, locale = 'ja') {
 
   if (topGap && prop) {
     const strength = topGap.strength;
-    const strengthLabel = compactText(strength.label);
+    // v2.0.66 (Bug D): strength.label の末尾「（...）」「(...)」を proposal 文脈で剥がす。
+    //   旧: "Sitecore CMS構築（国内No.1実績）" + capability "Sitecore国内導入実績No.1。..."
+    //     が連結されて「Sitecore CMS構築（国内No.1実績）を主な対応領域としており、Sitecore
+    //     国内導入実績No.1。」と同義反復に。
+    //   策: label と capability で重複しがちな括弧書きを label 側で削る。
+    const strengthLabelRaw = compactText(strength.label);
+    const strengthLabel = strengthLabelRaw.replace(/[（(][^）)]*[）)]\s*$/u, '').trim() || strengthLabelRaw;
     // 1.2.89 fix: strength.detail を 84 字で truncate すると "…" が混入し
     // ユーザーには「テンプレート未完成」と映る。strength.detail は元々
     // 100-150 字程度の完結した説明なので、そのまま使う (truncateSoft 不要)。
     const detailRaw = compactText(strength.detail) || `${strengthLabel}領域の実務支援が可能です`;
     const capability = ensureSentence(detailRaw);
     const secondaryGap = getSecondaryStrength(gaps, strength.key);
-    const secondaryLabel = secondaryGap && secondaryGap.strength
+    const secondaryLabelRaw = secondaryGap && secondaryGap.strength
       ? compactText(secondaryGap.strength.label)
       : '';
+    const secondaryLabel = secondaryLabelRaw.replace(/[（(][^）)]*[）)]\s*$/u, '').trim() || secondaryLabelRaw;
     const secondaryText = secondaryLabel && secondaryLabel !== strengthLabel
       ? prop.secondaryComplement(secondaryLabel)
       : '';

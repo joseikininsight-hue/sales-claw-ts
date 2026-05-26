@@ -20,6 +20,8 @@ export interface RecoveryRouteContext {
   appendDiagnosticEvent?: (event: string, payload: Record<string, unknown>) => void;
   ensureClaudeAutomationReady?: (providerId: string) => Promise<{ ok: boolean; statusCode?: number; error?: string }>;
   findCompaniesByNos?: (nos: number[]) => { ok: boolean; companies?: unknown[] };
+  logAction?: (companyNo: number, companyName: string, action: string, details: Record<string, unknown>) => void;
+  getAllLogs?: () => Array<Record<string, unknown>>;
 }
 
 export type RecoveryDispatcher = (req: IncomingMessage, res: ServerResponse, pathname: string) => Promise<boolean>;
@@ -33,6 +35,8 @@ function createRecoveryRoutes(ctx: RecoveryRouteContext): RecoveryDispatcher {
     appendDiagnosticEvent,
     ensureClaudeAutomationReady,
     findCompaniesByNos,
+    logAction,
+    getAllLogs,
   } = ctx;
 
   async function handleStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -125,11 +129,46 @@ function createRecoveryRoutes(ctx: RecoveryRouteContext): RecoveryDispatcher {
 
   async function handleDiscard(_req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
+      // v2.0.66: discard 前に "in-flight だが terminal action 未到達" の社を
+      // error として記録する。これがないと dashboard 再起動 → discard した社が
+      // ログ上 "message_draft だけで宙ぶらりん" になり、企業一覧の状態が
+      // 「未着手」と区別できなくなる (No.357 オートデスク事故の再発防止)。
+      let silentFailures = 0;
+      try {
+        const snap = loadRecoverySnapshot();
+        if (snap && Array.isArray(snap.batches) && typeof logAction === 'function' && typeof getAllLogs === 'function') {
+          const TERMINAL = new Set(['awaiting_approval','submitted','completed','skipped','error','confirm_reached']);
+          const allLogs = getAllLogs() || [];
+          const latestActionByNo = new Map<number, string>();
+          for (const log of allLogs) {
+            const no = Number(log && ((log as any).companyNo ?? (log as any).no));
+            if (!Number.isFinite(no)) continue;
+            latestActionByNo.set(no, String((log as any).action || ''));
+          }
+          for (const batch of snap.batches) {
+            for (const c of ((batch as any).companies || [])) {
+              const no = Number(c && (c.no ?? c.companyNo));
+              if (!Number.isFinite(no)) continue;
+              const lastAction = latestActionByNo.get(no) || '';
+              if (TERMINAL.has(lastAction)) continue;
+              const name = c.companyName || c.name || '';
+              logAction(no, name, 'error', {
+                source: 'recovery-discard',
+                reason: 'discard 時点で terminal action 未到達 (前回セッションが中断されたまま破棄)',
+                lastAction,
+                discardedAt: new Date().toISOString(),
+              });
+              silentFailures += 1;
+            }
+          }
+        }
+      } catch (_) { /* discard 自体は止めない */ }
+
       clearRecoverySnapshot();
       if (typeof appendDiagnosticEvent === 'function') {
-        appendDiagnosticEvent('recovery_snapshot_discarded', {});
+        appendDiagnosticEvent('recovery_snapshot_discarded', { silentFailuresMarkedError: silentFailures });
       }
-      jsonResponse(res, 200, { ok: true });
+      jsonResponse(res, 200, { ok: true, silentFailuresMarkedError: silentFailures });
     } catch (e: unknown) {
       jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
     }

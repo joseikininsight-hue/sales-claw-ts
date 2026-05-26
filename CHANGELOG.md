@@ -1,5 +1,58 @@
 # Changelog
 
+## 2.0.66 - 2026-05-26 — recovery discard の silent failure ガード + 日本語テンプレ文の自然化
+
+実機 2026-05-13 バッチ + 2026-05-14 セッションの diagnostics 解析で
+判明した 2 件のバグを修正。
+
+### A. recovery snapshot discard 時の silent failure
+
+**現象**: バッチ処理中に dashboard を閉じる → 再起動時に recovery
+snapshot 検出 → ユーザーが「破棄」を選ぶと、`message_draft` 段階で
+止まっていた社が `error` も `skipped` も記録されないまま action-log
+から消える。企業一覧では「未着手」と区別が付かなくなる。
+
+**証拠**: 2026-05-13 バッチ `[352, 356, 357]` で No.357 オートデスク
+は `message_draft` のみ。5/14 に user が recovery snapshot を discard
+→ ログに最終状態が残らず宙ぶらりんに。
+
+**修正** (`src/routes/recovery-api.ts::handleDiscard`):
+discard 直前に snapshot 内の各社の最新 action を action-log から走査
+し、terminal 状態 (`awaiting_approval`/`submitted`/`completed`/
+`skipped`/`error`/`confirm_reached`) でなければ自動で `error` を記録
+する。source=`recovery-discard`、reason に「前回セッションが中断
+されたまま破棄」を残す。dashboard-server.ts 側で `logAction` と
+`getAllLogs` を recovery-api context に注入。
+
+### B. 日本語メッセージテンプレの不自然な接続詞 / 重複表現
+
+**現象**: `buildCustomMessage` の出力が:
+- 冒頭が「**また、**システム開発・SIer を軸に...」のように接続詞
+  始まりになる (`areaNote` が最初の本文ブロックになるケース)。
+- 「弊社では Sitecore CMS 構築 **（国内 No.1 実績）** を主な対応領域と
+  しており、**Sitecore 国内導入実績 No.1**。エンタープライズ向けの...」
+  のように `strength.label` 末尾の括弧と `strength.detail` 冒頭が
+  重複する。
+
+**証拠**: 2026-05-13 No.356 エックスネット / No.357 オートデスク の
+`message_draft` ログ両方で再現。
+
+**修正**:
+- `src/locale-pack/ja/message-templates.ts::observation.areaNote`:
+  先頭「また、」を削除。`bodyBlocks` は段落間に空行を入れるので
+  接続詞なしで読める。
+- `src/message-builder.ts::buildProposalPoint`: `strength.label` /
+  secondary label の末尾「（...）」「(...)」を proposal 文脈で剥がし、
+  capability との同義反復を解消。
+
+### 検証
+
+`tests/...` 既存スイートと `npx tsc --noEmit -p tsconfig.json` グリーン。
+No.357 ケースを再現したスモークテスト (削除済) で「また、」消失 +
+「Sitecore CMS 構築（国内 No.1 実績）」→「Sitecore CMS 構築」を確認。
+
+---
+
 ## 2.0.65 - 2026-05-24 — バッチ進行詰まり / auth スパム / no-solicitation / UX 4 件追加修正
 
 実機 dashboard-diagnostics.jsonl のさらなる分析で見つかった追加バグ:

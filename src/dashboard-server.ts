@@ -10275,6 +10275,8 @@ function getRecoveryApiDispatch() {
       appendDiagnosticEvent,
       ensureClaudeAutomationReady,
       findCompaniesByNos,
+      logAction,
+      getAllLogs,
     });
   }
   return _recoveryApiDispatch;

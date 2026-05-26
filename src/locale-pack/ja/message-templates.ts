@@ -62,8 +62,13 @@ const observation: ObservationStrings = {
   partnerNote: '貴社サイトで外部連携や募集に関する記載を拝見しました。',
   focusNote: (focusLabel: string) =>
     `特に${focusLabel}を継続テーマとして進めておられる点が印象に残りました。`,
+  // v2.0.66 (Bug D): 先頭「また、」を削除。buildObservationPoints は順序付きで
+  //   partnerNote → focusNote → areaNote の最初に来たものが「冒頭文」になる
+  //   ため、areaNote が trailing でない場合に「また、」始まりは不自然
+  //   (No.357 オートデスク事故)。bodyBlocks は段落間に空行を入れるので、
+  //   接続詞なしで読める。
   areaNote: (areaLabel: string) =>
-    `また、${areaLabel}を軸に事業展開されており、案件によって周辺領域まで含めた体制づくりが必要になるのではないかと感じました。`,
+    `${areaLabel}を軸に事業を展開されており、案件によって周辺領域まで含めた体制づくりが必要になる場面もあるのではないかと感じました。`,
   typeNote: (companyType: string) =>
     `貴社が${companyType}として幅広い案件対応を担われている前提で拝見しました。`,
   fallbackNote: (companyName: string) =>
