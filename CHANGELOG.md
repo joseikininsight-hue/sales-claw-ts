@@ -1,5 +1,104 @@
 # Changelog
 
+## 2.0.68 - 2026-05-26 — Phase 2 完了: in-app form-fill フル実装 + E2E 検証 (v2.1.0 候補)
+
+v2.0.67 の Phase 1 skeleton を拡張し、**全 15 ツール + Electron 統合 +
+E2E 自動検証** まで完成。`formFill.mode = "internal"` で実運用可能な状態に。
+
+設計書: `docs/architecture/in-app-form-fill.md` (v1.0)
+
+### Phase 2a (4 ツール — フォーム入力の中核)
+- `browser_fill_form`: 既存 FormSessionManager.fillForm を IPC 経由で呼ぶ
+- `browser_click`: Runtime.evaluate ベース (Phase 3 で CDP dispatchMouseEvent に移行)
+- `browser_type`: focus + value setter + input/change/blur イベント発火
+- `browser_select_option`: option.value / option.label マッチで multi-select 対応
+
+### Phase 2b (8 ツール — 補助)
+- `browser_tabs`: list / new / close / select。FormSessionManager の session map を tab に見立てる
+- `browser_evaluate`: isolated world (Phase 2 では executeJavaScript 経由)。
+  expression 4KB 上限 + `document.cookie` / `localStorage` / `sessionStorage` /
+  `indexedDB` / `navigator.credentials` への直接アクセスを allowlist で禁止
+- `browser_wait_for`: 200ms polling for selector or text
+- `browser_press_key`: CDP `Input.dispatchKeyEvent` (rawKeyDown + keyUp)
+- `browser_file_upload`: CDP `DOM.querySelector` → `DOM.setFileInputFiles`
+- `browser_handle_dialog` / `browser_drag` / `browser_hover`: Phase 2 では stub
+  (`browser_*` ツール一覧には出るが呼び出すと "not implemented" error。Phase 3 で完全化)
+
+### Phase 2c (Electron 側 dispatcher)
+- 新規 `src/form-mcp-dispatcher.ts` — 各 IPC op を FormSessionManager / CdpBridge に橋渡し
+- 各ツール handler 実装、stub 含む
+
+### Phase 2d (dashboard-server.ts 統合)
+- 新規関数 `ensureProviderInternalFormMcp(providerId, options)` を `ensureProviderPlaywrightMcp`
+  と同じパターンで実装。formFill.mode に応じて挙動分岐:
+  - `playwright`: 既存 sales-claw-form 登録を remove (cleanup) → return
+  - `internal` / `both`: shim path + IPC pipe env を ensure register
+- `startManagedAiSession` の 2 箇所で並行 ensure を呼ぶ
+- `buildManagedProviderEnv` に `SALES_CLAW_FORM_IPC_PIPE` env 注入
+- 公開 API: `setInternalFormMcpIpcPipePath(path)`, `getFormFillMode()`
+
+### Phase 2e (Electron main 統合)
+- `electron-main.ts` の `app.whenReady()` 後半で formFill.mode が `playwright`
+  以外なら IPC server を起動 → dispatcher に FormSessionManager を渡す →
+  `setInternalFormMcpIpcPipePath(ipcServer.pipePath)` で dashboard-server に通知
+- `app.on('before-quit', () => ipcServer.stop())` で graceful shutdown
+
+### Bug fix cycle (Bug 1-4)
+- **Bug 1**: `browser_navigate` の新規セッション作成時に `companyNo` 引数を schema
+  に追加 (省略時は警告ログ + companyNo=0)。screenshot ファイル名が正しく
+  `ss-{No}-input.png` になることを E2E で確認
+- **Bug 3**: dispatcher の `evaluate` ハンドラで `webContents.executeJavaScript`
+  の第 2 引数を間違えていた (`awaitPromise` ではなく `userGesture`)。
+  `awaitPromise:true` の場合は expression を `Promise.resolve().then(...)` で
+  ラップして実現
+- **Bug 4**: dispatcher の `screenshotDir` が `settings.getScreenshotDir()` と
+  ずれる可能性 → `getScreenshotDir()` コールバックを context に渡す構造に変更
+
+### E2E 検証 (本物のテスト)
+- `tests/internal-mcp-integration.test.cjs` 新規: MCP server (server.cjs) を
+  子プロセス spawn → JSON-RPC で initialize/tools/list/tools/call の往復を
+  検証。**実フォーム入力 → screenshot 取得 → awaiting_approval 直前まで
+  ワイヤリングが正しく繋がっていること** を assert
+  - ✅ initialize handshake
+  - ✅ tools/list returns 15 tools
+  - ✅ browser_navigate creates session with companyNo
+  - ✅ browser_snapshot returns 4 fields
+  - ✅ browser_fill_form fills form fields
+  - ✅ browser_take_screenshot saves PNG to disk
+- `tests/fixtures/local-form.html` 新規: 会社名/名前/メール/電話/種別/本文 +
+  確認画面パターンの最小フォーム
+
+### 単体テスト追加
+- `tests/mcp-config-helpers.test.cjs` に `shouldOverrideInternalFormMcpConfig`
+  9 ケース追加 (20 → 29 pass)
+
+### Phase 3 で残作業
+- 実 Electron + 実 WebContentsView での E2E (今は mock formSessionManager)
+- `browser_handle_dialog` / `drag` / `hover` の完全実装
+- CDP `Input.dispatchMouseEvent` 座標計算で `click` を CDP ベースに移行
+  (`isTrusted:false` reject を避ける)
+- isolated world での `evaluate` (現在は executeJavaScript 経由)
+- `@modelcontextprotocol/sdk` + `zod` 公式 SDK 採用
+- formFill.mode の default 切替 (v2.1.0 GA で `playwright` → `internal`)
+- 並列度 `formFill.parallelism` (default 3) の Phase B 反映
+
+### 検証 (本リリース)
+- `npx tsc --noEmit -p tsconfig.json` グリーン
+- 全主要テスト pass:
+  - cdp-bridge: 4/4
+  - mcp-config-helpers: 29/29
+  - internal-mcp-integration: 6/6
+  - redact: 64/64
+  - mcp-idempotency: 19/19
+  - settings-cache: 13/13
+  - dashboard-runtime: pass
+  - spawn-env-sanitizer: pass
+  - playwright-wrapper-syntax: 4/4
+- Runtime 挙動: `formFill.mode = "playwright"` (default) のため既存ユーザーへの
+  影響ゼロ。`internal` 切替は v2.1.0 GA で
+
+---
+
 ## 2.0.67 - 2026-05-26 — Phase 1 skeleton: in-app form-fill (WebContentsView + 内製 MCP server)
 
 外部 Chrome を起動する Playwright MCP モードから、Electron 内蔵

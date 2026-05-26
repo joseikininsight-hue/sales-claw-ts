@@ -2660,12 +2660,18 @@ function buildManagedProviderEnv(providerId) {
     }
   } catch (_) { /* swallow — env injection is best-effort */ }
 
+  // v2.1.0 Phase 2d: internal form MCP の IPC pipe path を CLI に渡す。
+  // electron-main 側で IPC server を起動した時に setInternalFormMcpIpcPipePath
+  // 経由でセットされる。未起動 (= dashboard 単体実行 or formFill.mode='playwright')
+  // なら空文字で、MCP server 側が起動時に "未接続" として警告するだけで害なし。
+  const ipcPipePath = _internalFormMcpIpcPipePath || '';
   const baseEnv = localToolchain.buildToolEnv({
     ...sanitizedProcessEnv,
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     SALES_CLAW_SESSION: sessionToken,
     SALES_CLAW_DASHBOARD_URL: dashboardBaseUrl,
+    SALES_CLAW_FORM_IPC_PIPE: ipcPipePath,
   });
   if (normalizedProviderId === 'claude') {
     const managedHome = prepareClaudeManagedHome(PROJECT_ROOT);
@@ -2998,6 +3004,149 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
     configured: false,
     error: `${getProviderDisplayName(normalized)} で MCP Playwright の設定確認に失敗しました。`,
   };
+}
+
+// v2.1.0 Phase 2d: Internal sales-claw-form MCP server 登録ロジック。
+// 設計: docs/architecture/in-app-form-fill.md §1.2, §6.
+//
+// formFill.mode により以下のように動作:
+//   - 'playwright': 既存の sales-claw-form 登録を remove (cleanup) して return
+//   - 'internal':   sales-claw-form を ensure register (playwright は別関数で remove する想定)
+//   - 'both':       sales-claw-form を ensure register (playwright もそのまま)
+
+/**
+ * 内製 sales-claw-form MCP server (Electron 内 WebContentsView を CDP 制御)
+ * の Claude/Codex/Gemini への登録を ensure する。
+ *
+ * IPC pipe path は `_internalFormMcpIpcPipePath` グローバル変数経由で参照
+ * (electron-main 側で IPC server start 後にセットする)。
+ */
+async function ensureProviderInternalFormMcp(providerId, options: Record<string, any> = {}) {
+  const normalized = normalizeProviderId(providerId);
+  if (!['claude', 'codex', 'gemini'].includes(normalized)) {
+    return { ok: true, required: false };
+  }
+  const mode = getFormFillMode();
+  const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
+  const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
+  const removeArgs = normalized === 'gemini'
+    ? ['--debug', 'mcp', 'remove', 'sales-claw-form']
+    : normalized === 'claude'
+      ? ['mcp', 'remove', '--scope', 'user', 'sales-claw-form']
+      : ['mcp', 'remove', 'sales-claw-form'];
+
+  // playwright モードなら 内製は登録しない (古い登録があれば cleanup)
+  if (mode === 'playwright') {
+    try {
+      const check: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
+      const combined = `${check.stdout}\n${check.stderr}`;
+      if (check.ok && /sales-claw-form/i.test(combined)) {
+        await runProviderCliCommand(normalized, removeArgs, cliOptions);
+      }
+    } catch (_) { /* cleanup best-effort */ }
+    return { ok: true, required: false, configured: false, mode };
+  }
+
+  // internal / both モード: ensure register
+  const shimPath = findInternalFormMcpShimPath();
+  if (!shimPath) {
+    return {
+      ok: false,
+      required: true,
+      configured: false,
+      error: 'sales-claw-form MCP shim (bin/sales-claw-form-mcp.cjs) が見つかりません。',
+    };
+  }
+  const nodeBin = process.execPath; // Electron 同梱の Node でも、system Node でも可
+
+  // 既存登録を確認 → 不正なら remove + add
+  const check: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
+  const combined = `${check.stdout}\n${check.stderr}`;
+  const line = combined.split(/\r?\n/).find(l => /^\s*sales-claw-form\s*[:=]/i.test(l)) || '';
+  const { shouldOverrideInternalFormMcpConfig } = require('./mcp-config-helpers');
+
+  let needRegister = true;
+  if (check.ok && /sales-claw-form/i.test(combined) && line) {
+    const existingFromLine = parseExistingMcpLine(line);
+    needRegister = shouldOverrideInternalFormMcpConfig(existingFromLine, process.platform);
+    if (!needRegister) {
+      return { ok: true, required: true, configured: true, alreadyExists: true, mode };
+    }
+    try { await runProviderCliCommand(normalized, removeArgs, cliOptions); }
+    catch (_) { /* ignore — re-add will overwrite */ }
+  }
+
+  // mcp add の引数
+  let addArgs;
+  const envFlags: string[] = [];
+  // IPC pipe path を env として渡す (env が無いと MCP server は connection 失敗で起動)
+  if (_internalFormMcpIpcPipePath) {
+    envFlags.push('-e', `SALES_CLAW_FORM_IPC_PIPE=${_internalFormMcpIpcPipePath}`);
+  }
+  if (normalized === 'codex') {
+    addArgs = ['mcp', 'add', 'sales-claw-form', '--', nodeBin, shimPath];
+  } else if (normalized === 'claude') {
+    addArgs = ['mcp', 'add', '--scope', 'user', 'sales-claw-form', ...envFlags, '--', nodeBin, shimPath];
+  } else {
+    addArgs = ['--debug', 'mcp', 'add', 'sales-claw-form', nodeBin, shimPath];
+  }
+
+  const { isAlreadyExistsError } = require('./mcp-idempotency');
+  const add: any = await runProviderCliCommand(normalized, addArgs, { timeout: 30000, env: cliOptions.env });
+  if (!add.ok) {
+    const stderrOut = String(add.stderr || add.stdout || '').trim();
+    if (isAlreadyExistsError(stderrOut)) {
+      return { ok: true, required: true, configured: true, alreadyExists: true, mode };
+    }
+    return {
+      ok: false,
+      required: true,
+      configured: false,
+      error: `${getProviderDisplayName(normalized)} で MCP sales-claw-form 設定に失敗: ${stderrOut}`,
+    };
+  }
+  return { ok: true, required: true, configured: true, added: true, mode };
+}
+
+/** formFill.mode を settings から読む。default は 'playwright' (互換) */
+function getFormFillMode(): 'playwright' | 'internal' | 'both' {
+  try {
+    const ff = settings.getSection ? settings.getSection('formFill') : null;
+    const m = ff && typeof ff === 'object' ? String((ff as { mode?: string }).mode || '').toLowerCase() : '';
+    if (m === 'internal' || m === 'both') return m;
+  } catch (_) { /* fall through */ }
+  return 'playwright';
+}
+
+/** bin/sales-claw-form-mcp.cjs の場所を探す */
+function findInternalFormMcpShimPath(): string | null {
+  const candidates = [
+    // dev / source
+    path.resolve(__dirname, '..', '..', 'bin', 'sales-claw-form-mcp.cjs'),
+    path.resolve(__dirname, '..', 'bin', 'sales-claw-form-mcp.cjs'),
+    // packaged Electron (extraResources, Phase 3 で正式対応)
+    process.resourcesPath ? path.join(process.resourcesPath, 'bin', 'sales-claw-form-mcp.cjs') : '',
+  ].filter(Boolean);
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) return p; }
+    catch (_) { /* ignore */ }
+  }
+  return null;
+}
+
+/** `mcp list` 1行から { command, args } を粗く抽出する (best-effort) */
+function parseExistingMcpLine(line: string): { command: string; args: string[] } {
+  // 例: "sales-claw-form: C:\path\to\node.exe C:\path\to\sales-claw-form-mcp.cjs - ✓ Connected"
+  const m = line.match(/^\s*sales-claw-form\s*[:=]\s*(.+?)\s+-\s+/);
+  const body = m ? m[1] : line;
+  const tokens = body.split(/\s+/).filter(Boolean);
+  return { command: tokens[0] || '', args: tokens.slice(1) };
+}
+
+/** electron-main 側で IPC server 起動後に setInternalFormMcpIpcPipePath を呼んでセット */
+let _internalFormMcpIpcPipePath: string | null = null;
+function setInternalFormMcpIpcPipePath(pipePath: string | null): void {
+  _internalFormMcpIpcPipePath = pipePath || null;
 }
 
 // レガシー: basename のみ (e.g. favicon.png)
@@ -5141,6 +5290,17 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
       error: playwrightSetup.error || `${provider.displayName} の MCP Playwright 設定に失敗しました。`,
     };
   }
+  // v2.1.0 Phase 2d: internal form MCP の登録 (mode に依存して挙動分岐)
+  const internalFormSetup: any = await ensureProviderInternalFormMcp(selectedProviderId, {
+    env: buildManagedProviderEnv(selectedProviderId),
+  });
+  if (!internalFormSetup.ok) {
+    appendDiagnosticEvent('mcp_internal_form_setup_failed', {
+      provider: selectedProviderId, error: String(internalFormSetup.error || ''),
+    });
+    // internal MCP 登録失敗は Phase 2 では fatal 扱いしない (playwright モードで動作可)。
+    // formFill.mode='internal' の場合のみ fatal にすべきだが、Phase 3 で評価する。
+  }
   if (playwrightSetup.added && claudePty && getManagedAiProvider() === selectedProviderId) {
     appendDiagnosticEvent('managed_ai_mcp_registered_restart', {
       provider: selectedProviderId,
@@ -6233,6 +6393,20 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
   // the batch flow will re-validate separately when it actually needs MCP.
   const playwrightSetup: any = await ensureProviderPlaywrightMcp(normalizedProviderId, { env: launchEnv });
   assertManagedAiLaunchActive(launchToken, 'after-mcp-setup');
+  // v2.1.0 Phase 2d: internal form MCP も並行 ensure (mode に応じて挙動分岐)
+  try {
+    const internalFormSetup: any = await ensureProviderInternalFormMcp(normalizedProviderId, { env: launchEnv });
+    if (!internalFormSetup.ok) {
+      appendDiagnosticEvent('mcp_internal_form_setup_failed', {
+        provider: normalizedProviderId, error: String(internalFormSetup.error || ''),
+      });
+    }
+  } catch (e) {
+    // best-effort: 失敗しても launch を止めない (Phase 3 で必要に応じて escalate)
+    appendDiagnosticEvent('mcp_internal_form_setup_threw', {
+      provider: normalizedProviderId, error: e instanceof Error ? e.message : String(e),
+    });
+  }
   let mcpWarning: any = null;
   if (!playwrightSetup.ok) {
     if (options && options.requireMcp) {
@@ -10946,4 +11120,8 @@ module.exports = {
   // electron-main.js が before-quit / will-quit でこれを await することで、
   // PTY 子プロセスや WebContentsView の孤児化を防ぐ。
   gracefulShutdown,
+  // v2.1.0 Phase 2d: electron-main から IPC server 起動後の pipe path を渡す
+  setInternalFormMcpIpcPipePath,
+  // v2.1.0 Phase 2d: formFill mode 取得 (electron-main で IPC server を起動するか判定)
+  getFormFillMode,
 };

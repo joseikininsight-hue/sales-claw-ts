@@ -544,6 +544,44 @@ void app.whenReady().then(async () => {
   createTray();
   createWindow();
 
+  // v2.1.0 Phase 2e: internal form MCP の IPC server を起動して
+  // sales-claw-form MCP server (子プロセス) からの接続を受ける。
+  // formFill.mode が 'internal' or 'both' でなければ起動しない (リソース節約)。
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dashboardServer = require('./src/dashboard-server') as {
+      setInternalFormMcpIpcPipePath?: (p: string | null) => void;
+      getFormFillMode?: () => 'playwright' | 'internal' | 'both';
+    };
+    const mode = dashboardServer.getFormFillMode ? dashboardServer.getFormFillMode() : 'playwright';
+    if (mode !== 'playwright') {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createIpcServer } = require('./src/ipc-server') as typeof import('./src/ipc-server');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dispatcher = require('./src/form-mcp-dispatcher') as typeof import('./src/form-mcp-dispatcher');
+
+      const ipcServer = createIpcServer();
+      // settings.getScreenshotDir() と同じ値を返すコールバックを渡す。
+      // FormSessionManager.captureScreenshot 内の SSRF / path traversal guard と
+      // 必ず一致させる必要があるため (Bug 4 修正、v2.1.0)。
+      const sm = settingsManager as unknown as { getScreenshotDir?: () => string };
+      dispatcher.registerHandlers(ipcServer, {
+        formSessionManager: formSessionManager as unknown as Parameters<typeof dispatcher.registerHandlers>[1]['formSessionManager'],
+        getScreenshotDir: () => (sm.getScreenshotDir ? sm.getScreenshotDir() : resolveDataPath('..', 'screenshots')),
+      });
+      await ipcServer.start();
+      if (dashboardServer.setInternalFormMcpIpcPipePath) {
+        dashboardServer.setInternalFormMcpIpcPipePath(ipcServer.pipePath);
+      }
+      console.log(`[ipc-server] sales-claw-form MCP IPC ready at ${ipcServer.pipePath}`);
+      app.on('before-quit', () => { void ipcServer.stop(); });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[ipc-server] failed to start internal form MCP IPC:', msg);
+    // 起動失敗しても dashboard 自体は使えるので app.quit は避ける
+  }
+
   if (AUTO_UPDATE_ENABLED) {
     // Stale な update-status.json をクリア:
     // 前回起動時に v{X} を download → 再起動でインストール → 今この v{X} を実行中、

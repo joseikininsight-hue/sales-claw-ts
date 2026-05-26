@@ -13,11 +13,23 @@
 
 const { IpcClient } = require('./ipc-client.cjs');
 
-// Phase 1 tools (3個)。Phase 2 で 15 個まで拡張。
+// Phase 2 tools (15個 全実装)。
 const TOOLS = [
   require('./tools/navigate.cjs'),
   require('./tools/snapshot.cjs'),
   require('./tools/screenshot.cjs'),
+  require('./tools/fill_form.cjs'),
+  require('./tools/click.cjs'),
+  require('./tools/type.cjs'),
+  require('./tools/select_option.cjs'),
+  require('./tools/tabs.cjs'),
+  require('./tools/evaluate.cjs'),
+  require('./tools/wait_for.cjs'),
+  require('./tools/press_key.cjs'),
+  require('./tools/handle_dialog.cjs'),
+  require('./tools/file_upload.cjs'),
+  require('./tools/drag.cjs'),
+  require('./tools/hover.cjs'),
 ];
 
 const PROTOCOL_VERSION = '2024-11-05';

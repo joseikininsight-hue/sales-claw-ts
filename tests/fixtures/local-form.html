@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>テスト用問い合わせフォーム</title>
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: 2em auto; padding: 1em; }
+  label { display: block; margin: 0.5em 0; }
+  input, textarea, select { width: 100%; padding: 0.4em; margin-top: 0.2em; }
+  button { padding: 0.6em 1.4em; margin-top: 1em; background: #2196f3; color: white; border: none; cursor: pointer; }
+  .confirm { background: #f0f7ff; padding: 1em; border: 1px solid #2196f3; }
+</style>
+</head>
+<body>
+<h1>お問い合わせフォーム</h1>
+<form id="contactForm">
+  <label>会社名 <input type="text" name="company" id="company" required></label>
+  <label>お名前 <input type="text" name="name" id="name" required></label>
+  <label>メール <input type="email" name="email" id="email" required></label>
+  <label>電話 <input type="tel" name="phone" id="phone"></label>
+  <label>お問い合わせ種別
+    <select name="kind" id="kind">
+      <option value="">選択してください</option>
+      <option value="cms">CMS構築</option>
+      <option value="ai">AI活用</option>
+      <option value="other">その他</option>
+    </select>
+  </label>
+  <label>本文 <textarea name="body" id="body" rows="6" required></textarea></label>
+  <button type="submit" id="submitBtn">送信</button>
+</form>
+
+<div id="confirmPane" class="confirm" style="display:none">
+  <h2>確認画面</h2>
+  <p>以下の内容で送信します:</p>
+  <pre id="confirmDump"></pre>
+  <button id="finalSubmitBtn">送信を確定</button>
+</div>
+
+<script>
+  document.getElementById('contactForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const form = e.target;
+    const data = {
+      company: form.company.value, name: form.name.value, email: form.email.value,
+      phone: form.phone.value, kind: form.kind.value, body: form.body.value,
+    };
+    document.getElementById('confirmDump').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('contactForm').style.display = 'none';
+    document.getElementById('confirmPane').style.display = 'block';
+  });
+</script>
+</body>
+</html>

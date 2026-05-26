@@ -7,12 +7,13 @@
 
 const SCHEMA = {
   name: 'browser_navigate',
-  description: 'Navigate the active form session to a URL. If sessionId is omitted, a new session is created.',
+  description: 'Navigate the active form session to a URL. If sessionId is omitted, a new session is created (companyNo recommended for tab labeling).',
   inputSchema: {
     type: 'object',
     properties: {
       url: { type: 'string', description: 'Target URL (https://). SSRF guard applied.' },
       sessionId: { type: 'string', description: 'Existing session ID. If omitted, a new session is created.' },
+      companyNo: { type: 'number', description: 'Company number for new session creation (used in screenshot filenames and tab label). Ignored if sessionId is provided.' },
       waitUntil: {
         type: 'string',
         enum: ['load', 'domcontentloaded', 'networkidle'],
@@ -31,12 +32,16 @@ function validateArgs(args) {
   if (args.sessionId != null && typeof args.sessionId !== 'string') {
     throw new Error('sessionId must be a string');
   }
+  if (args.companyNo != null && !Number.isFinite(Number(args.companyNo))) {
+    throw new Error('companyNo must be a number');
+  }
   if (args.waitUntil != null && !['load', 'domcontentloaded', 'networkidle'].includes(args.waitUntil)) {
     throw new Error(`waitUntil must be one of: load, domcontentloaded, networkidle`);
   }
   return {
     url: args.url,
     sessionId: args.sessionId,
+    companyNo: args.companyNo != null ? Number(args.companyNo) : undefined,
     waitUntil: args.waitUntil || 'load',
   };
 }

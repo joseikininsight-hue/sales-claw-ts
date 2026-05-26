@@ -7,7 +7,7 @@
  * Run: node tests/mcp-config-helpers.test.cjs
  */
 
-const { shouldOverridePlaywrightMcpConfig } = require('../dist-ts/src/mcp-config-helpers');
+const { shouldOverridePlaywrightMcpConfig, shouldOverrideInternalFormMcpConfig } = require('../dist-ts/src/mcp-config-helpers');
 
 let passed = 0;
 let failed = 0;
@@ -104,6 +104,71 @@ assertEquals(shouldOverridePlaywrightMcpConfig({}, 'darwin'), true, 'empty objec
     env: { ELECTRON_RUN_AS_NODE: '1' },
   };
   assertEquals(shouldOverridePlaywrightMcpConfig(salesClaw, 'win32'), false, 'Sales Claw exe-based config → preserve');
+}
+
+// ════════════════════════════════════════════════════════════
+// shouldOverrideInternalFormMcpConfig (v2.1.0 Phase 2d)
+// ════════════════════════════════════════════════════════════
+
+// 既存設定が無ければ override
+assertEquals(shouldOverrideInternalFormMcpConfig(null, 'win32'), true, 'internal: null → override');
+assertEquals(shouldOverrideInternalFormMcpConfig({}, 'win32'), true, 'internal: empty obj → override');
+assertEquals(shouldOverrideInternalFormMcpConfig({ command: '' }, 'win32'), true, 'internal: empty command → override');
+
+// npm/npx 系 → override
+assertEquals(
+  shouldOverrideInternalFormMcpConfig({ command: 'npx', args: ['sales-claw-form-mcp'] }, 'linux'),
+  true,
+  'internal: npx → override',
+);
+assertEquals(
+  shouldOverrideInternalFormMcpConfig({ command: 'C:\\Program Files\\nodejs\\npm.cmd', args: [] }, 'win32'),
+  true,
+  'internal: npm.cmd → override',
+);
+
+// 我々の shim を正しく指している → preserve
+{
+  const correct = {
+    command: 'C:\\Users\\u\\AppData\\Local\\Programs\\Sales Claw\\Sales Claw.exe',
+    args: ['C:\\bp-outreach-ts\\bin\\sales-claw-form-mcp.cjs'],
+  };
+  assertEquals(
+    shouldOverrideInternalFormMcpConfig(correct, 'win32'),
+    false,
+    'internal: shim path 正しい → preserve',
+  );
+}
+{
+  const correctUnix = {
+    command: '/usr/bin/node',
+    args: ['/opt/sales-claw/bin/sales-claw-form-mcp.cjs'],
+  };
+  assertEquals(
+    shouldOverrideInternalFormMcpConfig(correctUnix, 'linux'),
+    false,
+    'internal: unix node + shim → preserve',
+  );
+}
+
+// shim 以外を指している → override (basename 一致しない)
+{
+  const wrong = { command: '/usr/bin/node', args: ['/some/other/script.cjs'] };
+  assertEquals(
+    shouldOverrideInternalFormMcpConfig(wrong, 'linux'),
+    true,
+    'internal: 別 script 指定 → override',
+  );
+}
+
+// Windows で .cmd / .bat 経由は override (popup 回避)
+{
+  const cmdShim = { command: 'C:\\some\\sales-claw-form-mcp.cmd', args: [] };
+  assertEquals(
+    shouldOverrideInternalFormMcpConfig(cmdShim, 'win32'),
+    true,
+    'internal: .cmd shim on win32 → override',
+  );
 }
 
 // ────────────────────────────────────────────────────────────
