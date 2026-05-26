@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.0.72 - 2026-05-26 — formFill モード切替 UI を設定画面に追加 + DEFAULT_SETTINGS に formFill 追加
+
+### 設定画面から切替可能に
+
+「設定 → 環境設定」の最下部に **「フォーム入力モード (v2.1.0)」** セクションを
+新設。GUI から以下を切替可能:
+- **モード**: internal (推奨・アプリ内完結) / playwright (旧・外部 Chrome) / both (A/B テスト)
+- **並列度**: 1-5 (デフォルト 3)
+- **現在のモード**: 設定値をリアルタイム表示
+
+[保存] ボタンで `/api/settings/formFill` に PUT → `settings.json` に永続化。
+保存後は「次回 AI 起動から反映されます (再起動推奨)」のステータスを表示。
+
+### Bug 修正
+
+- `settings-manager.ts::DEFAULT_SETTINGS` に **`formFill: { mode: 'internal', parallelism: 3 }`** を追加。
+  これがないと `updateSection('formFill', ...)` が `Unknown section: formFill` で 422 拒否される
+  (既存 settings.json に formFill が無いケースで発覚)
+- `src/routes/settings-api.ts::SETTINGS_SECTION_RE` に `formFill` を whitelist 追加
+- UI section の wrapper を `class="settings-section"` から plain `<div>` に変更。
+  旧コードは tab switcher が `.settings-section` を `display:none` にしていたため UI が表示されなかった
+
+### 実機検証 (browser preview)
+
+```
+✓ UI element ff-mode/ff-parallelism/ff-saveBtn が DOM に存在
+✓ mode=playwright + parallelism=5 で保存 → サーバ側 settings.json に反映確認
+✓ mode=internal + parallelism=3 に戻して再保存 → 完全 roundtrip OK
+✓ 保存ステータス "✓ 保存しました。次回 AI 起動から反映されます (再起動推奨)。" 表示確認
+✓ 環境設定タブの最下部に「フォーム入力モード (v2.1.0)」セクション可視確認 (スクリーンショット)
+```
+
+---
+
 ## 2.0.71 - 2026-05-26 — getFormFillMode フォールバック default を internal に (既存ユーザーも internal モード)
 
 ### 問題

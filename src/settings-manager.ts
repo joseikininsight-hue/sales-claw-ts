@@ -219,6 +219,17 @@ const DEFAULT_SETTINGS = {
     // (default を 1 で書き込むと env override が効かなくなるため)
   },
 
+  // === Form-fill mode (v2.1.0+) ===
+  // Phase B でフォーム入力に使うブラウザエンジン:
+  //   - 'internal'   : Electron 内蔵 WebContentsView (外部 Chrome 不要、推奨)
+  //   - 'playwright' : 外部 Chrome を起動する旧モード (rollback 用)
+  //   - 'both'       : 両方登録 (A/B テスト用)
+  // 詳細: docs/architecture/in-app-form-fill.md
+  formFill: {
+    mode: 'internal',
+    parallelism: 3,  // 1-5。同時に処理する社数
+  },
+
   // === 外部 API キー（list-builder などで利用） ===
   // 機微情報のため、UI からの読み出し時はマスクする想定。
   // 値が未設定の場合、該当機能はロックされる。

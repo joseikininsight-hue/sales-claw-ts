@@ -9199,6 +9199,106 @@ ${renderStyles()}
           </div>
         </div>
 
+        <!-- v2.1.0: formFill モード設定 (Electron 内蔵 WebContentsView ↔ 外部 Playwright Chrome) -->
+        <!-- preferences panel 内のサブセクションとして配置 (tab switcher の display:none を回避) -->
+        <div style="margin-top:32px;padding-top:24px;border-top:2px solid var(--border)">
+          <div style="margin-bottom:16px">
+            <h3 style="margin:0 0 6px 0;font-size:1.05rem;font-weight:700">${_lang === 'ja' ? 'フォーム入力モード (v2.1.0)' : 'Form Fill Mode (v2.1.0)'}</h3>
+            <div class="help-text">
+              ${_lang === 'ja'
+                ? 'AI がフォーム入力に使うブラウザエンジン。internal は Sales Claw アプリ内で完結 (推奨)、playwright は外部 Chrome を起動する旧モード。'
+                : 'Browser engine used by AI for form filling. internal completes inside the Sales Claw app (recommended), playwright launches external Chrome (legacy).'}
+            </div>
+          </div>
+
+          <div class="settings-row-3">
+            <div class="settings-group">
+              <label>${_lang === 'ja' ? 'モード' : 'Mode'}</label>
+              <select id="ff-mode">
+                <option value="internal">internal (${_lang === 'ja' ? '推奨・アプリ内完結' : 'Recommended — in-app'})</option>
+                <option value="playwright">playwright (${_lang === 'ja' ? '旧・外部 Chrome' : 'Legacy — external Chrome'})</option>
+                <option value="both">both (${_lang === 'ja' ? 'A/B テスト用' : 'A/B testing'})</option>
+              </select>
+              <div class="help-text">
+                ${_lang === 'ja'
+                  ? 'internal: Electron 内蔵 WebContentsView (外部ブラウザを開かない)'
+                  : 'internal: Electron-embedded WebContentsView (no external browser)'}
+              </div>
+            </div>
+            <div class="settings-group">
+              <label>${_lang === 'ja' ? '並列度' : 'Parallelism'}</label>
+              <input type="number" id="ff-parallelism" min="1" max="5" placeholder="3">
+              <div class="help-text">
+                ${_lang === 'ja' ? '1-5。同時に処理する社数。デフォルト 3' : '1-5. Companies processed in parallel. Default 3'}
+              </div>
+            </div>
+            <div class="settings-group">
+              <label style="opacity:.6">${_lang === 'ja' ? '現在のモード' : 'Current mode'}</label>
+              <div id="ff-currentMode" style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:.8rem">—</div>
+            </div>
+          </div>
+
+          <div class="save-bar">
+            <button class="btn-save" id="ff-saveBtn" type="button">${_t['settings.save']} ${_lang === 'ja' ? 'フォーム入力モード' : 'Form Fill Mode'}</button>
+            <span id="ff-saveStatus" style="margin-left:12px;font-size:.8rem"></span>
+          </div>
+        </div>
+
+        <script>
+          (function(){
+            // v2.1.0 formFill UI: load → populate → save
+            async function loadFormFill() {
+              try {
+                const r = await fetch('/api/settings');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const j = await r.json();
+                const ff = (j && j.formFill) || {};
+                const mode = ff.mode || 'internal';
+                const parallelism = ff.parallelism != null ? ff.parallelism : 3;
+                document.getElementById('ff-mode').value =
+                  (mode === 'playwright' || mode === 'internal' || mode === 'both') ? mode : 'internal';
+                document.getElementById('ff-parallelism').value = parallelism;
+                document.getElementById('ff-currentMode').textContent = mode;
+              } catch (e) {
+                document.getElementById('ff-currentMode').textContent = 'error: ' + (e.message || e);
+              }
+            }
+            async function saveFormFill() {
+              const btn = document.getElementById('ff-saveBtn');
+              const status = document.getElementById('ff-saveStatus');
+              const modeEl = document.getElementById('ff-mode');
+              const parEl = document.getElementById('ff-parallelism');
+              const mode = modeEl.value;
+              const parallelism = Math.min(5, Math.max(1, parseInt(parEl.value, 10) || 3));
+              btn.disabled = true;
+              status.textContent = ${_lang === 'ja' ? "'保存中…'" : "'Saving…'"};
+              status.style.color = 'var(--text-2)';
+              try {
+                const r = await fetch('/api/settings/formFill', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ mode: mode, parallelism: parallelism }),
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+                status.textContent = ${_lang === 'ja'
+                  ? "'✓ 保存しました。次回 AI 起動から反映されます (再起動推奨)。'"
+                  : "'✓ Saved. Will apply on next AI launch (restart recommended).'"};
+                status.style.color = 'var(--success, #16a34a)';
+                document.getElementById('ff-currentMode').textContent = mode;
+              } catch (e) {
+                status.textContent = ${_lang === 'ja' ? "'保存失敗: '" : "'Save failed: '"} + (e.message || e);
+                status.style.color = 'var(--error, #dc2626)';
+              } finally {
+                btn.disabled = false;
+                setTimeout(function(){ status.textContent = ''; }, 6000);
+              }
+            }
+            document.getElementById('ff-saveBtn').addEventListener('click', saveFormFill);
+            loadFormFill();
+          })();
+        </script>
+
       </div>
     </div>
   </div>

@@ -44,7 +44,7 @@ const {
 // action-logger は PUT /api/settings/:section で監査ログに使う
 const { logAction } = require('../action-logger');
 
-const SETTINGS_SECTION_RE = /^\/api\/settings\/(companyProfile|valuePropositions|targetList|exclusionRules|messageTemplates|preferences)$/;
+const SETTINGS_SECTION_RE = /^\/api\/settings\/(companyProfile|valuePropositions|targetList|exclusionRules|messageTemplates|preferences|formFill)$/;
 
 /**
  * Settings API ルーターを生成する factory。
