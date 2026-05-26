@@ -28,7 +28,8 @@ on:
       force_release:
         description: 'Force release even if tag exists (DANGEROUS)'
         required: false
-        default: 'false'
+        type: boolean
+        default: false
 
 concurrency:
   group: release
