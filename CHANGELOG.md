@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.71 - 2026-05-26 — getFormFillMode フォールバック default を internal に (既存ユーザーも internal モード)
+
+### 問題
+
+v2.0.70 で `data/sample-settings.json` の default を `"internal"` に変更したが、
+これは **新規ユーザーのみ**に反映され、**既存ユーザーの `settings.json` には
+formFill section が存在しないため `getFormFillMode()` のフォールバック default に
+依存していた**。当該フォールバックは旧来の挙動互換のため `"playwright"` のまま
+だったので、既存ユーザーは v2.0.70 をインストールしても **外部 Chrome (Playwright)
+で動作し続けていた**。
+
+### 実機検証で発覚 (2026-05-26 11:16 のログ)
+
+ユーザー報告: 「ログ確認してなんでプレイライトで処理されてるの？外部のbrowserだしどういう事？」
+→ `dashboard-diagnostics.jsonl` 確認結果:
+- インストール済み Sales Claw FileVersion: 2.0.68 (v2.0.69/70 はまだ GitHub Release publish 中)
+- `settings.json` に formFill section なし
+- 結果: fallback default `"playwright"` で外部 Chrome 起動
+
+### 修正
+
+`getFormFillMode()` のフォールバック default を `'playwright'` → `'internal'` に
+変更。既存 settings.json に formFill 設定が無い場合でも Electron 内蔵
+WebContentsView (internal) モードで起動するように。
+
+rollback 必要なユーザーは `settings.json::formFill.mode` を明示的に
+`"playwright"` にセットすれば旧挙動に戻せる。
+
+---
+
 ## 2.0.70 - 2026-05-26 — Phase 3 完了 + 実機 30 社ベンチマーク 0 エラー (v2.1.0)
 
 ### Phase 3 実装完了 (前回の TODO 全消化)

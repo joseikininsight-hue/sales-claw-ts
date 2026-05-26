@@ -3108,14 +3108,20 @@ async function ensureProviderInternalFormMcp(providerId, options: Record<string,
   return { ok: true, required: true, configured: true, added: true, mode };
 }
 
-/** formFill.mode を settings から読む。default は 'playwright' (互換) */
+/** formFill.mode を settings から読む。
+ *  v2.1.0 (2026-05-26): フォールバック default を 'internal' に変更。
+ *  既存 settings.json に formFill section が無いケースでも Electron 内蔵
+ *  WebContentsView モードで動作させる (外部 Chrome を開かない)。
+ *  rollback したいユーザーは settings.json::formFill.mode を明示的に
+ *  "playwright" にセットすることで旧挙動に戻せる。
+ */
 function getFormFillMode(): 'playwright' | 'internal' | 'both' {
   try {
     const ff = settings.getSection ? settings.getSection('formFill') : null;
     const m = ff && typeof ff === 'object' ? String((ff as { mode?: string }).mode || '').toLowerCase() : '';
-    if (m === 'internal' || m === 'both') return m;
+    if (m === 'playwright' || m === 'internal' || m === 'both') return m;
   } catch (_) { /* fall through */ }
-  return 'playwright';
+  return 'internal';
 }
 
 /** bin/sales-claw-form-mcp.cjs の場所を探す */
