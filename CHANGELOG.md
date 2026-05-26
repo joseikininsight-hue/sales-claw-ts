@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.0.73 - 2026-05-26 — Bug fix: internal モードでも外部 Chrome (Playwright) が起動していた問題
+
+### 問題
+
+v2.0.72 で `formFill.mode = 'internal'` をデフォルトにしたにも関わらず、
+**実機 (FileVersion 2.0.72) で外部 Chrome (Playwright) が起動し続けていた**。
+
+ユーザー報告: 「なんかまた外部 browser 使用してるようだけど？」
+
+### 実機ログ証拠 (2026-05-26 12:08)
+
+```
+12:08:11  mcp_playwright_already_exists_accepted    ← Playwright MCP 登録残ったまま OK扱い
+12:09:39  managed_ai_batch_dispatch (No.79)         ← Playwright 経由でバッチ実行
+```
+
+### 根本原因
+
+`ensureProviderPlaywrightMcp` が **formFill.mode に関係なく Playwright MCP を ensure 登録**していた。
+v2.0.72 で `ensureProviderInternalFormMcp` を追加したが、両者は独立に走り、
+Playwright 側が「既に登録済 → OK」を返すため Claude CLI から Playwright が見え続けていた。
+
+Claude は `browser_navigate` 等の tool 呼び出しで Playwright (外部 Chrome) を優先して使う
+ので、internal モードのつもりでも外部 Chrome が起動してしまう。
+
+### 修正 (src/dashboard-server.ts)
+
+`ensureProviderPlaywrightMcp` の最初に `formFill.mode === 'internal'` 判定を追加:
+- mode='internal' なら、登録済の Playwright を **明示的に remove** して return
+- 副作用として `mcp_playwright_removed_for_internal_mode` 診断イベントを記録
+
+これで internal モードでは Claude CLI から Playwright が見えなくなり、
+sales-claw-form (Electron 内蔵 WebContentsView 経由) のみが MCP server として残る。
+
+### Note
+
+GitHub Actions 自動 release workflow は依然停止中のため、本リリースも手動ビルド。
+
+---
+
 ## 2.0.72 - 2026-05-26 — formFill モード切替 UI を設定画面に追加 + DEFAULT_SETTINGS に formFill 追加
 
 ### 設定画面から切替可能に

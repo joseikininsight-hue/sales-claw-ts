@@ -2873,6 +2873,24 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
     : normalized === 'claude'
       ? ['mcp', 'remove', '--scope', 'user', 'playwright']
       : ['mcp', 'remove', 'playwright'];
+
+  // v2.1.0 Bug fix (2026-05-26): formFill.mode === 'internal' なら
+  // Playwright MCP は登録しない (登録済なら remove)。
+  // 旧コードは mode に関係なく常に Playwright を ensure 登録していたため、
+  // ユーザーが internal モードに切替えても Claude が Playwright を見つけて
+  // 外部 Chrome を起動し続けていた (実機で確認: 12:08 mcp_playwright_already_exists_accepted)。
+  const formFillMode = getFormFillMode();
+  if (formFillMode === 'internal') {
+    try {
+      const listCheck: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
+      if (listCheck.ok && /^\s*playwright\s*[:=]/im.test(`${listCheck.stdout}\n${listCheck.stderr}`)) {
+        appendDiagnosticEvent('mcp_playwright_removed_for_internal_mode', { provider: normalized });
+        await runProviderCliCommand(normalized, removeArgs, cliOptions);
+      }
+    } catch (_) { /* cleanup best-effort */ }
+    return { ok: true, required: false, configured: false, skippedReason: 'formFill.mode=internal' };
+  }
+
   const check: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
   const combined = `${check.stdout}\n${check.stderr}`;
 
