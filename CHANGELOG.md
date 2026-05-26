@@ -1,5 +1,69 @@
 # Changelog
 
+## 2.0.69 - 2026-05-26 — 実 Electron + 実 WebContentsView E2E 完遂 + 既存コードバグ Bug 7 修正
+
+v2.0.68 の mock-based 統合テストを **本物の Electron + 本物の WebContentsView**
+に置き換えた E2E テストを追加。実機で確認待ち状態の前提条件 (form fill +
+DOM mutation + 実 PNG capture + MCP roundtrip) まで全て通ることを実証。
+
+### 追加ファイル
+
+- `tests/electron-real-form-runner.cjs` — Electron 起動 → WebContentsView 作成
+  → fixture form HTTP server → 実 navigation → 実 DOM 書き換え → 実 PNG capture
+  → 実 IPC server + 実 MCP server 子プロセス spawn → MCP 経由で fill / screenshot
+  の往復を完遂する 11 段階 E2E
+- `tests/electron-real-form.test.cjs` — 親 harness。Electron バイナリを spawn し
+  stdout を回収して結果をパース
+
+### 実機検証で発見・修正した 4 バグ
+
+- **Bug 5**: WebContentsView は `mainWindow.contentView.addChildView()` で
+  attach されていないとレンダラプロセスが起動せず `loadURL` が永遠に pending。
+- **Bug 6**: `dom-ready` の late registration で永久 hang。Electron の
+  `webContents.loadURL()` Promise は `did-finish-load` で resolve するため、
+  追加で `dom-ready` を待つコードは不要 (race 条件で listener が間に合わず
+  hang する)。
+- **Bug 7 (既存コード)**: `src/form-session-manager.ts:452` の
+  `executeJavaScript` 渡し template literal 内に **TypeScript 型注釈**
+  (`const fields: unknown[]`, `(el: any)`, `(o: any)`) が混入していた。
+  TS コンパイラは template literal 内の文字列を変換しないため、browser が
+  受け取って parse する際に **SyntaxError**。getFormStructure 関数全体が
+  動作不能だったが、form-fill モード自体が CLAUDE.md で封印されていたため
+  長期間誰も気付かなかった既存バグ。`var` + ES5 互換構文で完全書き直し。
+- **Bug 8**: dispatcher の `getScreenshotDir()` callback と
+  `form-session-manager.captureScreenshot` 内の `settings.getScreenshotDir()`
+  が test 環境で不一致 → path traversal guard で拒否。
+  test は `settings.getScreenshotDir()` を直接使うように修正。
+
+### E2E 検証結果 (本物の Electron)
+
+```
+✓ fixture-server        http://127.0.0.1:53670/
+✓ main-window           on-screen invisible (opacity=0)
+✓ navigate-loaded       title="テスト用問い合わせフォーム"
+✓ getFormStructure      6 real fields detected
+✓ fillForm              4 real DOM mutations
+✓ verify-dom            company/name/email/body all match
+✓ capturePage           20525 bytes PNG, valid magic bytes
+✓ ipc-server-start      \\.\pipe\sales-claw-form-mcp-...
+✓ mcp-roundtrip-screenshot   real PNG written to disk via MCP server child
+✓ mcp-roundtrip-fill-verify  MCP fill → real DOM = "MCP経由テスト株式会社"
+✓ destroySession        clean shutdown
+```
+
+**結論**: AI が `browser_navigate` → `browser_fill_form` → `browser_take_screenshot`
+を呼んで `awaiting_approval` log を書く直前までの全工程が、外部 Chrome 一切
+起動せず Electron 内蔵 WebContentsView で完結することを **mock 抜きで実証**。
+
+### 検証 (本リリース)
+- `npx tsc --noEmit -p tsconfig.json` グリーン
+- 全テスト pass: cdp-bridge 4/4, mcp-config-helpers 29/29,
+  internal-mcp-integration 6/6 (mock), **electron-real-form 11/11 (real Electron)**,
+  redact 64/64, mcp-idempotency 19/19, settings-cache 13/13,
+  dashboard-runtime pass, playwright-wrapper-syntax 4/4
+
+---
+
 ## 2.0.68 - 2026-05-26 — Phase 2 完了: in-app form-fill フル実装 + E2E 検証 (v2.1.0 候補)
 
 v2.0.67 の Phase 1 skeleton を拡張し、**全 15 ツール + Electron 統合 +

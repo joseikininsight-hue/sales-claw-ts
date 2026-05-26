@@ -446,38 +446,42 @@ class FormSessionManager {
     const session = this._sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
+    // v2.1.0 Bug 7 fix: 旧コードは template literal 内に TypeScript 型注釈
+    //   ("const fields: unknown[]" / "el: any" / "o: any") を入れていたが、
+    //   TS コンパイラは template literal 中身を変換しないため browser に
+    //   SyntaxError として届く (real Electron E2E で発覚)。
+    //   この文字列全体は browser 内で実行される pure JavaScript として扱う必要がある。
     const raw: any = await session.view.webContents.executeJavaScript(`
       (function () {
-        const escapeCSS = (str) => str.replace(/([!"#$%&'()*+,./:;<=>?@[\\]^{|}~])/g, '\\\\$1');
-        const fields: unknown[] = [];
-        const inputs = document.querySelectorAll('input, textarea, select');
+        var fields = [];
+        var inputs = document.querySelectorAll('input, textarea, select');
 
-        inputs.forEach((el: any) => {
-          if (['hidden', 'submit', 'button', 'reset', 'image'].includes(el.type)) return;
-          if (el.offsetParent === null && el.type !== 'radio' && el.type !== 'checkbox') return; // hidden element
+        inputs.forEach(function (el) {
+          if (['hidden', 'submit', 'button', 'reset', 'image'].indexOf(el.type) >= 0) return;
+          if (el.offsetParent === null && el.type !== 'radio' && el.type !== 'checkbox') return;
 
-          let label = '';
+          var label = '';
           if (el.id) {
-            const lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+            var lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
             if (lbl) label = lbl.textContent.trim();
           }
           if (!label) {
-            const parent = el.closest('.form-group, .form-field, .field, .input-wrap, li, p, div');
+            var parent = el.closest('.form-group, .form-field, .field, .input-wrap, li, p, div');
             if (parent) {
-              const lbl = parent.querySelector('label, .label, .form-label');
-              if (lbl && lbl !== el) label = lbl.textContent.trim();
+              var lbl2 = parent.querySelector('label, .label, .form-label');
+              if (lbl2 && lbl2 !== el) label = lbl2.textContent.trim();
             }
           }
 
-          const selector = el.id
+          var selector = el.id
             ? '#' + CSS.escape(el.id)
             : el.name
-            ? '[name="' + el.name + '"]'
-            : null;
+              ? '[name="' + el.name + '"]'
+              : null;
           if (!selector) return;
 
-          const field = {
-            selector,
+          var field = {
+            selector: selector,
             id: el.id || null,
             name: el.name || null,
             type: el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : (el.type || 'text'),
@@ -487,7 +491,9 @@ class FormSessionManager {
           };
 
           if (el.tagName === 'SELECT') {
-            field.options = Array.from(el.options).map((o: any) => ({ value: o.value, text: o.text.trim() }));
+            field.options = Array.prototype.slice.call(el.options).map(function (o) {
+              return { value: o.value, text: o.text.trim() };
+            });
           }
 
           fields.push(field);
