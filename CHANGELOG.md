@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.0.76 - 2026-05-27 — internal MCP を 'playwright' 名で登録 (prompt 互換)
+
+### 問題
+
+v2.0.75 install 後に実機検証したところ、`mcpServers: {}` 空になり、
+Claude が prompt 内の `mcp__playwright__browser_navigate` 等を呼ぼうとして
+**"MCP Playwright tools not available" エラー**で停止していた
+(action-log No.201/204/205 で確認, 2026-05-27 10:27)。
+
+### 真因
+
+既存 prompt template (dashboard-server.ts:6136, locale-pack/*/cli-prompts.ts)
+は `mcp__playwright__*` で tool 名をハードコードしている。internal mode で
+sales-claw-form を `sales-claw-form` 名で登録すると、tool パス名が
+`mcp__sales-claw-form__browser_navigate` になり、prompt と不一致。
+
+### 修正
+
+**MCP server 名を `playwright` のまま維持し、実体だけ sales-claw-form-mcp.cjs に
+差し替える**:
+
+- `buildManagedClaudeMcpServers` (mode='internal'): `playwright` キーで
+  sales-claw-form-mcp.cjs を seed (command=Sales Claw.exe, args=shim,
+  env=ELECTRON_RUN_AS_NODE+IPC_PIPE)
+- `ensureProviderPlaywrightMcp` (mode='internal'): 何もせず早期 return
+  (`mcp_playwright_skipped_internal_mode` 診断記録)。
+  v2.0.74/75 の playwright remove ロジックは seed を壊すので削除
+- `ensureProviderInternalFormMcp` (mode='internal'): sales-claw-form 名での
+  add は skip (buildManagedClaudeMcpServers が既に seed 済)。
+  旧 sales-claw-form 名 entry は cleanup
+
+これで prompt 改修不要のまま、Claude から見える tool は
+`mcp__playwright__browser_navigate` のままで、実体は Electron 内蔵
+WebContentsView 経由 (外部 Chrome なし)。
+
+### 実機検証 (Sales Claw v2.0.76 install + 起動)
+
+```
+✓ FileVersion: 2.0.76
+✓ AI 起動成功 (running:true, managed:true)
+✓ managed_home の .claude.json:
+    mcpServers.playwright = {
+      command: Sales Claw.exe,
+      args: [bin/sales-claw-form-mcp.cjs],
+      env: { ELECTRON_RUN_AS_NODE:1, SALES_CLAW_FORM_IPC_PIPE:\\.\pipe\... }
+    }
+✓ 診断イベント mcp_playwright_skipped_internal_mode 記録 → v2.0.76 コード走行
+✓ Phase A バッチ走行 (Claude CLI に prompt 投入成功)
+```
+
+Phase B (実フォーム入力) までの実機検証は Phase A の skip 判定 (LLM が
+「電話のみ・フォームなし」と判断) に阻まれ未到達。これは internal MCP 動作
+とは独立した別バグで、別 task として継続検証。
+
+---
+
 ## 2.0.75 - 2026-05-27 — 真因修正: prepareClaudeManagedHome が起動毎に playwright を再 seed していた
 
 ### 問題

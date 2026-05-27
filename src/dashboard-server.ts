@@ -2461,7 +2461,24 @@ function buildManagedClaudeMcpServers(realState: Record<string, any> = {}) {
   //   (sales-claw-form は ensureProviderInternalFormMcp が動的登録するため)。
   const mode = getFormFillMode();
   if (mode === 'internal') {
-    return {};
+    // v2.0.76 真因修正: 既存 prompt は `mcp__playwright__browser_navigate` 等で
+    // tool 名をハードコードしている (dashboard-server.ts:6136, locale-pack/*/cli-prompts.ts)。
+    // internal モードでも MCP server 名を 'playwright' で登録すれば prompt 改修不要。
+    // 実体は sales-claw-form-mcp.cjs (Electron 内蔵 WebContentsView 経由)。
+    const shimPath = findInternalFormMcpShimPath();
+    if (!shimPath) return {};
+    const ipcPipe = _internalFormMcpIpcPipePath || '';
+    return {
+      playwright: {
+        type: 'stdio',
+        command: process.execPath, // Sales Claw.exe (ELECTRON_RUN_AS_NODE で Node 起動)
+        args: [shimPath],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SALES_CLAW_FORM_IPC_PIPE: ipcPipe,
+        },
+      },
+    };
   }
 
   const globalMcpServers = (realState && typeof realState === 'object' && realState.mcpServers) || {};
@@ -2892,63 +2909,10 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
   // 外部 Chrome を起動し続けていた (実機で確認: 12:08 mcp_playwright_already_exists_accepted)。
   const formFillMode = getFormFillMode();
   if (formFillMode === 'internal') {
-    // v2.0.74: 二重防御
-    //   旧 (v2.0.73): claude mcp list で確認 → 'playwright' あれば remove。
-    //     しかし claude mcp list は claude.ai cloud に ping するため 20s+ かかり
-    //     timeout で listCheck.ok=false → remove skip → playwright 残存。
-    //   新: (1) 無条件で claude mcp remove を試行 (失敗しても継続)
-    //       (2) managed home の .claude.json から playwright を fs で直接削除
-    //         (CLI 経由が失敗してもファイルレベルで確実に消える)
-    let cliRemoveOk = false;
-    try {
-      const removeResult: any = await runProviderCliCommand(normalized, removeArgs, cliOptions);
-      cliRemoveOk = removeResult && removeResult.ok === true;
-    } catch (_) { /* best-effort */ }
-
-    // managed home の .claude.json を直接編集 (claude のみ、Codex/Gemini は別)
-    let fsRemovedFromFiles = 0;
-    if (normalized === 'claude') {
-      const managedHome = getManagedProviderHome('claude');
-      const candidates = [
-        path.join(managedHome, '.claude.json'),
-        path.join(managedHome, '.claude', '.claude.json'),
-      ];
-      for (const file of candidates) {
-        try {
-          if (!fs.existsSync(file)) continue;
-          const raw = fs.readFileSync(file, 'utf8');
-          const json: any = JSON.parse(raw.replace(/^﻿/, ''));
-          let changed = false;
-          // root.playwright (managed home root の旧 schema)
-          if (json && json.playwright) { delete json.playwright; changed = true; }
-          // mcpServers.playwright (current schema)
-          if (json && json.mcpServers && json.mcpServers.playwright) {
-            delete json.mcpServers.playwright;
-            changed = true;
-          }
-          // projects[*].mcpServers.playwright (project-local scope の playwright も削除)
-          if (json && json.projects && typeof json.projects === 'object') {
-            for (const projKey of Object.keys(json.projects)) {
-              const proj = json.projects[projKey];
-              if (proj && proj.mcpServers && proj.mcpServers.playwright) {
-                delete proj.mcpServers.playwright;
-                changed = true;
-              }
-            }
-          }
-          if (changed) {
-            fs.writeFileSync(file, JSON.stringify(json, null, 2), 'utf8');
-            fsRemovedFromFiles += 1;
-          }
-        } catch (_) { /* best-effort, never let it break launch */ }
-      }
-    }
-
-    appendDiagnosticEvent('mcp_playwright_removed_for_internal_mode', {
-      provider: normalized,
-      cliRemoveOk,
-      fsRemovedFromFiles,
-    });
+    // v2.0.76: buildManagedClaudeMcpServers が internal mode で 'playwright' 名に
+    // sales-claw-form-mcp.cjs を seed するため、ここで playwright を remove/add すると
+    // その seed を壊してしまう。internal モードでは何もせず早期 return。
+    appendDiagnosticEvent('mcp_playwright_skipped_internal_mode', { provider: normalized });
     return { ok: true, required: false, configured: false, skippedReason: 'formFill.mode=internal' };
   }
 
@@ -3115,7 +3079,10 @@ async function ensureProviderInternalFormMcp(providerId, options: Record<string,
       : ['mcp', 'remove', 'sales-claw-form'];
 
   // playwright モードなら 内製は登録しない (古い登録があれば cleanup)
-  if (mode === 'playwright') {
+  // v2.0.76: internal モードも buildManagedClaudeMcpServers が 'playwright' 名で
+  // 既に seed しているので、ここでの sales-claw-form 名での add は不要 (重複防止)。
+  // 旧 sales-claw-form 名の登録があれば cleanup する。
+  if (mode === 'playwright' || mode === 'internal') {
     try {
       const check: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
       const combined = `${check.stdout}\n${check.stderr}`;
@@ -3126,7 +3093,7 @@ async function ensureProviderInternalFormMcp(providerId, options: Record<string,
     return { ok: true, required: false, configured: false, mode };
   }
 
-  // internal / both モード: ensure register
+  // both モード: ensure register (sales-claw-form 名で別途登録、playwright と並存)
   const shimPath = findInternalFormMcpShimPath();
   if (!shimPath) {
     return {
