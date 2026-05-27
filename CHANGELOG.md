@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.0.74 - 2026-05-27 — Bug fix: v2.0.73 の修正が実機で効かない問題 (claude mcp list timeout)
+
+### 問題
+
+v2.0.73 で「internal モードなら Playwright MCP を remove」を実装したが、
+**実機で playwright が消えなかった** (ユーザー報告 2026-05-27)。
+
+### 真因 (root cause)
+
+v2.0.73 のコード:
+```ts
+const listCheck = await runProviderCliCommand(normalized, listArgs, cliOptions);
+if (listCheck.ok && /^\s*playwright\s*[:=]/im.test(...)) {
+  await runProviderCliCommand(normalized, removeArgs, cliOptions);
+}
+```
+
+`claude mcp list` は claude.ai cloud に ping を打って auth check するため
+**20秒以上かかる**ことが多く、`cliOptions.timeout: 20000` で timeout → `listCheck.ok=false` → remove スキップ。
+
+結果: ensureProviderPlaywrightMcp は早期 return するが、managed home の
+`.claude.json` に playwright が残ったまま → Claude は登録済 playwright を発見
+→ 外部 Chrome 起動。
+
+### 修正 (二重防御)
+
+1. **無条件で `claude mcp remove` を試行** (list の結果に依存しない)
+2. **managed home の `.claude.json` を fs で直接編集**して以下を削除:
+   - `root.playwright` (旧 schema)
+   - `mcpServers.playwright` (current schema)
+   - `projects[*].mcpServers.playwright` (project-local scope)
+3. 結果を診断イベント `mcp_playwright_removed_for_internal_mode` に
+   `{cliRemoveOk, fsRemovedFromFiles}` として記録 (将来のデバッグ用)
+
+### テスト
+
+- `tests/fs-playwright-purge.test.cjs` - 7 ケース全 pass:
+  - root.playwright / mcpServers.playwright / projects[*] の各 schema
+  - BOM-prefixed UTF-8 (PowerShell が書いたファイル) 対応
+  - 非 playwright keys が保持される確認
+- `tests/real-managed-home-purge.test.cjs` - **実 managed home に playwright を
+  再注入 → purge → 確認** の roundtrip 成功。backup/restore で副作用ゼロ。
+
+### Note
+
+GitHub Actions 自動 release workflow は依然停止中のため、本リリースも手動ビルド。
+
+---
+
 ## 2.0.73 - 2026-05-26 — Bug fix: internal モードでも外部 Chrome (Playwright) が起動していた問題
 
 ### 問題

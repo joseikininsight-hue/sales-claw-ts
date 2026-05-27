@@ -2881,13 +2881,63 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
   // 外部 Chrome を起動し続けていた (実機で確認: 12:08 mcp_playwright_already_exists_accepted)。
   const formFillMode = getFormFillMode();
   if (formFillMode === 'internal') {
+    // v2.0.74: 二重防御
+    //   旧 (v2.0.73): claude mcp list で確認 → 'playwright' あれば remove。
+    //     しかし claude mcp list は claude.ai cloud に ping するため 20s+ かかり
+    //     timeout で listCheck.ok=false → remove skip → playwright 残存。
+    //   新: (1) 無条件で claude mcp remove を試行 (失敗しても継続)
+    //       (2) managed home の .claude.json から playwright を fs で直接削除
+    //         (CLI 経由が失敗してもファイルレベルで確実に消える)
+    let cliRemoveOk = false;
     try {
-      const listCheck: any = await runProviderCliCommand(normalized, listArgs, cliOptions);
-      if (listCheck.ok && /^\s*playwright\s*[:=]/im.test(`${listCheck.stdout}\n${listCheck.stderr}`)) {
-        appendDiagnosticEvent('mcp_playwright_removed_for_internal_mode', { provider: normalized });
-        await runProviderCliCommand(normalized, removeArgs, cliOptions);
+      const removeResult: any = await runProviderCliCommand(normalized, removeArgs, cliOptions);
+      cliRemoveOk = removeResult && removeResult.ok === true;
+    } catch (_) { /* best-effort */ }
+
+    // managed home の .claude.json を直接編集 (claude のみ、Codex/Gemini は別)
+    let fsRemovedFromFiles = 0;
+    if (normalized === 'claude') {
+      const managedHome = getManagedProviderHome('claude');
+      const candidates = [
+        path.join(managedHome, '.claude.json'),
+        path.join(managedHome, '.claude', '.claude.json'),
+      ];
+      for (const file of candidates) {
+        try {
+          if (!fs.existsSync(file)) continue;
+          const raw = fs.readFileSync(file, 'utf8');
+          const json: any = JSON.parse(raw.replace(/^﻿/, ''));
+          let changed = false;
+          // root.playwright (managed home root の旧 schema)
+          if (json && json.playwright) { delete json.playwright; changed = true; }
+          // mcpServers.playwright (current schema)
+          if (json && json.mcpServers && json.mcpServers.playwright) {
+            delete json.mcpServers.playwright;
+            changed = true;
+          }
+          // projects[*].mcpServers.playwright (project-local scope の playwright も削除)
+          if (json && json.projects && typeof json.projects === 'object') {
+            for (const projKey of Object.keys(json.projects)) {
+              const proj = json.projects[projKey];
+              if (proj && proj.mcpServers && proj.mcpServers.playwright) {
+                delete proj.mcpServers.playwright;
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            fs.writeFileSync(file, JSON.stringify(json, null, 2), 'utf8');
+            fsRemovedFromFiles += 1;
+          }
+        } catch (_) { /* best-effort, never let it break launch */ }
       }
-    } catch (_) { /* cleanup best-effort */ }
+    }
+
+    appendDiagnosticEvent('mcp_playwright_removed_for_internal_mode', {
+      provider: normalized,
+      cliRemoveOk,
+      fsRemovedFromFiles,
+    });
     return { ok: true, required: false, configured: false, skippedReason: 'formFill.mode=internal' };
   }
 
