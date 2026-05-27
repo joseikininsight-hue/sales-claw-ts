@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.0.80 - 2026-05-28 — 文字化け検出 + screenshot 0byte ガード + prompt sentMessageFile 必須化
+
+### ユーザー報告 (2026-05-28)
+
+> 確認待ち？もきてるけどなんかよくわからん文字化けしてるしスクショもないし
+
+実機検証で No.214/215/216 の awaiting_approval に:
+- `reason: "CAPTCHA?? - ?????????? (?????????????)"`
+- `sentMessage: "????????? ????LYZON?????????  ?????????????????..."` (?連発)
+- `screenshot: "ss-216-input.png"` だが file 不存在
+
+### 真因
+
+Windows cmd.exe デフォルト codepage CP932。Claude prompt が curl -d で
+JSON 中の日本語を直接渡すと、cmd の codepage で `?` (Unicode replacement) に
+化ける。サーバは UTF-8 として受信 → 化けた `?` がそのまま action-log に保存。
+
+screenshot は browser_take_screenshot を Claude が**呼び忘れた**または
+保存先 path 不正で file 不存在のまま「screenshot: ss-XXX-input.png」を
+log に書いてしまっていた → ユーザーが内容確認できない。
+
+### 修正 (3 重防御)
+
+1. **prompt 強化** (dashboard-server.ts:6147-6155):
+   推奨 → **MUST**。「日本語 / 改行 / 引用符を含む場合 (= ほぼすべて)
+   必ず Write tool で UTF-8 BOM 無しテキストファイルに書いて
+   details.sentMessageFile で渡すこと」と明示。
+
+2. **`/api/log-action` で `?` 連続 reject** (simple-api.ts:530):
+   `?{3,}` を検出すると 422 + 「sentMessageFile 経由で渡してください」hint。
+   Claude にretryさせて正しい経路に誘導。
+
+3. **`/api/log-action` で screenshot 不存在/0byte reject** (simple-api.ts:565):
+   `details.screenshot` が指す PNG が disk に無い or <100bytes なら 422 +
+   「browser_take_screenshot リトライ」hint。
+
+### テスト
+
+- `tests/log-action-guards.test.cjs` - 5/5 pass
+  (正常日本語 / 1-2個の ? / 3+連続 / 実機mojibake / 改行入り)
+- `npx tsc --noEmit -p tsconfig.json` グリーン
+
+### WebContentsView UI 統合は別 task
+
+ユーザー報告 "操作してるブラウザはどこにいるの? Electron 内で見えるように"
+は dashboard 大規模 UI 改修が必要なため別 task として継続。
+
+---
+
 ## 2.0.79 - 2026-05-27 — SSRF bypass env (debug only) + internal MCP 動作完全実証
 
 ### 加わった機能

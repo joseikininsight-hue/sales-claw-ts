@@ -547,6 +547,20 @@ module.exports = function createSimpleApiRoutes(ctx) {
             }));
             return;
           }
+          // v2.0.80: 文字化け検出 — `?` が 3 文字以上連続 = curl の cmd.exe
+          //   CP932 codepage で日本語が unicode replacement (?) になっている可能性大。
+          //   ユーザー報告 2026-05-28: action-log の sentMessage が "????" だらけ
+          //   → 復元不能 + 顧客への送信内容も同様に化けている可能性。
+          //   sentMessageFile 経由なら CP932 影響受けないので強制誘導する。
+          if (/\?{3,}/.test(sentMsg)) {
+            res.writeHead(422, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              ok: false,
+              error: 'details.sentMessage に `?` 連続検出 (' + sentMsg.replace(/[^?]/g,'').length + ' 文字)。Windows cmd.exe CP932 で日本語が破壊されています。',
+              hint: 'sentMessage を直接 -d で渡さず、Write tool で UTF-8 BOM 無しテキストファイルに書いて、details.sentMessageFile":"<absolute path>" で渡してください。',
+            }));
+            return;
+          }
         }
         if (action === 'submitted' || action === 'awaiting_approval') {
           const prerequisite = validateTerminalActionPrerequisites(no);
@@ -558,6 +572,41 @@ module.exports = function createSimpleApiRoutes(ctx) {
               hint: prerequisite.hint,
             }));
             return;
+          }
+          // v2.0.80: screenshot file 存在 + 0 byte でないこと検証。
+          // ユーザー報告 2026-05-28: awaiting_approval ログに screenshot:"ss-216-input.png"
+          // と書かれているが file は存在せず → ユーザーが内容確認できない致命傷。
+          try {
+            const screenshotName = detailsRaw && typeof detailsRaw.screenshot === 'string' ? detailsRaw.screenshot.trim() : '';
+            if (screenshotName) {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const fsMod = require('fs');
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const pathMod = require('path');
+              const screenshotDir = settings.getScreenshotDir ? settings.getScreenshotDir() : 'screenshots';
+              const ssPath = pathMod.isAbsolute(screenshotName) ? screenshotName : pathMod.join(screenshotDir, screenshotName);
+              if (!fsMod.existsSync(ssPath)) {
+                res.writeHead(422, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  ok: false,
+                  error: `screenshot file '${screenshotName}' does not exist on disk. (expected at ${ssPath})`,
+                  hint: 'browser_take_screenshot を実行し、ファイルが実際にディスクに保存されたことを確認してから awaiting_approval/submitted を記録してください。',
+                }));
+                return;
+              }
+              const st = fsMod.statSync(ssPath);
+              if (st.size < 100) {
+                res.writeHead(422, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  ok: false,
+                  error: `screenshot '${screenshotName}' is too small (${st.size} bytes; probably failed capture).`,
+                  hint: 'browser_take_screenshot をリトライして実体のある PNG (>100 bytes) を保存してください。',
+                }));
+                return;
+              }
+            }
+          } catch (e: unknown) {
+            // file system check 自体の error は warn 扱いで continue (本来 reject すべきだが既存挙動と互換)
           }
           const quality = validateSentMessageQuality(sentMsg);
           if (!quality.ok) {
