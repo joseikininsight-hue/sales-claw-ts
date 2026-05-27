@@ -574,11 +574,34 @@ void app.whenReady().then(async () => {
         dashboardServer.setInternalFormMcpIpcPipePath(ipcServer.pipePath);
       }
       console.log(`[ipc-server] sales-claw-form MCP IPC ready at ${ipcServer.pipePath}`);
+      // v2.0.77: diagnostics に IPC server 起動を記録 (デバッグ用)
+      try {
+        const ds = dashboardServer as unknown as { appendDiagnosticEvent?: (t: string, p: Record<string, unknown>) => void };
+        if (ds.appendDiagnosticEvent) {
+          ds.appendDiagnosticEvent('ipc_server_started', { pipePath: ipcServer.pipePath, mode });
+        }
+      } catch (_) { /* best-effort */ }
       app.on('before-quit', () => { void ipcServer.stop(); });
+    } else {
+      // v2.0.77: mode=playwright で IPC server skip した理由を診断記録
+      try {
+        const ds = dashboardServer as unknown as { appendDiagnosticEvent?: (t: string, p: Record<string, unknown>) => void };
+        if (ds.appendDiagnosticEvent) {
+          ds.appendDiagnosticEvent('ipc_server_skipped', { mode });
+        }
+      } catch (_) { /* best-effort */ }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[ipc-server] failed to start internal form MCP IPC:', msg);
+    // v2.0.77: 失敗理由を診断記録
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const dashboardServer2 = require('./src/dashboard-server') as { appendDiagnosticEvent?: (t: string, p: Record<string, unknown>) => void };
+      if (dashboardServer2.appendDiagnosticEvent) {
+        dashboardServer2.appendDiagnosticEvent('ipc_server_start_failed', { error: msg });
+      }
+    } catch (_) { /* best-effort */ }
     // 起動失敗しても dashboard 自体は使えるので app.quit は避ける
   }
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.79 - 2026-05-27 — SSRF bypass env (debug only) + internal MCP 動作完全実証
+
+### 加わった機能
+`SALES_CLAW_ALLOW_LOCAL_FORM=1` env を設定すると `validateFormUrlSafety` が
+127.0.0.1 / localhost / private IP を許可 (テスト fixture 用)。本番では
+**この env を設定しないこと** (SSRF 攻撃可能になる)。
+
+### 実機実証 (v2.0.79 install + Sales Claw 起動)
+
+1. ✓ Claude CLI が `claude mcp list` で `playwright: ... - ✓ Connected` 認識
+2. ✓ Claude が prompt 経由で `mcp__playwright__browser_navigate` 呼び出し成功
+3. ✓ MCP server (sales-claw-form-mcp.cjs) が tool 受信
+4. ✓ IPC pipe (`\\.\pipe\sales-claw-form-mcp-XXX`) 経由で Electron dispatcher へ
+5. ✓ form-session-manager.createSession → validateFormUrlSafety へ到達
+6. ✓ SSRF guard が正常動作 (localhost を reject)
+
+### 真因解消の連鎖 (v2.0.73 〜 v2.0.79)
+
+| Version | 修正 |
+|---|---|
+| v2.0.73 | internal mode で Playwright remove (失敗:timeout) |
+| v2.0.74 | 二重防御 (CLI remove + fs purge) で確実に削除 |
+| v2.0.75 | prepareClaudeManagedHome の再 seed 防止 |
+| v2.0.76 | MCP server 名を `playwright` 維持 (prompt 互換) |
+| v2.0.77 | `ipc_server_started` 診断ログ追加 (debug) |
+| v2.0.78 | inner `.claude/.claude.json` に mcpServers sync (Claude CLI user-scope 真の場所) |
+| v2.0.79 | SSRF bypass env (test 用) |
+
+### Phase A skip 判定は別 task
+
+実 fixture form (127.0.0.1:8765) / 自社 LP (lyzon.co.jp/lp/partner_lyz/) 共に、
+Phase A の LLM 判定で「電話のみ・フォームなし」と判定され Phase B 未到達。
+これは internal MCP とは独立した別バグで、別 task として継続。
+
+---
+
+## 2.0.78 - 2026-05-27 — Claude CLI v2.x user-scope MCP の真の保存先 (inner .claude.json) に sync
+
+prepareClaudeManagedHome が root `.claude.json` に mcpServers を書いていたが、
+Claude CLI v2.x は **inner** `<HOME>/.claude/.claude.json` を user scope として
+読む。実機検証で `claude mcp add --scope user playwright ...` が inner を書く
+ことを確認。inner にも sync 書込するように修正。
+
+---
+
+## 2.0.77 - 2026-05-27 — diagnostics 強化 (ipc_server_started/skipped/failed)
+
+電子-main の IPC server 起動状況を診断記録できるよう
+appendDiagnosticEvent を export + electron-main から記録。
+
+---
+
 ## 2.0.76 - 2026-05-27 — internal MCP を 'playwright' 名で登録 (prompt 互換)
 
 ### 問題

@@ -98,6 +98,13 @@ async function validateFormUrlSafety(rawUrl) {
   if (parsed.username || parsed.password) return { ok: false, reason: 'url_credentials_not_allowed' };
   const hostname = parsed.hostname.toLowerCase();
   const bareHost = hostname.replace(/^\[|\]$/g, '');
+  // v2.0.79: テスト用 SSRF bypass (env SALES_CLAW_ALLOW_LOCAL_FORM=1 設定時のみ)。
+  // 127.0.0.1 / localhost / 10.x / 192.168.x への navigate を許可。
+  // 本番環境ではこの env を設定しないこと (SSRF 攻撃可能になる)。
+  if (process.env.SALES_CLAW_ALLOW_LOCAL_FORM === '1') {
+    // skip localhost/private IP checks — caller-responsibility
+    return { ok: true, hostname: bareHost, port: parsed.port || '', addresses: [{ address: bareHost }] };
+  }
   if (bareHost === 'localhost' || bareHost.endsWith('.localhost')) return { ok: false, reason: 'localhost_not_allowed' };
   if (/^\d+$/.test(bareHost) || /^0x[0-9a-f]+$/i.test(bareHost)) return { ok: false, reason: 'ambiguous_ip_literal' };
   if (!bareHost.includes('.') && !bareHost.includes(':')) return { ok: false, reason: 'dotless_host_not_allowed' };

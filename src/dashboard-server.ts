@@ -2590,6 +2590,30 @@ function prepareClaudeManagedHome(projectRoot = PROJECT_ROOT) {
   delete managedState.prompt;
   fs.writeFileSync(managedStatePath, JSON.stringify(managedState, null, 2), 'utf8');
 
+  // v2.0.78 真因修正: Claude CLI v2.x の user-scope MCP storage は
+  //   **inner** `<HOME>/.claude/.claude.json` (= managedClaudeDir/.claude.json)
+  //   実機検証 (2026-05-27): `claude mcp add --scope user playwright ...` が
+  //   "File modified: ...\.claude\.claude.json" と inner を書く。
+  //   root `.claude.json` だけ書いていた v2.0.77 までは Claude が MCP 認識せず
+  //   "MCP Playwright tools not available" エラーで停止していた。
+  //   inner にも同じ mcpServers を sync 書込する。
+  try {
+    const innerClaudeJsonPath = path.join(managedClaudeDir, '.claude.json');
+    const innerExisting = readJsonFileSafe(innerClaudeJsonPath, {}) || {};
+    const innerNext = {
+      ...(innerExisting as Record<string, unknown>),
+      mcpServers: buildManagedClaudeMcpServers(stateBase),
+    };
+    fs.writeFileSync(innerClaudeJsonPath, JSON.stringify(innerNext, null, 2), 'utf8');
+  } catch (e) {
+    // best-effort; ログを残す
+    try {
+      appendDiagnosticEvent('managed_inner_claude_json_write_failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    } catch (_) { /* swallow */ }
+  }
+
   return managedHome;
 }
 
@@ -11276,4 +11300,6 @@ module.exports = {
   setInternalFormMcpIpcPipePath,
   // v2.1.0 Phase 2d: formFill mode 取得 (electron-main で IPC server を起動するか判定)
   getFormFillMode,
+  // v2.0.77: electron-main から IPC server 起動/失敗を診断記録できるよう export
+  appendDiagnosticEvent,
 };
