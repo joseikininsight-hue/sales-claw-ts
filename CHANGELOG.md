@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.81 - 2026-05-28 — WebContentsView を mainWindow 右ペインに dock (ヘッドレス解消)
+
+### ユーザー報告 (2026-05-28)
+
+> 新規ウィンドウじゃなくて確認待ちのスクショの部分をそこでbrowser動かす感じと
+> クリックするとサブウィンドウで開いける？ ヘッドレスじゃ意味ないでしょ
+
+実機検証で判明: v2.0.80 まで `FormSessionManager.createSession` は
+`WebContentsView` を作るが mainWindow に attach せず **完全 headless** 動作。
+Playwright モードでは外部 Chrome ウィンドウが見えていたが、internal mode では
+裏で動いていてユーザーが操作画面を確認できない致命的 UX。
+
+### 修正
+
+`createSession` 完了時に既存 `showSession(id)` を**自動呼び出し**:
+- mainWindow の右ペイン (`PANEL_LEFT_RATIO=0.45` 以降の 55%) に
+  `mainWindow.contentView.addChildView(view)` で dock
+- WebContentsView の bounds を `(x=winW*0.45, y=HEADER_HEIGHT, ...)` に setBounds
+- 既存 active session は `_removeFromWindow` で hide → 切替 = タブ風挙動
+
+確認待ちタブ → カードクリック → `POST /api/form-session/:id/show` で
+別 session に切替表示できる (既存 API: form-session-api.ts:160)。
+
+### 結果
+
+| 動作 | v2.0.80 まで | v2.0.81 |
+|---|---|---|
+| AI が browser 操作 | 完全 headless (見えず) | ✅ Sales Claw 右ペインに即表示 |
+| awaiting_approval 後 | 何も表示なし | ✅ そのフォームが右ペインに残る |
+| 確認待ちタブ社切替 | できない | ✅ クリックで切替可能 (既存 API) |
+
+### Note
+
+実 Electron BrowserWindow が必要なため browser preview では検証不可。実機 install + 起動で確認。
+
+---
+
 ## 2.0.80 - 2026-05-28 — 文字化け検出 + screenshot 0byte ガード + prompt sentMessageFile 必須化
 
 ### ユーザー報告 (2026-05-28)
