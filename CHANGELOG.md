@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.0.75 - 2026-05-27 — 真因修正: prepareClaudeManagedHome が起動毎に playwright を再 seed していた
+
+### 問題
+
+v2.0.74 install 後も実機で playwright が `.claude.json` の `mcpServers.playwright`
+に残り続けていた (ユーザー実機 2026-05-27 19:30:50 確認)。
+
+### 真因
+
+`prepareClaudeManagedHome` (Sales Claw 起動毎に走る) が
+`buildManagedClaudeMcpServers()` を呼んで `.claude.json` の `mcpServers` を
+**完全に再構築**していた。
+
+`buildManagedClaudeMcpServers` は **mode を全く見ずに常に playwright を含めて返していた**:
+
+```ts
+return {
+  playwright: { type: 'stdio', command: ..., args: ..., env: ... },
+};
+```
+
+→ v2.0.74 の `ensureProviderPlaywrightMcp` が AI 起動時に playwright を消しても、
+   次回 Sales Claw 起動時の `prepareClaudeManagedHome` が再 seed → 永久ループ。
+
+### 修正
+
+`buildManagedClaudeMcpServers` の冒頭に `getFormFillMode()` 判定追加:
+- `internal` mode → **空 `{}` を返す** (playwright を seed しない)
+- `playwright` / `both` mode → 従来通り playwright を含める
+
+これで Sales Claw 起動時に playwright が `.claude.json` に書き込まれなくなり、
+v2.0.74 の二重防御と合わせて internal モードで playwright は完全に存在しない。
+
+### テスト
+
+- `tests/build-managed-claude-mcp-servers.test.cjs` - 5 ケース全 pass:
+  - internal mode → empty mcpServers
+  - playwright mode → playwright seeded
+  - both mode → playwright seeded
+  - internal + stale real-world playwright → 拒否
+  - playwright + valid existing → 保持
+
+---
+
 ## 2.0.74 - 2026-05-27 — Bug fix: v2.0.73 の修正が実機で効かない問題 (claude mcp list timeout)
 
 ### 問題

@@ -2453,6 +2453,17 @@ function normalizeProjectConfigKey(projectRoot = PROJECT_ROOT) {
 }
 
 function buildManagedClaudeMcpServers(realState: Record<string, any> = {}) {
+  // v2.0.75 真因修正: 旧コードは mode 無視で常に playwright を seed していた。
+  //   → Sales Claw 起動の度に prepareClaudeManagedHome から呼ばれ、
+  //     v2.0.74 の ensureProviderPlaywrightMcp が消した playwright を再 add していた。
+  //   → ユーザー実機 2026-05-27 19:30:50 の `.claude.json` で再現確認済。
+  //   formFillMode === 'internal' なら playwright を seed せず空 mcpServers を返す
+  //   (sales-claw-form は ensureProviderInternalFormMcp が動的登録するため)。
+  const mode = getFormFillMode();
+  if (mode === 'internal') {
+    return {};
+  }
+
   const globalMcpServers = (realState && typeof realState === 'object' && realState.mcpServers) || {};
   const existingPlaywright = globalMcpServers.playwright;
   if (!shouldOverridePlaywrightMcpConfig(existingPlaywright)) {
