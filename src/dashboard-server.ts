@@ -8184,29 +8184,10 @@ ${renderStyles()}
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 14px 14px">
-      <div class="lfs-card" style="padding:14px 16px">
-        <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
-          <span class="material-symbols-outlined" style="font-size:14px;color:#06b6d4">psychology</span>
-          <strong class="lfs-strong">${_lang === 'ja' ? 'AI 思考プロセス' : 'AI Reasoning'}</strong>
-        </div>
-        <div id="liveThoughts" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">
-          <div class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>
-        </div>
-      </div>
-      <div class="lfs-card" style="padding:14px 16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem">
-            <span class="material-symbols-outlined" style="font-size:14px;color:#ec4899">photo_library</span>
-            <strong class="lfs-strong">${_lang === 'ja' ? 'スクリーンショット履歴' : 'Screenshots'}</strong>
-          </div>
-          <button id="liveScreenshotsShowAll" style="background:none;border:none;color:#3b82f6;font-size:.7rem;cursor:pointer">${_lang === 'ja' ? 'すべて表示' : 'View all'}</button>
-        </div>
-        <div id="liveScreenshots" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-          <div class="lfs-muted" style="font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>
-        </div>
-      </div>
-    </div>
+    <!-- v2.0.90: AI 思考プロセス + スクリーンショット履歴 パネル削除 (ユーザー要望: 機能としても不要)
+         画面下部のスクロール領域削減で WebView がスクロール時に取り残されにくくなる副次効果も。 -->
+    <div id="liveThoughts" style="display:none"></div>
+    <div id="liveScreenshots" style="display:none"></div>
     <script>
       (function(){
         // v2.0.86: 操作中タブで HTML slot 位置に WebContentsView を dock。
@@ -8224,15 +8205,31 @@ ${renderStyles()}
           const slot = document.getElementById('liveFormViewSlot');
           if (!slot) return;
           const rect = slot.getBoundingClientRect();
-          // page coord (window 内座標)。Electron setBounds は content area の page coord と一致する想定。
-          // devicePixelRatio 補正は Electron 側で window.getContentSize と一致するので不要。
+          // v2.0.90: viewport 外 (上スクロール時 rect.top < 0) は clip して
+          //   表示領域だけに dock。完全に画面外に出たら hide (画面外に park)。
+          //   page coord (window 内座標) → Electron setBounds は content area の page coord と一致する想定。
+          const winH = window.innerHeight;
+          const clippedTop = Math.max(0, rect.top);
+          const clippedBottom = Math.min(winH, rect.bottom);
+          const clippedHeight = clippedBottom - clippedTop;
           const bounds = {
             x: Math.round(rect.left),
-            y: Math.round(rect.top),
+            y: Math.round(clippedTop),
             width: Math.round(rect.width),
-            height: Math.round(rect.height),
+            height: Math.round(Math.max(0, clippedHeight)),
           };
-          if (bounds.width < 50 || bounds.height < 50) return; // hidden
+          if (bounds.width < 50 || bounds.height < 50) {
+            // viewport 外 — view を画面外に park (active session で hide はしたくない、
+            // dock 位置だけ動かして見えなくする)
+            try {
+              await fetch('/api/form-session/' + sessionId + '/set-bounds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: -10000, y: -10000, width: 100, height: 100 }),
+              });
+            } catch (e) {}
+            return;
+          }
           try {
             await fetch('/api/form-session/' + sessionId + '/set-bounds', {
               method: 'POST',
@@ -8271,7 +8268,7 @@ ${renderStyles()}
               _activeSessionId = null;
               renderProgress(null, events);
               renderCurrent(null, events);
-              renderSteps([]);
+              renderSteps([], null);
               renderThoughts([]);
               refreshScreenshots([]);
               return;
@@ -8297,14 +8294,24 @@ ${renderStyles()}
               sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
             }
 
+            // v2.0.90: 社名表示 + CAPTCHA バッジ (ユーザー要望: 社名とロボチェッカだと残してわかりやすいように)
             bar.innerHTML = list.map(s => {
               const isActive = s.id === activeSid;
               const cls = isActive ? 'lfs-active-bg' : 'lfs-row-bg lfs-text';
               const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
               const isVirtual = String(s.id||'').startsWith('virtual:');
-              const virtualBadge = isVirtual ? '<span style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
-              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5)">' +
-                'No.' + (s.companyNo||'?') + ' · ' + (s.status||'') + virtualBadge + '</button>';
+              const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
+              const captchaBadge = s.captchaDetected ? '<span title="CAPTCHA / ロボチェッカ検出 — 人手対応が必要" style="background:#ef4444;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:700">🤖</span>' : '';
+              const nameStr = (s.companyName || '').toString().slice(0, 14);
+              const escName = nameStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+              const fullName = (s.companyName || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+              const titleAttr = 'No.' + (s.companyNo||'?') + ' ' + fullName + ' (' + (s.status||'') + ')';
+              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
+                '<span style="font-weight:700">No.' + (s.companyNo||'?') + '</span>' +
+                (escName ? ' <span style="opacity:.85">' + escName + '</span>' : '') +
+                ' <span style="opacity:.65;font-size:.62rem">· ' + (s.status||'') + '</span>' +
+                captchaBadge + virtualBadge +
+                '</button>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
               b.addEventListener('click', async () => {
@@ -8325,7 +8332,7 @@ ${renderStyles()}
             const companyEvents = activeNo ? events.filter(e => Number(e.companyNo) === activeNo) : [];
             renderProgress(activeSession, companyEvents);
             renderCurrent(activeSession, companyEvents);
-            renderSteps(companyEvents);
+            renderSteps(companyEvents, activeSession);
             renderThoughts(companyEvents);
             refreshScreenshots(list);
           } catch (e) {}
@@ -8424,51 +8431,120 @@ ${renderStyles()}
           }
         }
 
-        // 実行ステップリスト
-        function renderSteps(events) {
+        // v2.0.90: 実行ステップを baseline pipeline 表示に変更。
+        //   旧 (~v0.89) は events をそのまま並べていたので、parallel-analysis.ts が
+        //   site_discovery を skip するケース (formUrl 既知) では「実行ステップ」が
+        //   1 件しか出ず "進捗を追っている感" が皆無だった (ユーザー報告)。
+        //   新: 固定 5 段階パイプラインを常時表示し、events / activeSession.status から
+        //       現在地を判定して 完了 ✓ / 実行中 ● / 未着手 ◯ をマークする。
+        function renderSteps(events, activeSession) {
           const el = document.getElementById('liveStepsList');
           if (!el) return;
-          if (events.length === 0) {
-            el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>';
-            return;
-          }
-          // v2.0.89: action と status の両方をラベル対象に。step (人間可読の自由文字列) も拾う。
-          const ACTION_LABEL = {
-            site_discovery: '${_lang === 'ja' ? 'サイト URL を確認' : 'Probe site URL'}',
-            site_analysis: '${_lang === 'ja' ? 'サイト本文を分析' : 'Analyze site text'}',
-            message_draft: '${_lang === 'ja' ? 'メッセージを起草' : 'Draft message'}',
-            form_fill: '${_lang === 'ja' ? 'フォームに入力' : 'Fill form'}',
-            confirm_reached: '${_lang === 'ja' ? '確認画面に到達' : 'Reach confirm page'}',
-            awaiting_approval: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
-            submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
-            skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
-            error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
-            analyzing: '${_lang === 'ja' ? 'サイト分析中' : 'Analyzing site'}',
-            drafting: '${_lang === 'ja' ? 'メッセージ起草中' : 'Drafting message'}',
-            navigating: '${_lang === 'ja' ? 'フォーム遷移中' : 'Navigating'}',
-            loading: '${_lang === 'ja' ? 'ページ読み込み中' : 'Loading'}',
-            filling: '${_lang === 'ja' ? 'フォーム入力中' : 'Filling form'}',
-            confirming: '${_lang === 'ja' ? '確認画面到達' : 'Reached confirm'}',
+          // 固定 5 ステップ
+          const PIPELINE = [
+            { key: 'analysis', weight: 3,
+              label: '${_lang === 'ja' ? 'サイト分析' : 'Site analysis'}',
+              actions: ['site_discovery','site_analysis'],
+              statuses: ['analyzing','loading'] },
+            { key: 'draft', weight: 5,
+              label: '${_lang === 'ja' ? 'メッセージ起草' : 'Draft message'}',
+              actions: ['message_draft'],
+              statuses: ['drafting'] },
+            { key: 'navigate', weight: 8,
+              label: '${_lang === 'ja' ? 'フォーム遷移' : 'Navigate to form'}',
+              actions: ['form_navigate','navigate'],
+              statuses: ['navigating'] },
+            { key: 'fill', weight: 13,
+              label: '${_lang === 'ja' ? 'フォーム入力' : 'Fill form'}',
+              actions: ['form_fill'],
+              statuses: ['filling','filled'] },
+            { key: 'confirm', weight: 16,
+              label: '${_lang === 'ja' ? '確認画面到達' : 'Reach confirm'}',
+              actions: ['confirm_reached'],
+              statuses: ['confirming','confirmed'] },
+            { key: 'done', weight: 20,
+              label: '${_lang === 'ja' ? '承認待ち / 完了' : 'Awaiting / Done'}',
+              actions: ['awaiting_approval','submitted','skipped','error'],
+              statuses: ['awaiting_approval','awaiting','submitted','skipped','error','done'] },
+          ];
+
+          // 現在の weight を算出 (events の最新 + activeSession.status 両方から)
+          const STATUS_WEIGHTS = {
+            analyzing: 3, loading: 3, drafting: 5, navigating: 8,
+            filling: 13, filled: 13, confirming: 16, confirmed: 16,
+            awaiting_approval: 18, awaiting: 18, submitted: 20, skipped: 20, error: 20, done: 20,
           };
-          const TERMINAL = new Set(['submitted','skipped','error','awaiting_approval','done']);
-          el.innerHTML = events.slice(-20).map((e, i) => {
-            const isLatest = i === Math.min(events.length, 20) - 1;
-            const keyForStatus = e.action || e.status || '';
-            const isTerminal = TERMINAL.has(keyForStatus);
-            const dotColor = isLatest && !isTerminal ? '#3b82f6' : (keyForStatus === 'error' ? '#ef4444' : '#10b981');
-            const statusText = isLatest && !isTerminal ? '${_lang === 'ja' ? '実行中' : 'running'}' : '${_lang === 'ja' ? '完了' : 'done'}';
-            const statusBg = isLatest && !isTerminal ? '#3b82f6' : 'var(--surface-variant,#e8edf2)';
-            const statusFg = isLatest && !isTerminal ? '#fff' : 'var(--on-surface-variant,#5b6675)';
-            const rowClass = isLatest && !isTerminal ? 'lfs-row-bg-active' : 'lfs-row-bg';
-            const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
-            const label = ACTION_LABEL[keyForStatus] || e.step || keyForStatus || '?';
-            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:.72rem">' +
-              '<span style="width:18px;height:18px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.62rem">' + (i+1) + '</span>' +
-              '<span class="lfs-text" style="flex:1">' + label + '</span>' +
-              '<span class="lfs-muted" style="font-family:monospace;font-size:.65rem">' + ts + '</span>' +
-              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.6rem;padding:2px 7px;border-radius:4px">' + statusText + '</span>' +
+          const ACTION_WEIGHTS = {
+            site_discovery: 2, site_analysis: 3, message_draft: 5,
+            form_navigate: 8, navigate: 8,
+            form_fill: 13, confirm_reached: 16,
+            awaiting_approval: 18, submitted: 20, skipped: 20, error: 20,
+          };
+          let maxWeight = 0;
+          let isError = false;
+          let isSkipped = false;
+          let isTerminal = false;
+          (events || []).forEach((e) => {
+            const w = ACTION_WEIGHTS[e.action] || STATUS_WEIGHTS[e.status] || 0;
+            if (w > maxWeight) maxWeight = w;
+            if (e.action === 'error' || e.status === 'error') isError = true;
+            if (e.action === 'skipped' || e.status === 'skipped') isSkipped = true;
+            if (e.action === 'submitted' || e.status === 'submitted' || e.action === 'awaiting_approval' || e.status === 'awaiting_approval' || e.status === 'awaiting') isTerminal = true;
+          });
+          if (activeSession) {
+            const w = STATUS_WEIGHTS[activeSession.status] || 0;
+            if (w > maxWeight) maxWeight = w;
+          }
+
+          // ステップ毎の状態判定
+          const items = PIPELINE.map((step, i) => {
+            const nextWeight = i + 1 < PIPELINE.length ? PIPELINE[i+1].weight : Infinity;
+            // 完了: 次の step の weight 以上に進んでいる、または現在 step が done/error/skipped
+            let state = 'pending';
+            if (maxWeight >= nextWeight) state = 'done';
+            else if (maxWeight >= step.weight) state = (i === PIPELINE.length - 1 && (isTerminal || isError || isSkipped)) ? 'done' : 'running';
+            // 最終ステップが terminal なら done 確定
+            if (step.key === 'done' && (isTerminal || isError || isSkipped)) state = 'done';
+
+            // この step に対応する最新 event の timestamp / step text
+            let ts = '';
+            let detail = '';
+            for (let j = (events || []).length - 1; j >= 0; j--) {
+              const ev = events[j];
+              if (step.actions.includes(ev.action) || step.statuses.includes(ev.status)) {
+                ts = (ev.timestamp || ev.updatedAt || '').toString().substr(11, 8);
+                detail = (ev.step || '').toString().slice(0, 60);
+                break;
+              }
+            }
+
+            const dotColor = state === 'done'
+              ? (step.key === 'done' && isError ? '#ef4444' : '#10b981')
+              : state === 'running' ? '#3b82f6' : 'var(--outline-variant,#d8dee5)';
+            const dotIcon = state === 'done' ? '✓' : state === 'running' ? '●' : (i+1);
+            const dotTextColor = state === 'pending' ? 'var(--on-surface-variant,#5b6675)' : '#fff';
+            const statusText = state === 'done' ? '${_lang === 'ja' ? '完了' : 'done'}'
+              : state === 'running' ? '${_lang === 'ja' ? '実行中' : 'running'}'
+              : '${_lang === 'ja' ? '未' : 'pending'}';
+            const statusBg = state === 'done' ? 'var(--surface-variant,#e8edf2)'
+              : state === 'running' ? '#3b82f6'
+              : 'transparent';
+            const statusFg = state === 'done' ? 'var(--on-surface-variant,#5b6675)'
+              : state === 'running' ? '#fff'
+              : 'var(--on-surface-variant,#5b6675)';
+            const rowClass = state === 'running' ? 'lfs-row-bg-active' : 'lfs-row-bg';
+            const opacity = state === 'pending' ? '.55' : '1';
+
+            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:.72rem;opacity:' + opacity + '">' +
+              '<span style="width:20px;height:20px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:' + dotTextColor + ';font-weight:700;font-size:.62rem;flex-shrink:0">' + dotIcon + '</span>' +
+              '<span class="lfs-text" style="flex:1;font-weight:' + (state === 'running' ? '600' : '500') + '">' + step.label +
+                (detail ? '<span class="lfs-muted" style="font-weight:400;font-size:.65rem;margin-left:6px">— ' + detail.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' : '') +
+              '</span>' +
+              (ts ? '<span class="lfs-muted" style="font-family:monospace;font-size:.62rem;flex-shrink:0">' + ts + '</span>' : '') +
+              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.58rem;padding:2px 7px;border-radius:4px;flex-shrink:0;border:1px solid var(--outline-variant,#d8dee5)">' + statusText + '</span>' +
               '</div>';
-          }).reverse().join('');
+          });
+          el.innerHTML = items.join('');
         }
 
         // AI 思考プロセス
@@ -8572,6 +8648,25 @@ ${renderStyles()}
             syncViewBounds(_activeSessionId);
           }
         });
+        // v2.0.90: scroll (window / 全 scrollable 親) でも追従させる。
+        //   旧 (~v0.89) は scroll イベント listener 無し → ページを下にスクロール
+        //   すると HTML slot は動くのに WebView だけ元位置に残り「表示が辺になる」
+        //   実機 bug (No.225 検証時に確認)。
+        //   capture:true で全要素の scroll イベントを拾う。requestAnimationFrame で
+        //   過剰呼びを抑制 (throttle)。
+        let _scrollSyncPending = false;
+        function _onScrollSync() {
+          if (!_activeSessionId) return;
+          if (document.querySelector('.tab-content.active')?.id !== 'tab-live-form') return;
+          if (_scrollSyncPending) return;
+          _scrollSyncPending = true;
+          requestAnimationFrame(() => {
+            _scrollSyncPending = false;
+            syncViewBounds(_activeSessionId);
+          });
+        }
+        window.addEventListener('scroll', _onScrollSync, { passive: true, capture: true });
+        document.addEventListener('scroll', _onScrollSync, { passive: true, capture: true });
         const refreshBtn = document.getElementById('liveFormRefresh');
         if (refreshBtn) refreshBtn.addEventListener('click', refreshLiveFormSessions);
         // バックグラウンド polling (badge 用)

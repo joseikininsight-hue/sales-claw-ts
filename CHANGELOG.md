@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.0.90 - 2026-05-28 — 操作セッション UX 改善 4 点 (スクロール追従 / 下段パネル削除 / タブ整理 / 実行ステップ pipeline 化)
+
+### ユーザー報告 (2026-05-28 v2.0.89 実機)
+
+スクリーンショット付きで以下を指摘:
+1. **WebView がスクロール時に取り残されて表示が変になる** (致命的)
+2. AI 思考プロセス / スクリーンショット履歴の下段 2 パネルは機能としても不要
+3. session タブは社名 + ロボチェッカ (CAPTCHA) を残して、送信済 / エラーは
+   どんどん削除していくべき (現状 20 社全部残って見づらい)
+4. 実行ステップが正しく表示されていない (1 件しか出ない)
+
+### 修正
+
+#### A. WebView スクロール追従 (致命的バグ修正)
+- `window` / `document` の `scroll` イベント (capture:true) で `syncViewBounds`
+  を再実行。`requestAnimationFrame` で throttle。
+- `syncViewBounds` 内で viewport clip 計算を追加: `rect.top < 0` (上に
+  スクロール) のとき WebView を viewport 内だけに dock。完全に画面外に
+  出たら `{x:-10000,y:-10000}` に park して見えなくする。
+
+#### B. AI 思考プロセス + スクリーンショット履歴パネル削除
+- 操作中タブ下段の 2 大パネルを撤去。`liveThoughts` / `liveScreenshots`
+  は DOM だけ display:none で残し、render 関数は早期 return せず動作維持
+  (将来再表示する場合に備える)。
+- スクロール領域が縮小 → WebView の追従ズレ発生頻度も低下する副次効果。
+
+#### C. session タブバー UX 改善
+- **完了系 (submitted/skipped/error/awaiting_approval/done/completed/finished)
+  を仮想 session から自動除外**。20 社流しても in-progress のものだけ残る。
+- **社名併記**: `No.225 ジャストシステム株式会社 · filling` の形式に変更。
+  ホバーで full company name + status を tooltip 表示。
+- **CAPTCHA バッジ**: `captchaDetected` が true な session に赤 🤖 バッジ。
+  ext バッジ (外部 Chromium 経路) と並べて表示。
+
+#### D. 実行ステップを baseline pipeline 化
+- 旧 (~v0.89) は events 配列をそのまま並べていたので、parallel-analysis.ts
+  が site_discovery を skip する企業 (formUrl 既知) では「実行ステップ」が
+  1 件しか出ず "進捗を追っている感" が皆無だった。
+- 新: 固定 6 段階パイプライン (サイト分析 → メッセージ起草 → フォーム遷移
+  → フォーム入力 → 確認画面到達 → 承認待ち/完了) を**常時表示**。events と
+  `activeSession.status` から最大 weight を算出し、各ステップを
+  完了 ✓ (緑) / 実行中 ● (青強調) / 未着手 ◯ (グレー薄文字) で色分け。
+- 各ステップに対応する最新 event の step 文字列を「— サブ詳細」として
+  併記 (例: 「サイト分析 — 公式サイトを確認」)。
+
+### Playwright 検証 (preview port 3483 + virtual session 4 件)
+
+| 仕込み | 期待 | 結果 |
+|------|------|------|
+| 4 社中 1 社 submitted | タブから消える | ✅ 3 件のみ表示 |
+| No.226 captchaDetected=true | 🤖 バッジ表示 | ✅ |
+| 社名表示 | 各タブに社名併記 | ✅ "No.226 テスト株式会社B (CAPT · filling🤖ext" |
+| 実行ステップ pipeline | 6 段階常時表示 + 状態色分け | ✅ ✓→✓→未→●実行中→未→未 |
+
+---
+
 ## 2.0.89 - 2026-05-28 — AI 操作セッション ライブ表示 4 大バグ修正 + 確認待ち WebView 復活
 
 ### ユーザー報告 (2026-05-28)

@@ -80,19 +80,39 @@ module.exports = function createFormSessionRoutes(ctx) {
       const { getLiveMonitorSummary } = require('../live-monitor');
       const summary = getLiveMonitorSummary();
       const taken = new Set(realSessions.map((s: any) => String(s.companyNo)));
-      const seen = new Set<string>();
+      // v2.0.90: 完了系 (submitted/skipped/error/awaiting_approval) は session タブから外す。
+      //   旧 (~v0.89) は全 active 企業を出していたので、20社流すと完了したものまで
+      //   タブに残り続けて見づらかった (ユーザー報告: 送信した履歴エラーなどはタブから削除)。
+      const TERMINAL_STATUSES = new Set([
+        'submitted', 'skipped', 'error', 'awaiting_approval', 'awaiting',
+        'done', 'completed', 'finished',
+      ]);
+      // companyNo ごとに最新 event を選び、最新が in-progress なら入れる
+      const latestByCompany = new Map<string, any>();
       (summary && Array.isArray(summary.events) ? summary.events : []).forEach((ev: any) => {
         if (!ev || ev.companyNo == null) return;
         const noKey = String(ev.companyNo);
-        if (taken.has(noKey) || seen.has(noKey)) return;
+        const prev = latestByCompany.get(noKey);
+        if (!prev) { latestByCompany.set(noKey, ev); return; }
+        const prevT = new Date(prev.updatedAt || 0).getTime();
+        const curT = new Date(ev.updatedAt || 0).getTime();
+        if (curT >= prevT) latestByCompany.set(noKey, ev);
+      });
+      latestByCompany.forEach((ev, noKey) => {
+        if (taken.has(noKey)) return;
         if (ev.active === false) return;
-        seen.add(noKey);
+        const statusKey = String(ev.status || '').toLowerCase();
+        const actionKey = String(ev.action || '').toLowerCase();
+        if (TERMINAL_STATUSES.has(statusKey) || TERMINAL_STATUSES.has(actionKey)) return;
+        // CAPTCHA 検知フラグ (events に書かれていれば拾う)
+        const captchaDetected = !!(ev.captchaDetected || ev.captcha || (ev.details && (ev.details.captchaDetected || ev.details.captcha)));
         virtualSessions.push({
           id: `virtual:${noKey}`,
           companyNo: ev.companyNo,
           companyName: ev.companyName || '',
           formUrl: ev.currentUrl || ev.formUrl || '',
           status: ev.status || ev.action || 'running',
+          captchaDetected,
           isActive: false,
           active: false,
           kind: 'virtual',
