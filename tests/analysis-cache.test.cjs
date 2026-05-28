@@ -13,14 +13,12 @@ function it(n, f) {
 
 // テスト用に独立した data dir を使う
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sales-claw-cache-test-'));
-process.env.SALES_CLAW_DATA_DIR = path.join(tempRoot, 'data');
-fs.mkdirSync(process.env.SALES_CLAW_DATA_DIR, { recursive: true });
+process.env.SALES_CLAW_USER_DATA_DIR = tempRoot;
+fs.mkdirSync(path.join(tempRoot, 'data'), { recursive: true });
 
 // settings-manager は data dir を decide するので、cache モジュール読み込み前に env をセット必要
-// ただしこのプロジェクトの data-paths は settings.preferences.dataDir + runtimeRoot を見るので、
-// ここでは環境を作ったあと、resolveDataPath が tempRoot を返すかは確認しない。
-// 代わりに cache モジュール内で resolveDataPath を mock する代替案として、
-// 直接 require して setCachedAnalysis → getCachedAnalysis のラウンドトリップだけ確認する。
+// data-paths は settings.preferences.dataDir + runtimeRoot を見るため、
+// 現行の runtime root env (SALES_CLAW_USER_DATA_DIR) を使ってホーム配下への書き込みを避ける。
 const cache = require('../dist-ts/src/analysis-cache');
 
 describe('analysis-cache — basic round-trip', () => {

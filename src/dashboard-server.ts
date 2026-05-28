@@ -3670,6 +3670,20 @@ function buildCompactApproachPayload(objective = '', guardrails = '') {
   return payload;
 }
 
+function buildTabManagementContractLines() {
+  return [
+    'SALES_CLAW_TAB_CONTRACT',
+    '- 開始時に browser_tabs で既存タブを記録し baselineTabs とする',
+    '- 探索で開いた検索結果・候補ページ・会社サイト・周辺ページは workingTabs として追跡する',
+    '- 入力済みフォーム / 確認画面 / CAPTCHA / エラー証跡のうち、最後に人間確認へ残す 1 タブだけを finalFormTab とする',
+    '- awaiting_approval / error / skipped 直前に browser_tabs を再確認し、baselineTabs と finalFormTab 以外の workingTabs を閉じる',
+    '- submitted 後は ss-{No}-sent.png を保存して、その会社の workingTabs を閉じる',
+    '- 既存の他社タブ、ユーザーが元から開いていたタブ、baselineTabs は閉じない',
+    '- logAction details には finalFormTab URL、閉じたタブ数、残した理由、sentMessage を含める',
+    '{"tabContract":"finalFormTabOnly"}',
+  ];
+}
+
 function buildManagedAiSessionContract(providerId = getManagedAiProvider(), options: Record<string, any> = {}) {
   const provider = getProvider(providerId);
   const autoSendSafe = typeof options.autoSendSafe === 'boolean'
@@ -3681,6 +3695,7 @@ function buildManagedAiSessionContract(providerId = getManagedAiProvider(), opti
     `cli=${provider.cliLabel}`,
     `sendPolicy=${autoSendSafe ? 'safe-auto-send' : 'approval-stop'}`,
     'rules:',
+    ...buildTabManagementContractLines(),
     '- direct Playwright worker / JS automation は使わない',
     '- MCP は Playwright のみ使用。別の Web 取得 MCP は使わない',
     '- 1社目のみ browser_navigate 可。2社目以降は browser_evaluate(window.open) + browser_tabs',
@@ -6035,6 +6050,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     approachPayload,
     '',
     'batch_rules:',
+    ...buildTabManagementContractLines(),
     ...batchRuleLines,
     '',
     'companies_jsonl:',
@@ -8117,9 +8133,9 @@ ${renderStyles()}
     </div>
 
     <!-- メイン グリッド -->
-    <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;padding:14px">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;padding:14px">
       <!-- 左カラム -->
-      <div class="lfs-card" style="overflow:hidden">
+      <div class="lfs-card" style="overflow:hidden;min-width:0">
         <div class="lfs-card-bd" style="padding:12px 16px">
           <div class="lfs-strong" style="font-size:.85rem">${_lang === 'ja' ? 'AI がブラウザを操作中...' : 'AI is operating the browser...'}</div>
           <div class="lfs-muted" style="font-size:.7rem;margin-top:2px">${_lang === 'ja' ? 'AI エージェントが Web サイトを操作しています。リアルタイムで進捗をご確認いただけます。' : 'Real-time progress of AI agent operations.'}</div>
@@ -8131,7 +8147,7 @@ ${renderStyles()}
           <span class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
         </div>
         <div id="liveFormSessions" class="lfs-card-bd lfs-input-bg" style="display:flex;gap:4px;overflow-x:auto;padding:6px 14px;min-height:34px"></div>
-        <div id="liveFormViewSlot" class="lfs-input-bg" style="position:relative;min-height:560px">
+        <div id="liveFormViewSlot" class="lfs-input-bg" style="position:relative;min-height:420px;height:min(62vh,640px);overflow:hidden;contain:layout paint;isolation:isolate">
           <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
             ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
           </div>
@@ -8223,7 +8239,9 @@ ${renderStyles()}
           // v2.0.92: hard guard — slot bbox 外には絶対に出さない (window 右半分占有の再発防止)。
           const winW = window.innerWidth;
           const winH = window.innerHeight;
-          const clippedTop = Math.max(0, rect.top);
+          const nav = document.getElementById('mainTabNav');
+          const reservedTop = nav ? Math.max(0, Math.round(nav.getBoundingClientRect().bottom)) : 0;
+          const clippedTop = Math.max(reservedTop, rect.top);
           const clippedBottom = Math.min(winH, rect.bottom);
           const clippedHeight = clippedBottom - clippedTop;
           const clippedLeft = Math.max(0, rect.left);
@@ -8639,13 +8657,15 @@ ${renderStyles()}
           if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
         }
         async function notifyTabActive(tab) {
-          // v2.0.92: live-form / awaiting 以外のタブに切替時、HTML 側から
-          //   即座に WebView を画面外 park (-10000,-10000) する。
+          // v2.0.93: live-form 以外のタブに切替時、HTML 側から
+          //   即座に WebView を detach するための park sentinel を送る。
           //   旧 (~v0.91): サーバ /api/form-session/tab-changed に POST → サーバが
           //   parkActiveView 呼ぶ流れだが、fetch 完了まで 50-200ms ラグがあり、
           //   その間 WebView が前タブの位置に残って「ついてくる」体験になる。
-          //   新: クライアントから set-bounds で先に画面外送り、その後サーバへ通知。
-          const needsPark = (tab !== 'live-form' && tab !== 'awaiting') && _activeSessionId;
+          //   新: クライアントから set-bounds で先に detach し、その後サーバへ通知。
+          const needsPark = (tab !== 'live-form')
+            && _activeSessionId
+            && !String(_activeSessionId).startsWith('virtual:');
           if (needsPark) {
             try {
               await fetch('/api/form-session/' + _activeSessionId + '/set-bounds', {
@@ -8709,6 +8729,7 @@ ${renderStyles()}
         function _bootLiveFormIfActive() {
           const active = document.querySelector('.tab-content.active')?.id;
           if (active === 'tab-live-form') startLiveFormPolling();
+          else notifyTabActive(active ? active.replace(/^tab-/, '') : '');
           // 最初の refresh は即実行 (badge / バー反映を遅らせない)
           refreshLiveFormSessions();
         }
@@ -10109,6 +10130,36 @@ ${renderStyles()}
   </div>
 </div>
 </main>
+
+<script>
+(function(){
+  if (window.__salesClawFormTabGuard) return;
+  window.__salesClawFormTabGuard = true;
+  const token = ${serializeForInlineScript(ensureDashboardSessionToken())};
+  function notifyFormTab(tab) {
+    try {
+      fetch('/api/form-session/tab-changed', {
+        method: 'POST',
+        keepalive: true,
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-sales-claw-session': token,
+        },
+        body: JSON.stringify({ activeTab: tab || '' }),
+      }).catch(function(){});
+    } catch (_) {}
+  }
+  document.addEventListener('click', function(ev) {
+    const btn = ev.target && ev.target.closest && ev.target.closest('.tab-btn[data-tab]');
+    if (!btn) return;
+    notifyFormTab(btn.getAttribute('data-tab') || '');
+  }, true);
+  window.addEventListener('pagehide', function(){ notifyFormTab('pagehide'); });
+  const active = document.querySelector('.tab-btn.active[data-tab]');
+  notifyFormTab(active ? active.getAttribute('data-tab') : '');
+})();
+</script>
 
 <script>
 const LANG = ${serializeForInlineScript(_lang)};
@@ -11985,6 +12036,7 @@ module.exports = {
   // v2.0.26: テストから prompt の中身を verify できるよう export。
   // 本番経路では非公開関数として使われ続けるが、export 自体は副作用なし。
   buildClaudeFormFillPrompt,
+  buildManagedAiSessionContract,
   getPhaseBParallelTabs,
   getManagedAiFormBatchSize,
   server,

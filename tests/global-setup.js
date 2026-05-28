@@ -5,11 +5,18 @@
  */
 
 const { spawn } = require('child_process');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
+
+function getDashboardServerEntry() {
+  const built = path.join(PROJECT_ROOT, 'dist-ts', 'src', 'dashboard-server.js');
+  if (fs.existsSync(built)) return built;
+  return path.join(PROJECT_ROOT, 'src', 'dashboard-server.cjs');
+}
 
 function getRuntimeRoot() {
   const configured = typeof process.env.SALES_CLAW_USER_DATA_DIR === 'string'
@@ -29,16 +36,38 @@ function readSessionToken() {
   }
 }
 
+function warmDashboard(port) {
+  return new Promise((resolve) => {
+    const req = http.get({ hostname: '127.0.0.1', port, path: '/' }, (res) => {
+      res.resume();
+      res.on('end', resolve);
+    });
+    req.on('error', resolve);
+    req.setTimeout(5000, () => {
+      req.destroy();
+      resolve();
+    });
+  });
+}
+
 /** @type {import('child_process').ChildProcess | null} */
 let serverProc = null;
 
 module.exports = async function globalSetup() {
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, FORCE_COLOR: '0' };
+    const fixtureDir = path.join(PROJECT_ROOT, 'tmp');
+    if (!fs.existsSync(fixtureDir)) fs.mkdirSync(fixtureDir, { recursive: true });
+    const runtimeRoot = fs.mkdtempSync(path.join(fixtureDir, 'dashboard-e2e-user-data-'));
+    process.env.SALES_CLAW_USER_DATA_DIR = runtimeRoot;
+    const env = {
+      ...process.env,
+      FORCE_COLOR: '0',
+      SALES_CLAW_USER_DATA_DIR: runtimeRoot,
+    };
 
     serverProc = spawn(
       process.execPath,
-      [path.join(PROJECT_ROOT, 'src', 'dashboard-server.cjs')],
+      [getDashboardServerEntry()],
       {
         cwd: PROJECT_ROOT,
         env,
@@ -65,23 +94,23 @@ module.exports = async function globalSetup() {
         resolved = true;
         clearTimeout(timer);
         const port = Number(match[1]);
-        setTimeout(() => {
+        setTimeout(async () => {
+          await warmDashboard(port);
           const token = readSessionToken();
           // Export to env so all test files can read them
           process.env.DASHBOARD_TEST_PORT = String(port);
           process.env.DASHBOARD_TEST_TOKEN = token;
 
           // Write a JSON fixture that workers can read (env vars aren't inherited by workers in some PW versions)
-          const fixtureDir = path.join(PROJECT_ROOT, 'tmp');
-          if (!fs.existsSync(fixtureDir)) fs.mkdirSync(fixtureDir, { recursive: true });
           fs.writeFileSync(
             path.join(fixtureDir, 'dashboard-test-server.json'),
-            JSON.stringify({ port, token }, null, 2),
+            JSON.stringify({ port, token, runtimeRoot }, null, 2),
             'utf8'
           );
 
           // Store proc reference in global so teardown can kill it
           global.__dashboardServerProc = serverProc;
+          global.__dashboardRuntimeRoot = runtimeRoot;
           resolve();
         }, 600);
       }

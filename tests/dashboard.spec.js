@@ -10,11 +10,21 @@
  * Server port and session token are available via tmp/dashboard-test-server.json.
  */
 
-const { test, expect } = require('@playwright/test');
+let testApi;
+try {
+  testApi = require('@playwright/test');
+} catch (_) {
+  testApi = require('playwright/test');
+}
+const { test, expect } = testApi;
 const path = require('path');
 const fs = require('fs');
 
 const PROJECT_ROOT = path.join(__dirname, '..');
+
+function requireBuiltModule(name) {
+  return require(path.join(PROJECT_ROOT, 'dist-ts', 'src', name));
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +71,7 @@ test.describe('Suite 1: settings-manager', () => {
   let settings;
 
   test.beforeAll(() => {
-    settings = require(path.join(PROJECT_ROOT, 'src', 'settings-manager.cjs'));
+    settings = requireBuiltModule('settings-manager.js');
   });
 
   test('settings-manager モジュールが読み込める', () => {
@@ -98,8 +108,8 @@ test.describe('Suite 1: settings-manager', () => {
   });
 
   test('AIフォーム入力プロンプトが finalFormTab タブ管理契約を含む', () => {
-    const dashboardServer = require(path.join(PROJECT_ROOT, 'src', 'dashboard-server.cjs'));
-    const prompt = dashboardServer.__test.buildClaudeFormFillPrompt([
+    const dashboardServer = requireBuiltModule('dashboard-server.js');
+    const prompt = dashboardServer.buildClaudeFormFillPrompt([
       {
         no: 999,
         companyName: 'Tab Contract Test',
@@ -122,8 +132,8 @@ test.describe('Suite 1: settings-manager', () => {
   });
 
   test('managed session 契約も finalFormTab タブ管理契約を含む', () => {
-    const dashboardServer = require(path.join(PROJECT_ROOT, 'src', 'dashboard-server.cjs'));
-    const contract = dashboardServer.__test.buildManagedAiSessionContract('claude', { autoSendSafe: false });
+    const dashboardServer = requireBuiltModule('dashboard-server.js');
+    const contract = dashboardServer.buildManagedAiSessionContract('claude', { autoSendSafe: false });
 
     expect(contract).toContain('SALES_CLAW_TAB_CONTRACT');
     expect(contract).toContain('finalFormTab');
@@ -181,16 +191,16 @@ test.describe('Suite 2: Dashboard HTTP API', () => {
     expect(typeof json).toBe('object');
   });
 
-  test('GET /api/form-session → 501 (Electronなし)', async () => {
+  test('GET /api/form-session → 200 virtual session list (Electronなし)', async () => {
     test.skip(!token, 'セッショントークンを取得できなかったためスキップ');
     const res = await fetch(
       `http://127.0.0.1:${port}/api/form-session`,
       authFetchOptions(token, port)
     );
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.ok).toBe(false);
-    expect(typeof json.error).toBe('string');
+    expect(json.ok).toBe(true);
+    expect(Array.isArray(json.sessions)).toBe(true);
   });
 
   test('POST /api/form-session/create → 501 (Electronなし)', async () => {

@@ -68,7 +68,8 @@ const electronStub = {
       close: () => {},
     };
     // setBounds is on the WebContentsView itself, not webContents
-    this.setBounds = () => {};
+    this.bounds = null;
+    this.setBounds = (bounds) => { this.bounds = bounds; };
   },
 };
 
@@ -80,7 +81,7 @@ Module._load = function patchedLoad(request, parent, ...rest) {
 // Mock settings-manager too so we control screenshot dir
 const tmpScreenshotDir = path.join(os.tmpdir(), 'fsm-test-' + Date.now());
 fs.mkdirSync(tmpScreenshotDir, { recursive: true });
-require.cache[require.resolve('../src/settings-manager')] = {
+require.cache[require.resolve('../dist-ts/src/settings-manager')] = {
   exports: {
     getScreenshotDir: () => tmpScreenshotDir,
   },
@@ -476,6 +477,40 @@ async function main() {
       assert.equal(fakeWin.contentView.children.length, 0);
       mgr.onWindowResize(); // no active — no-op
       mgr.destroySession(id);
+    });
+
+    await itAsync('setViewBounds docks into slot and park detaches from contentView', async () => {
+      const id = await mgr.createSession('http://example.com/', 10);
+      const session = mgr._sessions.get(id);
+      const docked = mgr.setViewBounds(id, { x: 20, y: 40, width: 500, height: 320 });
+      assert.equal(docked.ok, true);
+      assert.equal(mgr.activeSessionId, id);
+      assert.equal(fakeWin.contentView.children.includes(session.view), true);
+      assert.deepEqual(session.view.bounds, { x: 20, y: 40, width: 500, height: 320 });
+
+      const parked = mgr.setViewBounds(id, { x: -10000, y: -10000, width: 1, height: 1 });
+      assert.equal(parked.ok, true);
+      assert.equal(parked.detached, true);
+      assert.equal(fakeWin.contentView.children.includes(session.view), false);
+      mgr.destroySession(id);
+    });
+
+    await itAsync('showSession and setViewBounds keep only one WebContentsView attached', async () => {
+      const id1 = await mgr.createSession('http://example.com/', 12);
+      const id2 = await mgr.createSession('http://example.org/', 13);
+      const s1 = mgr._sessions.get(id1);
+      const s2 = mgr._sessions.get(id2);
+      mgr.showSession(id1);
+      assert.equal(fakeWin.contentView.children.includes(s1.view), true);
+      mgr.setViewBounds(id2, { x: 30, y: 50, width: 400, height: 300 });
+      assert.equal(fakeWin.contentView.children.includes(s1.view), false);
+      assert.equal(fakeWin.contentView.children.includes(s2.view), true);
+      assert.equal(fakeWin.contentView.children.length, 1);
+      mgr.hideAllSessions();
+      assert.equal(fakeWin.contentView.children.length, 0);
+      assert.equal(mgr.activeSessionId, null);
+      mgr.destroySession(id1);
+      mgr.destroySession(id2);
     });
 
     await itAsync('onWindowResize repositions active view', async () => {

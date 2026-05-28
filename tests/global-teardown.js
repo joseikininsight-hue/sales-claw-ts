@@ -15,5 +15,15 @@ module.exports = async function globalTeardown() {
 
   // Clean up fixture file
   const fixture = path.join(__dirname, '..', 'tmp', 'dashboard-test-server.json');
+  let runtimeRoot = global.__dashboardRuntimeRoot || '';
+  if (!runtimeRoot) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(fixture, 'utf8'));
+      runtimeRoot = parsed && typeof parsed.runtimeRoot === 'string' ? parsed.runtimeRoot : '';
+    } catch (_) {}
+  }
   try { fs.unlinkSync(fixture); } catch (_) {}
+  if (runtimeRoot && runtimeRoot.includes('dashboard-e2e-user-data-')) {
+    try { fs.rmSync(runtimeRoot, { recursive: true, force: true }); } catch (_) {}
+  }
 };

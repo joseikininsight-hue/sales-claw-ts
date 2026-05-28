@@ -649,9 +649,7 @@ class FormSessionManager {
     //   新: HTML 側 `syncViewBounds` が POST /api/form-session/:id/set-bounds で
     //   slot bbox を渡してくるのを信頼する。それまでは picture-in-picture 風に
     //   画面外に park しておく (見えても 1x1 なので影響なし)。
-    if (this._activeSessionId && this._activeSessionId !== sessionId) {
-      this._removeFromWindow(this._activeSessionId);
-    }
+    this._removeAllFromWindow(sessionId);
     this._activeSessionId = sessionId;
     const session = this._sessions.get(sessionId);
     const win = this._getMainWindow();
@@ -676,9 +674,6 @@ class FormSessionManager {
     const win = this._getMainWindow();
     if (!win || win.isDestroyed()) return { ok: false, reason: 'no_window' };
     try {
-      // mainWindow にまだ attach されていなければ attach
-      const cv = win.contentView;
-      if (!cv.children.includes(session.view)) cv.addChildView(session.view);
       // v2.0.92: park 用の負座標は通す。それ以外は window contentSize を越えないように
       //   hard cap。これで万一 HTML 側が誤った bounds (e.g. window 全幅) を送ってきても
       //   右半分占有のような UI 破壊を起こさない。
@@ -689,11 +684,16 @@ class FormSessionManager {
       const isPark = reqX <= -1000 || reqY <= -1000;
       let x: number, y: number, width: number, height: number;
       if (isPark) {
+        this._removeFromWindow(sessionId);
         x = Math.floor(reqX || -10000);
         y = Math.floor(reqY || -10000);
         width = Math.max(1, Math.floor(reqW || 1));
         height = Math.max(1, Math.floor(reqH || 1));
+        return { ok: true, detached: true, bounds: { x, y, width, height } };
       } else {
+        this._removeAllFromWindow(sessionId);
+        const cv = win.contentView;
+        if (!cv.children.includes(session.view)) cv.addChildView(session.view);
         const [winW, winH] = win.getContentSize();
         x = Math.min(winW - 50, Math.max(0, Math.floor(reqX || 0)));
         y = Math.min(winH - 50, Math.max(0, Math.floor(reqY || 0)));
@@ -712,7 +712,7 @@ class FormSessionManager {
 
   /**
    * v2.0.86: HTML 側のタブ切替で「操作中タブが non-active」の時に呼ぶ。
-   * 現 session を mainWindow の外 (画面外座標) に setBounds して見えなくする。
+   * 現 session を mainWindow から detach して見えなくする。
    * destroy はしない (タブ戻ったら setViewBounds で復活)。
    */
   parkActiveView() {
@@ -720,9 +720,10 @@ class FormSessionManager {
     const session = this._sessions.get(this._activeSessionId);
     if (!session || !session.view) return { ok: true, parked: false };
     try {
-      // 画面外 (負座標) に移動 = visibility:hidden 相当
-      session.view.setBounds({ x: -10000, y: -10000, width: 1, height: 1 });
-      return { ok: true, parked: true };
+      // WebContentsView は DOM の display:none に追従しないため、
+      // 非表示タブでは contentView から外して確実に消す。
+      this._removeFromWindow(this._activeSessionId);
+      return { ok: true, parked: true, detached: true };
     } catch (e) {
       return { ok: false, reason: e && e.message ? e.message : String(e) };
     }
@@ -733,6 +734,12 @@ class FormSessionManager {
       this._removeFromWindow(this._activeSessionId);
       this._activeSessionId = null;
     }
+  }
+
+  hideAllSessions() {
+    const hidden = this._removeAllFromWindow(null);
+    this._activeSessionId = null;
+    return { ok: true, hidden };
   }
 
   // Called by electron-main on window resize
@@ -765,6 +772,16 @@ class FormSessionManager {
     const win = this._getMainWindow();
     if (!win || win.isDestroyed()) return;
     try { win.contentView.removeChildView(session.view); } catch (_) {}
+  }
+
+  _removeAllFromWindow(keepSessionId) {
+    let removed = 0;
+    for (const [id] of this._sessions) {
+      if (keepSessionId && id === keepSessionId) continue;
+      this._removeFromWindow(id);
+      removed += 1;
+    }
+    return removed;
   }
 
   // ── Query ────────────────────────────────────────────────────────────

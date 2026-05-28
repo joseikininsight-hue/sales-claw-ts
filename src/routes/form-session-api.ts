@@ -306,16 +306,21 @@ module.exports = function createFormSessionRoutes(ctx) {
       try {
         const body = await parseJsonBody(req).catch(() => ({}));
         const activeTab = body && typeof body.activeTab === 'string' ? body.activeTab : '';
-        if (activeTab !== 'live-form' && activeTab !== 'awaiting') {
-          // v2.0.86: live-form / awaiting 以外なら view を画面外に park (destroy しない)
-          if (typeof _formSessionManager.parkActiveView === 'function') {
-            _formSessionManager.parkActiveView();
+        let hidden: any = null;
+        if (activeTab !== 'live-form') {
+          // WebContentsView は DOM タブの display:none に追従しない。
+          // 非 live-form では全 view を detach し、戻った時だけ setViewBounds で復帰する。
+          if (typeof _formSessionManager.hideAllSessions === 'function') {
+            hidden = _formSessionManager.hideAllSessions();
+          } else if (typeof _formSessionManager.parkActiveView === 'function') {
+            hidden = _formSessionManager.parkActiveView();
           } else {
             _formSessionManager.hideCurrentSession();
+            hidden = { ok: true, hidden: 1 };
           }
         }
-        // live-form / awaiting タブの場合は HTML 側が setViewBounds を後追いで呼ぶ
-        jsonResponse(res, 200, { ok: true, activeTab });
+        // live-form タブの場合は HTML 側が setViewBounds を後追いで呼ぶ
+        jsonResponse(res, 200, { ok: true, activeTab, hidden });
       } catch (e) {
         jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
       }
