@@ -95,50 +95,117 @@ of the following steps:
 **The user makes the send decision from the screenshot on the dashboard.
 Without a screenshot, they cannot decide.**
 
-## Architecture — CLI-driven
+## Architecture — CLI-driven (v2.0.92)
 
 **Important: this project is driven by the Claude Code CLI.**
 
 - Claude Code performs company analysis, message authoring, and form filling
   inline.
-- The dashboard (localhost:configured port) is for UI display, manual
-  operations, and settings management.
+- The dashboard (localhost:configured port) shows AI work **live** in the
+  「操作中」(operation) tab via Electron WebContentsView, plus
+  「確認待ち」(awaiting approval), 「送信済み」(sent), 「スキップ」(skipped).
 
-### Form-fill mode
+### Form-fill mode — internal MCP + WebContentsView (since v2.0.67)
 
-**MCP Playwright mode only.**
+**Default: `formFill.mode = "internal"`** (set in `data/settings.json`,
+fallback also `internal` since v2.0.71).
 
-- The Claude Code CLI checks the company site, finds the contact page,
-  understands the form structure, and maintains the filled-in state.
-- All form operations **must** go through MCP Playwright `browser_*` tools.
-- Do **not** use `/api/form-session/*`, Electron `WebContentsView`, direct
-  JS automation, or a custom Playwright worker as an alternative for
-  form filling.
-- The Electron dashboard is for UI / settings / log inspection. It is not
-  the main driver for form discovery or filling.
-- If MCP Playwright is not visible, first check the Claude Code MCP
-  registration / reconnect. Do not switch to the Electron Form Session API.
-- Keep only the final tab(s): filled form / confirmation screen / CAPTCHA /
-  error evidence. Close exploration leftovers.
+The Claude CLI calls `mcp__playwright__browser_*` tools (name kept for
+prompt compatibility), but those tools are actually served by the
+**internal `sales-claw-form` MCP server** — NOT the external
+`@playwright/mcp` Chromium process.
 
-### Tab management contract
+```
+Claude CLI (managed PTY)
+    │  stdio JSON-RPC 2.0
+    ▼
+sales-claw-form-mcp-server.cjs  (separate Node process)
+    │  Named Pipe \\.\pipe\sales-claw-form-mcp-<random>
+    ▼
+Electron main / FormSessionManager + CdpBridge
+    │  webContents.debugger.attach('1.3')   (Chrome DevTools Protocol)
+    ▼
+WebContentsView  (in-process Chromium, partition per session)
+    │
+    └─→ Visible in dashboard 「操作中」 tab, docked to HTML slot bbox
+```
 
-- At the start of processing each company, record existing tabs with
-  `browser_tabs` and treat them as `baselineTabs`.
-- Search-result pages, candidate pages, the company site, privacy /
-  news pages opened during exploration are tracked as `workingTabs`.
-- Of the filled form, confirmation screen, CAPTCHA, or error-evidence page,
-  keep **only one** as `finalFormTab` (the one needed for final
-  verification).
-- Just before logging `awaiting_approval` / `error` / `skipped`, run
-  `browser_tabs` again and close every `workingTab` that is not in
-  `baselineTabs` and is not the `finalFormTab`.
-- On `submitted`, after saving `ss-{No}-sent.png`, close that company's
-  `workingTabs`.
-- Never close other companies' tabs, tabs the user originally had open, or
-  `baselineTabs`.
-- The `details` payload of `logAction` must include the `finalFormTab` URL,
-  the number of tabs closed, and the reason the kept tab was kept.
+**Why this matters for Claude CLI prompts**:
+- Tool names look identical to Playwright (`browser_navigate`,
+  `browser_snapshot`, `browser_fill_form`, `browser_take_screenshot`,
+  `browser_tabs`, `browser_click`, `browser_type`,
+  `browser_select_option`, etc.) — there are 15 tools total at
+  `src/mcp-servers/sales-claw-form/tools/`.
+- Behavior is **almost** identical, but every `browser_*` call accepts /
+  returns a `sessionId`. Each `sessionId` = one isolated WebContentsView
+  with its own `partition: form-session-<id>` (separate cookies / storage).
+- The user sees every `browser_*` operation happen live in the 操作中 tab.
+  Don't do "invisible" exploration — the user is watching.
+
+**Three rare modes** (settings `formFill.mode`):
+- `"internal"` (default, v2.0.71+) — sales-claw-form MCP only
+- `"playwright"` (legacy, ≤ v2.0.65) — external `@playwright/mcp` Chromium
+- `"both"` (A/B testing only) — both MCP servers registered
+
+**Do not assume external Chrome is launched.** Even if a `browser_*` tool
+times out, the WebContentsView path is in-process. There is no separate
+`chrome.exe` to kill.
+
+### Parallel processing (3 layers)
+
+| Layer | What runs in parallel | Cap | Implementation |
+|---|---|---|---|
+| **Phase A** — site analysis | haiku sub-agents (HTTP fetch only) | = batch size | `src/parallel-analysis.ts` |
+| **Phase B parallel tabs** — form filling | WebContentsView sessions visible side-by-side in 操作中 tab | **3** | `src/form-session-manager.ts` + `resolvePhaseBParallelTabs` |
+| **Phase B parallel dispatcher** (legacy) | Independent Claude processes, each with own MCP | 3 | `src/ai-runtime/parallel-dispatcher.ts` + `/api/ai-form-fill-parallel` |
+
+The default Phase B path is "1 Claude CLI + up to 3 WebContentsView
+sessions" (auto-resolves to `min(batchSize, 3)`).
+
+Env override: `SALES_CLAW_PHASE_B_PARALLEL_TABS=2`.
+
+### 操作中 tab UX contract
+
+- Each WebContentsView is docked to an HTML slot `<div id="form-session-slot">`
+  by `setViewBounds(sessionId, bbox)`. The bbox is HTML-side
+  `getBoundingClientRect()` × `devicePixelRatio`.
+- When the user switches to a non-operation tab,
+  `/api/form-session/tab-changed` fires `hideAllSessions()` →
+  `contentView.removeChildView()` for every session. WebViews are
+  **detached, not destroyed** — when the user comes back, HTML re-issues
+  `setViewBounds` and the same session re-attaches.
+- Window resize is handled HTML-side: a resize listener re-emits
+  `setViewBounds`. `formSessionManager.onWindowResize()` in main is
+  intentionally a no-op (v2.0.91 removed the legacy `_positionView`).
+- On `before-quit`, `formSessionManager.destroyAllSessions()` is called
+  to release every WebContentsView before the process exits
+  (electron-main.ts).
+
+### Session lifecycle contract (replaces old "Tab management contract")
+
+For each company that goes through Phase B:
+
+1. **createSession** — `POST /api/form-session` with `{ formUrl, companyNo }`
+   returns a `sessionId`. The WebContentsView is created in
+   partition `form-session-<sessionId>`, with SSRF /
+   `validateFormUrlSafety` guards on every request.
+2. **work within that sessionId** — all `browser_*` calls use the same
+   `sessionId`. Do not mix sessions for one company.
+3. **finalize** — after `browser_take_screenshot` saves
+   `screenshots/ss-{No}-input.png`, log `awaiting_approval` via
+   `curl POST /api/log-action`.
+4. **on approve** — `POST /api/ai-submit-final` queues a new prompt; the
+   CLI re-uses the **same sessionId** to click submit, take
+   `ss-{No}-sent.png`, and log `submitted`.
+5. **destroy** — the session is destroyed when the company is finalized
+   (sent / skipped / errored) or on `before-quit`. There is **no need to
+   close "tabs"** the way the old Playwright contract demanded — there
+   are no Chromium browser tabs to track; one session = one WebView.
+
+The legacy `browser_tabs`/`baselineTabs`/`workingTabs`/`finalFormTab`
+contract from the Playwright era is **no longer needed**. `browser_tabs`
+still exists as a tool but in internal MCP mode it returns the live
+WebContentsView sessions, not Chromium tabs.
 
 ## Desktop Release / Auto Update Gate
 
@@ -276,7 +343,7 @@ cp data/sample-settings.json data/settings.json
 4. Opt-out instructions (Japanese phrases such as 「配信停止」「送信停止」
    「ご不要の場合」「今後ご連絡が不要」 etc.)
 
-`finalizeMessage()` (`src/message-builder.cjs`) auto-appends only the
+`finalizeMessage()` (`src/message-builder.ts`) auto-appends only the
 missing elements when `preferences.complianceFooter` is true (default).
 
 API: `POST /api/compliance/check  body:{message}` →
@@ -484,12 +551,15 @@ Guards:
 
 ```
 Step 1: Company-site analysis
-  → Use MCP Playwright to confirm the official site and the contact-form path
-  → As needed, you may use company-analyzer.cjs / settings-manager.cjs from Bash as a helper
+  → Use mcp__playwright__browser_navigate (= internal sales-claw-form MCP) to
+    confirm the official site and the contact-form path
+  → As needed, you may import compiled helpers from dist-ts:
+      const company = require('./dist-ts/src/company-analyzer');
+      const settings = require('./dist-ts/src/settings-manager');
   → Record a site_analysis action via curl POST /api/log-action (the Phase A subprocess may have already recorded it)
 
 Step 2: Message generation
-  → Read sender info / strengths / templates from settings-manager.cjs
+  → Read sender info / strengths / templates from dist-ts/src/settings-manager
   → Use only facts confirmed on the target site, and craft the body per company
   → message_draft is also pre-recorded by the Phase A subprocess (no re-record needed)
 
@@ -529,7 +599,7 @@ Step 7: Register awaiting_approval
 Phase A (parallel — no MCP):
 → Process "site analysis + message-generation prompt construction" for every company in parallel sub-agents
 → How: spin up haiku sub-agents in parallel via the Agent tool:
-    node src/parallel-analysis.cjs '{"no":1,"companyName":"<name>","url":"<URL>","type":"<type>","formUrl":"<form URL>"}'
+    node dist-ts/src/parallel-analysis.js '{"no":1,"companyName":"<name>","url":"<URL>","type":"<type>","formUrl":"<form URL>"}'
 → Sub-agent internally uses company-analyzer + message-builder
 → Output: analysis + messagePrompt (CLI prompt) + templateDraft (fallback)
 → Do NOT use MCP Playwright (plain HTTP fetch only)
@@ -543,11 +613,21 @@ Phase A.5 (message generation — leverage CLI's language ability):
 → The CLI writes natural Japanese (or English) that feels "written for this company only" — avoid template feel
 → templateDraft is used only when CLI generation fails
 
-Phase B (sequential — form filling):
-→ Run form discovery / structure analysis / filling / screenshot one company at a time via MCP Playwright
-→ Per company: browser_navigate / browser_tabs → browser_snapshot → browser_fill_form
-         → browser_take_screenshot → logAction(awaiting_approval)
-→ Per company, keep only the finalFormTab; close exploration leftovers
+Phase B (parallel-tab — form filling, up to 3 sessions in 操作中 tab):
+→ Each company gets its own sessionId / WebContentsView (partition-isolated).
+→ `resolvePhaseBParallelTabs(batchSize)` decides how many tabs to open
+   in parallel (cap = MAX_PHASE_B_PARALLEL_TABS = 3).
+→ Per company (per sessionId):
+     browser_navigate({ sessionId, url })
+   → browser_snapshot({ sessionId })
+   → browser_fill_form({ sessionId, mappings })
+   → browser_take_screenshot({ sessionId, suffix: 'input' })
+   → logAction(awaiting_approval) via /api/log-action
+→ Each session is visible **live** to the user in the 操作中 tab.
+→ Do NOT try to "browse around" outside the form's domain. SSRF guards
+   in FormSessionManager will block unknown hosts.
+→ On per-session failure, log `error`; the remaining sessions continue
+   (Promise.allSettled semantics).
 
 → Notify dashboard progress via thinking() + updateLiveMonitor()
 
@@ -560,9 +640,9 @@ When all companies are done, summarize the results for the user
 
 **Progress notification (required):**
 ```
-At every step, call cli-logger.cjs so the dashboard reflects progress:
+At every step, call cli-logger so the dashboard reflects progress:
 
-const { thinking, log } = require('./src/cli-logger.cjs');
+const { thinking, log } = require('./dist-ts/src/cli-logger');
 
 Phase A start: thinking('Phase A start: parallel analysis of N companies')
 Each company analysis start: thinking('[No.X] <name>: site analysis start')
@@ -580,10 +660,10 @@ Messages are personalized per company by leveraging the CLI's language
 ability.
 
 ### Generation flow
-1. `parallel-analysis.cjs` analyzes the company site → `analysis` (business
-   domain, gaps, focus areas, site excerpts).
-2. `message-builder.cjs`'s `buildMessagePrompt(analysis)` builds the CLI
-   prompt.
+1. `src/parallel-analysis.ts` analyzes the company site → `analysis`
+   (business domain, gaps, focus areas, site excerpts).
+2. `src/message-builder.ts`'s `buildMessagePrompt(analysis)` builds the
+   CLI prompt.
 3. The CLI agent uses the prompt to craft a body that resonates with the
    target.
 4. Fallback: `buildCustomMessage(analysis)`'s template body.
@@ -678,34 +758,59 @@ To run in parallel via OMC's ultrawork mode:
 → The main agent drives MCP Playwright for form filling
 ```
 
-## File Structure
+## File Structure (TypeScript port — v2.0.92)
+
+Most source files are now `.ts`. `.cjs` is intentionally kept only for
+the internal MCP server entries (Claude CLI's MCP runtime requires CJS)
+and a few dev scripts.
 
 ```
-sales-claw/
-├── CLAUDE.md                   # This file (project description)
-├── settings-manager.cjs        # Settings management (single source of truth)
-├── config.cjs                  # Settings reader interface
-├── electron-main.js            # Electron main process
+sales-claw-ts/
+├── CLAUDE.md                          # This file (project description)
+├── electron-main.ts                   # Electron main process
+├── package.json / tsconfig.json
+├── bin/
+│   └── sales-claw-form-mcp.cjs        # internal MCP entry (Claude CLI spawns this)
 ├── src/
-│   ├── dashboard-server.cjs    # Dashboard + settings UI
-│   ├── action-logger.cjs       # Action log management
-│   ├── contact-history.cjs     # Contact history management
-│   ├── company-analyzer.cjs    # Company-site analysis
-│   ├── form-validator.cjs      # Form pre-validation
-│   ├── form-finder.cjs         # Form URL discovery
-│   ├── form-helpers.cjs        # Form operation helpers
-│   ├── live-monitor.cjs        # Progress monitor management
-│   ├── message-builder.cjs     # Message generation
-│   ├── parallel-analysis.cjs   # Parallel sub-agent analysis + message gen
-│   ├── email-fetcher.cjs       # Outlook email fetch
-│   └── cli-logger.cjs          # Dashboard CLI Activity notifier
+│   ├── dashboard-server.ts            # Dashboard + settings UI (HTTP server)
+│   ├── settings-manager.ts            # Settings (single source of truth)
+│   ├── action-logger.ts               # Action log management
+│   ├── contact-history.ts             # Contact history
+│   ├── company-analyzer.ts            # Company-site analysis (HTTP fetch)
+│   ├── parallel-analysis.ts           # Phase A: parallel sub-agent analysis
+│   ├── message-builder.ts             # Message generation (template fallback)
+│   ├── llm-message-generator.ts       # CLI prompt construction (Phase A.5)
+│   ├── llm-site-analyzer.ts           # LLM-driven site analysis
+│   ├── form-session-manager.ts        # 操作中 tab: WebContentsView lifecycle
+│   ├── cdp-bridge.ts                  # Chrome DevTools Protocol bridge
+│   ├── form-mcp-dispatcher.ts         # MCP IPC dispatcher
+│   ├── cli-logger.ts                  # Dashboard CLI Activity notifier
+│   ├── live-monitor.ts                # Progress monitor management
+│   ├── ai-runtime/
+│   │   ├── parallel-dispatcher.ts     # Legacy: spawn N Claude processes
+│   │   ├── batch-utils.ts             # batch chunking
+│   │   └── redact.ts                  # secret redaction
+│   ├── mcp-servers/sales-claw-form/   # internal MCP server (15 tools)
+│   │   ├── server.cjs                 # MCP entrypoint (stdio JSON-RPC)
+│   │   ├── ipc-client.cjs             # Named-Pipe client → Electron main
+│   │   └── tools/                     # navigate / snapshot / fill_form / ...
+│   ├── routes/
+│   │   ├── form-session-api.ts        # /api/form-session/* (live-form tab API)
+│   │   ├── ai-form-fill-api.ts        # /api/ai-form-fill
+│   │   ├── ai-submit-final-api.ts     # /api/ai-submit-final (送信ボタン)
+│   │   ├── approve-api.ts             # /api/approve (確認待ち判定)
+│   │   ├── parallel-form-fill-api.ts  # /api/ai-form-fill-parallel (legacy)
+│   │   └── ...                        # onboarding, list-builder, recovery, etc.
+│   ├── list-builder/                  # Phase 0: list discovery + qualification
+│   └── ui/client-scripts/             # bundled into dashboard HTML
 ├── data/
-│   ├── settings.json           # All settings (gitignored)
-│   ├── sample-settings.json    # Settings sample
-│   ├── sample-targets.csv      # Public sample targets
-│   ├── action-log.json         # Full action log
-│   └── contact-history.json    # Contact history
-└── screenshots/                # Form-fill / confirmation screenshots
+│   ├── settings.json                  # All settings (gitignored)
+│   ├── sample-settings.json           # Settings sample
+│   ├── sample-targets.csv             # Public sample targets
+│   ├── action-log.json                # Full action log
+│   └── contact-history.json           # Contact history
+├── screenshots/                       # ss-{No}-input.png / ss-{No}-sent.png
+└── tests/                             # Node-based test:unit suite (51 in CI)
 ```
 
 ## Agent Orchestration

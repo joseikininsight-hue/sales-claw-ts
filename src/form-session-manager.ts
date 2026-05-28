@@ -421,6 +421,17 @@ class FormSessionManager {
     if (this._activeSessionId === sessionId) this._activeSessionId = null;
   }
 
+  // app quit / window-all-closed 時に呼ばれる包括的 cleanup。
+  // mainWindow.close で WebContentsView が detach されず memory leak する経路を塞ぐ。
+  destroyAllSessions() {
+    const ids = Array.from(this._sessions.keys());
+    let destroyed = 0;
+    for (const id of ids) {
+      try { this.destroySession(id); destroyed += 1; } catch (_) {}
+    }
+    return { ok: true, destroyed };
+  }
+
   _installRequestGuards(view, sessionId) {
     const markBlocked = (url, reason) => {
       const session = this._sessions.get(sessionId);
@@ -749,21 +760,14 @@ class FormSessionManager {
     //   setViewBounds を呼ぶので main 側では何もしない。
   }
 
-  _positionView(sessionId) {
-    const session = this._sessions.get(sessionId);
-    if (!session) return;
-    const win = this._getMainWindow();
-    if (!win || win.isDestroyed()) return;
-
-    const [winW, winH] = win.getContentSize();
-    const x = Math.floor(winW * PANEL_LEFT_RATIO);
-    const y = HEADER_HEIGHT;
-    const w = winW - x;
-    const h = winH - y;
-
-    const cv = win.contentView;
-    if (!cv.children.includes(session.view)) cv.addChildView(session.view);
-    session.view.setBounds({ x, y, width: w, height: h });
+  // v2.0.91 で deprecate: 旧式 dock (winW*0.45 右半分占有) は HTML slot を
+  // 無視して dashboard 上に WebView が覆いかぶさるバグの原因だった。
+  // setViewBounds (HTML slot bbox 連動) に完全移行済。残置は意図的に呼ばない。
+  // 残しているのは下位互換目的のみで、誰も呼ばない。
+  // → 削除しても安全だが、外部から参照する古いコードがあれば落ちるので
+  //   今は no-op 化しておく (型シグネチャは維持)。
+  _positionView(_sessionId) {
+    // intentionally no-op (v2.0.91+); use setViewBounds via HTML slot.
   }
 
   _removeFromWindow(sessionId) {

@@ -38,6 +38,7 @@ interface DashboardRuntimeModule {
 interface FormSessionManagerCtor {
   new (windowGetter: () => BrowserWindow | null): {
     onWindowResize(): void;
+    destroyAllSessions(): { ok: boolean; destroyed: number };
     [key: string]: unknown;
   };
 }
@@ -879,6 +880,19 @@ app.on('before-quit', (event) => {
     return;
   }
   _gracefulQuitInProgress = true;
+
+  // 操作中タブで開いていた WebContentsView を全 destroy。
+  // mainWindow.close だけでは contentView の子 view が detach されず、
+  // メモリリーク + 次回起動時の幽霊 view 残留の原因になる。
+  try {
+    const result = formSessionManager.destroyAllSessions();
+    if (result && result.destroyed > 0) {
+      console.log(`[Electron] before-quit: destroyed ${result.destroyed} form session(s)`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[Electron] before-quit: destroyAllSessions failed:', msg);
+  }
 
   let dashboard: DashboardModule | null;
   try { dashboard = resolveDashboardModule(); } catch (_err) { dashboard = null; }
