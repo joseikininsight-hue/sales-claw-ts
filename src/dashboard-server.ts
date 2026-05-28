@@ -8140,17 +8140,23 @@ ${renderStyles()}
       font-size: .74rem; font-weight: 600;
       color: var(--on-surface, #111);
     }
+    /* v2.0.95: 操作中タブは「純粋なブラウザが開いている」見た目に。
+       進捗/現在の操作/実行ステップ・セッションチップは撤去 (右下 Live Monitor に集約)。
+       WebView スロットは境界線のみのブラウザフレーム風に。 */
     .lfs-view-slot {
       position: relative;
       width: 100%;
-      min-height: clamp(420px, 68vh, 880px);
-      height: clamp(420px, 68vh, 880px);
+      min-height: clamp(460px, 80vh, 1040px);
+      height: clamp(460px, 80vh, 1040px);
       overflow: hidden;
       contain: layout paint;
       isolation: isolate;
-      border-radius: 0;
+      border-radius: 10px;
+      border: 1px solid var(--outline-variant, #d8dee5);
+      box-shadow: 0 1px 3px rgba(15,23,42,.06);
       background: transparent;
     }
+    [data-theme="dark"] .lfs-view-slot { border-color: color-mix(in srgb, #2a3441 75%, transparent); }
 
     /* v2.0.93: タブ横の End Session ボタン */
     .tab-end-btn {
@@ -8184,16 +8190,17 @@ ${renderStyles()}
     <!-- メイン グリッド: 上部 = 進捗/現在の操作/実行ステップ サマリ, 下部 = 全幅 WebView -->
     <div class="lfs-main-grid">
 
-      <!-- ヘッダー (タイトル + セッションタブ) -->
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 2px">
+      <!-- v2.0.95: ヘッダー撤去 (純粋ブラウザ表示)。要素は script 互換のため残し非表示。 -->
+      <div style="display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 2px">
         <span class="material-symbols-outlined" style="font-size:16px;color:#10b981">smart_toy</span>
         <span class="lfs-text" style="font-size:.85rem;font-weight:600">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
         <span style="background:#10b981;width:7px;height:7px;border-radius:50%;display:inline-block"></span>
         <span class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
       </div>
 
-      <!-- 進捗 / 現在の操作 / 実行ステップ — 3 列 (mobile で 1 列) -->
-      <div class="lfs-summary-row">
+      <!-- v2.0.95: 進捗/現在の操作/実行ステップ サマリは撤去 (右下 Live Monitor に集約)。
+           要素 ID は renderProgress/renderCurrent/renderSteps 等の script 互換のため残し非表示。 -->
+      <div class="lfs-summary-row" style="display:none">
         <div class="lfs-summary-item">
           <div class="lfs-summary-head">
             <span class="material-symbols-outlined" style="font-size:14px;color:#3b82f6">trending_up</span>
@@ -8237,8 +8244,9 @@ ${renderStyles()}
         </div>
       </div>
 
-      <!-- セッションタブ (No.226 · filled 等 + × ボタン) -->
-      <div id="liveFormSessions" class="lfs-card-bd" style="display:flex;gap:4px;overflow-x:auto;padding:6px 2px;min-height:34px"></div>
+      <!-- v2.0.95: セッションチップ (No.xxx · filled ×) は撤去 (純粋ブラウザ表示)。
+           docking ロジックが #liveFormSessions を参照するため要素は残し非表示。 -->
+      <div id="liveFormSessions" class="lfs-card-bd" style="display:none;gap:4px;overflow-x:auto;padding:6px 2px;min-height:34px"></div>
 
       <!-- 全幅 WebView slot -->
       <div id="liveFormViewSlot" class="lfs-view-slot">

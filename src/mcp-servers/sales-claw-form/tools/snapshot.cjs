@@ -16,7 +16,7 @@ const SCHEMA = {
       mode: {
         type: 'string',
         enum: ['a11y', 'dom-lite'],
-        description: 'Snapshot mode. a11y returns the accessibility tree; dom-lite returns a flat form-field summary. Default: a11y',
+        description: 'Snapshot mode. dom-lite returns a flat form-field summary (fast, recommended for form filling); a11y is reserved for the full accessibility tree. Default: dom-lite',
       },
     },
     required: ['sessionId'],
@@ -33,7 +33,10 @@ function validateArgs(args) {
   }
   return {
     sessionId: args.sessionId,
-    mode: args.mode || 'a11y',
+    // 既定を dom-lite に統一。dispatcher は実際に dom-lite (フィールド一覧) を返すため、
+    // 'a11y' を既定にすると「a11y ツリーを受け取ったはず」と誤認した CLI が冗長な
+    // 2 回目 snapshot を撃つ原因になっていた。
+    mode: args.mode || 'dom-lite',
   };
 }
 

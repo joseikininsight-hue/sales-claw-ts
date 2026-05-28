@@ -130,6 +130,42 @@ async function assertSafeFormUrl(rawUrl) {
   return result.url;
 }
 
+// 1ページ読み込みで同一ホストのサブリソース (CSS/JS/画像) が 20-50 回 onBeforeRequest
+// を叩き、その都度 dns.lookup していたのがロードを 1-3 秒遅らせていた。
+// host:port 単位で検証結果を短 TTL キャッシュし、同一ホストの再検証を省く。
+// TTL は 5s。コンタクトフォーム 1 ページのサブリソースは通常 2-3s で出揃うため
+// この窓でも冗長な lookup は排除できる一方、5s なら DNS リバインディング
+// (公開IP→private IP への差し替え) はほぼ不可能 (security-reviewer 指摘 HIGH 対応)。
+const HOST_VALIDATION_TTL_MS = 5000;
+const HOST_VALIDATION_CACHE_MAX = 512;
+const _hostValidationCache = new Map(); // host:port -> { result:{ok,reason}, expiresAt }
+
+async function validateRequestUrlCached(rawUrl) {
+  let parsed;
+  try { parsed = new URL(rawUrl); } catch { return { ok: false, reason: 'invalid_url' }; }
+  // credentials は per-URL なのでキャッシュに依らず常に拒否
+  if (parsed.username || parsed.password) return { ok: false, reason: 'url_credentials_not_allowed' };
+  // zone-id (%eth0) を除去して validateFormUrlSafety と同じ正規化に揃え、port も鍵に含める。
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
+  const cacheKey = host + ':' + (parsed.port || '');
+  const now = Date.now();
+  const cached = _hostValidationCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.result;
+  const result: any = await validateFormUrlSafety(rawUrl);
+  const slim = { ok: result.ok, reason: result.reason };
+  _hostValidationCache.set(cacheKey, { result: slim, expiresAt: now + HOST_VALIDATION_TTL_MS });
+  if (_hostValidationCache.size > HOST_VALIDATION_CACHE_MAX) {
+    for (const [k, v] of _hostValidationCache) { if (v.expiresAt <= now) _hostValidationCache.delete(k); }
+    // 全件未期限でも cap 超過なら挿入順 (最古) から落として上限を厳守
+    while (_hostValidationCache.size > HOST_VALIDATION_CACHE_MAX) {
+      const oldest = _hostValidationCache.keys().next().value;
+      if (oldest === undefined) break;
+      _hostValidationCache.delete(oldest);
+    }
+  }
+  return slim;
+}
+
 function isPathInsideDirectory(baseDir, targetPath) {
   const relative = path.relative(baseDir, targetPath);
   return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
@@ -449,7 +485,7 @@ class FormSessionManager {
     view.webContents.session.webRequest.onBeforeRequest(
       { urls: ['http://*/*', 'https://*/*'] },
       (details, callback) => {
-        validateFormUrlSafety(details.url)
+        validateRequestUrlCached(details.url)
           .then((result) => {
             if (!result.ok) {
               markBlocked(details.url, result.reason);
@@ -582,45 +618,51 @@ class FormSessionManager {
     const session = this._sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-    const results: unknown[] = [];
+    // 全フィールドを 1 回の executeJavaScript でレンダラ側ループ処理する。
+    // 旧実装はフィールド毎に IPC 往復していた (N フィールド = N 往復)。
+    const items = (Array.isArray(mappings) ? mappings : [])
+      .filter((m) => m && m.selector && m.value != null)
+      .map((m) => ({ selector: String(m.selector), value: String(m.value), isSelect: m.type === 'select' }));
 
-    for (const { selector, value, type } of mappings) {
-      if (!selector || value == null) continue;
+    if (items.length === 0) {
+      session.status = 'filled';
+      return [];
+    }
 
-      const script = type === 'select'
-        ? `(function(){
-            const el=document.querySelector(${JSON.stringify(selector)});
-            if(!el)return{ok:false,reason:'not_found'};
-            el.value=${JSON.stringify(String(value))};
+    const script = `(function(){
+      const items=${JSON.stringify(items)};
+      const out=[];
+      for(const it of items){
+        try{
+          const el=document.querySelector(it.selector);
+          if(!el){out.push({selector:it.selector,ok:false,reason:'not_found'});continue;}
+          if(it.isSelect){
+            el.value=it.value;
             el.dispatchEvent(new Event('change',{bubbles:true}));
-            return{ok:true};
-          })()`
-        : `(function(){
-            const el=document.querySelector(${JSON.stringify(selector)});
-            if(!el)return{ok:false,reason:'not_found'};
-            const tag=el.tagName;
-            const proto=tag==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
+          }else{
+            const proto=el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
             const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-            if(setter)setter.call(el,${JSON.stringify(String(value))});
-            else el.value=${JSON.stringify(String(value))};
+            if(setter)setter.call(el,it.value);else el.value=it.value;
             el.dispatchEvent(new Event('focus',{bubbles:true}));
             el.dispatchEvent(new Event('input',{bubbles:true}));
             el.dispatchEvent(new Event('change',{bubbles:true}));
             el.dispatchEvent(new Event('blur',{bubbles:true}));
-            return{ok:true};
-          })()`;
-
-      let result;
-      try {
-        result = await session.view.webContents.executeJavaScript(script);
-      } catch (e) {
-        result = { ok: false, reason: e.message };
+          }
+          out.push({selector:it.selector,ok:true});
+        }catch(e){out.push({selector:it.selector,ok:false,reason:String((e&&e.message)||e)});}
       }
-      results.push({ selector, ...result });
+      return out;
+    })()`;
+
+    let results: unknown[];
+    try {
+      results = await session.view.webContents.executeJavaScript(script);
+    } catch (e) {
+      results = items.map((it) => ({ selector: it.selector, ok: false, reason: e.message }));
     }
 
     session.status = 'filled';
-    return results;
+    return Array.isArray(results) ? results : [];
   }
 
   // ── Screenshot ───────────────────────────────────────────────────────

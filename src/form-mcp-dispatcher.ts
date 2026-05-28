@@ -17,6 +17,7 @@ import type { IpcRequest, IpcServer, IpcHandler } from './ipc-server';
 
 interface FormSessionManagerLike {
   createSession(formUrl: string, companyNo: number | string): Promise<string>;
+  _waitForLoad(sessionId: string, timeout?: number): Promise<void>;
   getFormStructure(sessionId: string): Promise<unknown>;
   fillForm(sessionId: string, mappings: Array<{ selector: string; value: string; type?: string }>): Promise<unknown>;
   captureScreenshot(sessionId: string, savePath: string): Promise<string>;
@@ -80,7 +81,14 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     if (p.sessionId && ctx.formSessionManager._sessions.has(p.sessionId)) {
       // 既存セッションを navigate
       const s = ctx.formSessionManager._sessions.get(p.sessionId)!;
-      await s.view.webContents.loadURL(p.url);
+      s.status = 'loading';
+      // loadURL は redirect 等で ERR_ABORTED reject することがあるが、その場合でも
+      // ページは進行し得るので reject は握りつぶし dom-ready 待ちに委ねる。
+      s.view.webContents.loadURL(p.url).catch(() => {});
+      // loadURL は commit で resolve するため DOM 未構築のまま返る。
+      // createSession と同様に dom-ready を待ってから返し、直後の snapshot が
+      // 未ロードページに当たって空フィールド→再 snapshot する無駄を防ぐ。
+      await ctx.formSessionManager._waitForLoad(p.sessionId, 15000);
       sessionId = p.sessionId;
     } else {
       // 新規セッション。companyNo 未指定なら 0 (warning ログを出して呼び出し側に注意喚起)。
@@ -138,7 +146,7 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
       const result = await cdp.sendCommand<{ data: string }>(
         session.view.webContents,
         'Page.captureScreenshot',
-        { format: 'png', captureBeyondViewport: p.fullPage === true },
+        { format: 'png', captureBeyondViewport: p.fullPage === true, optimizeForSpeed: true },
       );
       if (result && result.data) {
         pngBytes = Buffer.from(result.data, 'base64');
