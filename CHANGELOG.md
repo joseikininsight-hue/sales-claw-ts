@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.0.91 - 2026-05-28 — WebView が画面右半分を占有する致命バグ修正
+
+### ユーザー報告 (2026-05-28 v2.0.90 実機)
+
+スクリーンショットで、操作中タブ active なのに WebView (DXC コンタクトページ) が
+Sales Claw window の右半分全体を占有し、ダッシュボード UI 右側を完全に隠している
+状態を報告。「二度とご覧のようにしてください」
+
+### 根本原因
+
+`form-session-manager.ts::showSession()` が `_positionView()` を呼んでおり、
+`_positionView()` は v0.81 の旧式実装で `x = winW * 0.45, width = winW - x`
+の固定座標で WebView を「window 右半分全面」に dock していた。HTML slot bbox
+を完全に無視。
+
+実機シーケンス:
+1. parallel-dispatcher が browser_navigate ハンドラ経由で createSession
+2. dispatcher が showSession(id) 呼ぶ → `_positionView` で **window 右半分に dock**
+3. HTML 側 syncViewBounds が 2 秒後に呼ばれて setViewBounds で slot bbox に
+   修正 — **ところが onWindowResize も `_positionView` 呼んでおり**、window
+   サイズが変わると即旧式に戻る → 永続的に右半分全面
+
+### 修正
+
+1. `showSession()` から `_positionView` 呼び出しを削除。代わりに WebView を
+   画面外 (-10000, -10000) に park 状態で attach する。
+2. `onWindowResize()` から `_positionView` 呼び出しを削除。HTML 側 resize
+   listener が setViewBounds で正しい slot bbox を渡してくる。
+3. `_positionView` メソッド自体は残す (将来 fallback 用) が、現状コードから
+   呼び出し箇所ゼロ。
+
+結果: WebView は HTML slot 領域 (左カラム `#liveFormViewSlot`) にだけ dock
+されるようになる。右側 UI は完全に表示可能。
+
+### 関連: v0.90 で入れた scroll listener との相互作用
+
+v0.90 で `syncViewBounds` を scroll で再呼びするようにしたので、_positionView
+を消しても dock 位置が崩れず常時 slot に追従する。むしろ _positionView 残存が
+scroll listener と競合していた可能性 (rAF throttle で setBounds される直後に
+旧 _positionView が上書きするレース)。
+
+---
+
 ## 2.0.90 - 2026-05-28 — 操作セッション UX 改善 4 点 (スクロール追従 / 下段パネル削除 / タブ整理 / 実行ステップ pipeline 化)
 
 ### ユーザー報告 (2026-05-28 v2.0.89 実機)

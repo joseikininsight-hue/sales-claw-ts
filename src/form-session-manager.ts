@@ -642,11 +642,27 @@ class FormSessionManager {
   // ── View display ─────────────────────────────────────────────────────
 
   showSession(sessionId) {
+    // v2.0.91: 旧 (~v0.90) は _positionView で winW*0.45 ベースの「右半分全面」に
+    //   dock していたが、これは HTML slot 領域を完全に飛び越えて画面の右半分を
+    //   占有する致命的バグ (実機: No.223 切替時に WebView が DXC コンタクトページで
+    //   window 右半分を覆い、ダッシュボード UI が見えない状態)。
+    //   新: HTML 側 `syncViewBounds` が POST /api/form-session/:id/set-bounds で
+    //   slot bbox を渡してくるのを信頼する。それまでは picture-in-picture 風に
+    //   画面外に park しておく (見えても 1x1 なので影響なし)。
     if (this._activeSessionId && this._activeSessionId !== sessionId) {
       this._removeFromWindow(this._activeSessionId);
     }
     this._activeSessionId = sessionId;
-    this._positionView(sessionId);
+    const session = this._sessions.get(sessionId);
+    const win = this._getMainWindow();
+    if (session && session.view && win && !win.isDestroyed()) {
+      try {
+        const cv = win.contentView;
+        if (!cv.children.includes(session.view)) cv.addChildView(session.view);
+        // 画面外 park で初期化。HTML 側 syncViewBounds が即 setBounds してくれる。
+        session.view.setBounds({ x: -10000, y: -10000, width: 1, height: 1 });
+      } catch (_) { /* swallow — HTML side will retry via setViewBounds */ }
+    }
   }
 
   /**
@@ -703,7 +719,9 @@ class FormSessionManager {
 
   // Called by electron-main on window resize
   onWindowResize() {
-    if (this._activeSessionId) this._positionView(this._activeSessionId);
+    // v2.0.91: resize 時に旧 _positionView (winW*0.45 右半分全面) を呼ぶと
+    //   HTML slot を無視して dock が崩れる。HTML 側 resize listener が
+    //   setViewBounds を呼ぶので main 側では何もしない。
   }
 
   _positionView(sessionId) {
