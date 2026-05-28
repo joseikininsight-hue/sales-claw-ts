@@ -8070,19 +8070,41 @@ ${renderStyles()}
     </div>
   </div>
 
-  <!-- v2.0.87: AI 操作セッション (full dashboard UI) — リアルタイム監視ビュー -->
-  <div class="tab-content" id="tab-live-form" style="background:#0f1419;color:#e0e6ed;min-height:calc(100vh - 92px)">
+  <!-- v2.0.87/.88: AI 操作セッション (theme 対応, CSS var 化) -->
+  <style>
+    /* live-form theme tokens (light/dark 両対応) */
+    .lfs-bg { background: var(--surface, #fff); color: var(--on-surface, #1a1a1a); }
+    .lfs-card { background: var(--surface-container, #f5f7fa); border: 1px solid var(--outline-variant, #d8dee5); border-radius: 10px; }
+    .lfs-card-bd { border-bottom: 1px solid var(--outline-variant, #d8dee5); }
+    .lfs-text { color: var(--on-surface, #1a1a1a); }
+    .lfs-muted { color: var(--on-surface-variant, #5b6675); }
+    .lfs-strong { color: var(--on-surface, #111); font-weight: 600; }
+    .lfs-input-bg { background: var(--surface-variant, #e8edf2); }
+    .lfs-active-bg { background: var(--primary, #1976d2); color: #fff; }
+    .lfs-row-bg { background: var(--surface-container-low, #fafbfc); }
+    .lfs-row-bg-active { background: var(--primary-container, #d6e6ff); color: var(--on-primary-container, #002a5c); }
+    [data-theme="dark"] .lfs-bg { background: #0f1419; color: #e0e6ed; }
+    [data-theme="dark"] .lfs-card { background: #1a2330; border-color: #2a3441; }
+    [data-theme="dark"] .lfs-card-bd { border-bottom-color: #2a3441; }
+    [data-theme="dark"] .lfs-text { color: #e0e6ed; }
+    [data-theme="dark"] .lfs-muted { color: #8895a5; }
+    [data-theme="dark"] .lfs-strong { color: #fff; }
+    [data-theme="dark"] .lfs-input-bg { background: #131b26; }
+    [data-theme="dark"] .lfs-row-bg { background: #131b26; }
+    [data-theme="dark"] .lfs-row-bg-active { background: #1e3a5f; color: #fff; }
+  </style>
+  <div class="tab-content lfs-bg" id="tab-live-form" style="min-height:calc(100vh - 92px)">
     <!-- ヘッダー -->
-    <div style="padding:18px 24px;border-bottom:1px solid #1f2933;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+    <div class="lfs-card-bd" style="padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
       <div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:1.3rem;font-weight:700;color:#fff">${_lang === 'ja' ? 'AI 操作セッション' : 'AI Operation Session'}</span>
+          <span class="lfs-strong" style="font-size:1.3rem">${_lang === 'ja' ? 'AI 操作セッション' : 'AI Operation Session'}</span>
           <span id="liveSessionStatus" style="background:#10b981;color:#fff;font-size:.65rem;font-weight:800;padding:3px 9px;border-radius:6px;letter-spacing:.05em">LIVE</span>
         </div>
-        <div style="font-size:.72rem;color:#8895a5;margin-top:3px" id="liveSessionId">${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}</div>
+        <div class="lfs-muted" style="font-size:.72rem;margin-top:3px" id="liveSessionId">${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">
-        <div style="display:flex;align-items:center;gap:6px;color:#8895a5;font-size:.75rem">
+        <div class="lfs-muted" style="display:flex;align-items:center;gap:6px;font-size:.75rem">
           <span class="material-symbols-outlined" style="font-size:14px">visibility</span>
           <span id="liveSessionMonitor">${_lang === 'ja' ? '監視中' : 'monitoring'}</span>
         </div>
@@ -8090,102 +8112,94 @@ ${renderStyles()}
       </div>
     </div>
 
-    <!-- メイン グリッド: 左 (WebView preview) + 右 (進捗/操作/ステップ) -->
+    <!-- メイン グリッド -->
     <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;padding:14px">
-      <!-- 左カラム: ブラウザプレビュー -->
-      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;overflow:hidden">
-        <div style="padding:12px 16px;border-bottom:1px solid #2a3441">
-          <div style="font-weight:600;color:#fff;font-size:.85rem">${_lang === 'ja' ? 'AI がブラウザを操作中...' : 'AI is operating the browser...'}</div>
-          <div style="font-size:.7rem;color:#8895a5;margin-top:2px">${_lang === 'ja' ? 'AI エージェントが Web サイトを操作しています。リアルタイムで進捗をご確認いただけます。' : 'Real-time progress of AI agent operations.'}</div>
+      <!-- 左カラム -->
+      <div class="lfs-card" style="overflow:hidden">
+        <div class="lfs-card-bd" style="padding:12px 16px">
+          <div class="lfs-strong" style="font-size:.85rem">${_lang === 'ja' ? 'AI がブラウザを操作中...' : 'AI is operating the browser...'}</div>
+          <div class="lfs-muted" style="font-size:.7rem;margin-top:2px">${_lang === 'ja' ? 'AI エージェントが Web サイトを操作しています。リアルタイムで進捗をご確認いただけます。' : 'Real-time progress of AI agent operations.'}</div>
         </div>
-        <div style="padding:10px 14px;border-bottom:1px solid #2a3441;display:flex;align-items:center;gap:8px">
+        <div class="lfs-card-bd" style="padding:10px 14px;display:flex;align-items:center;gap:8px">
           <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">smart_toy</span>
-          <span style="font-size:.75rem;color:#e0e6ed">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
+          <span class="lfs-text" style="font-size:.75rem">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
           <span style="background:#10b981;width:6px;height:6px;border-radius:50%;display:inline-block"></span>
-          <span style="font-size:.7rem;color:#8895a5">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
+          <span class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
         </div>
-        <!-- session タブバー -->
-        <div id="liveFormSessions" style="display:flex;gap:4px;overflow-x:auto;padding:6px 14px;border-bottom:1px solid #2a3441;min-height:34px;background:#131b26"></div>
-        <!-- WebContentsView dock 領域 -->
-        <div id="liveFormViewSlot" style="position:relative;min-height:560px;background:#0a0d12">
-          <div id="liveFormEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5b6675;font-size:.85rem;text-align:center;padding:30px">
-            ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling. Solve CAPTCHAs directly.'}
+        <div id="liveFormSessions" class="lfs-card-bd lfs-input-bg" style="display:flex;gap:4px;overflow-x:auto;padding:6px 14px;min-height:34px"></div>
+        <div id="liveFormViewSlot" class="lfs-input-bg" style="position:relative;min-height:560px">
+          <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
+            ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
           </div>
         </div>
       </div>
 
-      <!-- 右カラム: 進捗・操作・ステップ -->
+      <!-- 右カラム -->
       <div style="display:flex;flex-direction:column;gap:12px">
-        <!-- 進捗状況カード -->
-        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
-          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+        <div class="lfs-card" style="padding:14px 16px">
+          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
             <span class="material-symbols-outlined" style="font-size:14px;color:#3b82f6">trending_up</span>
-            <strong>${_lang === 'ja' ? '進捗状況' : 'Progress'}</strong>
+            <strong class="lfs-strong">${_lang === 'ja' ? '進捗状況' : 'Progress'}</strong>
           </div>
           <div style="display:flex;align-items:center;gap:14px">
             <svg width="64" height="64" viewBox="0 0 36 36" style="flex-shrink:0">
-              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#2a3441" stroke-width="2.5"/>
+              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--outline-variant,#d8dee5)" stroke-width="2.5"/>
               <path id="liveProgressArc" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-dasharray="0, 100"/>
-              <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="#fff" font-weight="700">0%</text>
+              <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="var(--on-surface,#111)" font-weight="700">0%</text>
             </svg>
             <div style="flex:1">
-              <div id="liveProgressStep" style="font-size:.72rem;color:#8895a5">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
-              <div id="liveProgressLabel" style="font-size:.85rem;color:#fff;font-weight:600;margin-top:2px">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
-              <div id="liveProgressEta" style="font-size:.7rem;color:#8895a5;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
+              <div id="liveProgressStep" class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
+              <div id="liveProgressLabel" class="lfs-strong" style="font-size:.85rem;margin-top:2px">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
+              <div id="liveProgressEta" class="lfs-muted" style="font-size:.7rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
             </div>
           </div>
         </div>
 
-        <!-- 現在の操作カード -->
-        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
-          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:8px">
+        <div class="lfs-card" style="padding:14px 16px">
+          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:8px">
             <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">play_circle</span>
-            <strong>${_lang === 'ja' ? '現在の操作' : 'Current Action'}</strong>
+            <strong class="lfs-strong">${_lang === 'ja' ? '現在の操作' : 'Current Action'}</strong>
           </div>
-          <div id="liveCurrentAction" style="font-size:.78rem;color:#e0e6ed;line-height:1.5">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
-          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #2a3441;font-size:.7rem;color:#8895a5;display:grid;gap:3px">
+          <div id="liveCurrentAction" class="lfs-text" style="font-size:.78rem;line-height:1.5">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
+          <div class="lfs-card-bd lfs-muted" style="margin-top:8px;padding-top:8px;font-size:.7rem;display:grid;gap:3px">
             <div>URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
-            <div>${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#a78bfa;font-family:monospace">-</span></div>
+            <div>${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#9333ea;font-family:monospace">-</span></div>
             <div>${_lang === 'ja' ? 'ステータス' : 'Status'}: <span id="liveCurrentStatus" style="color:#10b981">${_lang === 'ja' ? '待機' : 'idle'}</span></div>
           </div>
         </div>
 
-        <!-- 実行ステップリスト -->
-        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px;flex:1;overflow:hidden;display:flex;flex-direction:column">
-          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+        <div class="lfs-card" style="padding:14px 16px;flex:1;overflow:hidden;display:flex;flex-direction:column">
+          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
             <span class="material-symbols-outlined" style="font-size:14px;color:#f59e0b">checklist</span>
-            <strong>${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</strong>
+            <strong class="lfs-strong">${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</strong>
           </div>
           <div id="liveStepsList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:380px">
-            <div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
+            <div class="lfs-muted" style="font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 下部 2列: 思考プロセス + スクリーンショット履歴 -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 14px 14px">
-      <!-- AI 思考プロセス -->
-      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
-        <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+      <div class="lfs-card" style="padding:14px 16px">
+        <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
           <span class="material-symbols-outlined" style="font-size:14px;color:#06b6d4">psychology</span>
-          <strong>${_lang === 'ja' ? 'AI 思考プロセス' : 'AI Reasoning'}</strong>
+          <strong class="lfs-strong">${_lang === 'ja' ? 'AI 思考プロセス' : 'AI Reasoning'}</strong>
         </div>
         <div id="liveThoughts" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">
-          <div style="color:#5b6675;font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>
+          <div class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>
         </div>
       </div>
-      <!-- スクリーンショット履歴 -->
-      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
+      <div class="lfs-card" style="padding:14px 16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed">
+          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem">
             <span class="material-symbols-outlined" style="font-size:14px;color:#ec4899">photo_library</span>
-            <strong>${_lang === 'ja' ? 'スクリーンショット履歴' : 'Screenshots'}</strong>
+            <strong class="lfs-strong">${_lang === 'ja' ? 'スクリーンショット履歴' : 'Screenshots'}</strong>
           </div>
           <button id="liveScreenshotsShowAll" style="background:none;border:none;color:#3b82f6;font-size:.7rem;cursor:pointer">${_lang === 'ja' ? 'すべて表示' : 'View all'}</button>
         </div>
         <div id="liveScreenshots" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-          <div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>
+          <div class="lfs-muted" style="font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>
         </div>
       </div>
     </div>
@@ -8266,8 +8280,9 @@ ${renderStyles()}
 
             bar.innerHTML = list.map(s => {
               const isActive = s.id === activeSid;
-              const bg = isActive ? 'background:#3b82f6;color:#fff' : 'background:#243040;color:#e0e6ed;border:1px solid #2a3441';
-              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + bg + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap" class="lf-session-btn">' +
+              const cls = isActive ? 'lfs-active-bg' : 'lfs-row-bg lfs-text';
+              const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
+              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5)">' +
                 'No.' + (s.companyNo||'?') + ' · ' + (s.status||'') + '</button>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
@@ -8384,14 +8399,16 @@ ${renderStyles()}
             const isTerminal = ['submitted','skipped','error','awaiting_approval'].includes(e.action);
             const dotColor = isLatest && !isTerminal ? '#3b82f6' : (e.action === 'error' ? '#ef4444' : '#10b981');
             const statusText = isLatest && !isTerminal ? '${_lang === 'ja' ? '実行中' : 'running'}' : '${_lang === 'ja' ? '完了' : 'done'}';
-            const statusBg = isLatest && !isTerminal ? '#3b82f6' : '#243040';
+            const statusBg = isLatest && !isTerminal ? '#3b82f6' : 'var(--surface-variant,#e8edf2)';
+            const statusFg = isLatest && !isTerminal ? '#fff' : 'var(--on-surface-variant,#5b6675)';
+            const rowClass = isLatest && !isTerminal ? 'lfs-row-bg-active' : 'lfs-row-bg';
             const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
             const label = ACTION_LABEL[e.action] || e.action || '?';
-            return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:' + (isLatest && !isTerminal ? '#1e3a5f' : '#131b26') + ';border-radius:6px;font-size:.72rem">' +
+            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:.72rem">' +
               '<span style="width:18px;height:18px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.62rem">' + (i+1) + '</span>' +
-              '<span style="flex:1;color:#e0e6ed">' + label + '</span>' +
-              '<span style="color:#5b6675;font-family:monospace;font-size:.65rem">' + ts + '</span>' +
-              '<span style="background:' + statusBg + ';color:#fff;font-size:.6rem;padding:2px 7px;border-radius:4px">' + statusText + '</span>' +
+              '<span class="lfs-text" style="flex:1">' + label + '</span>' +
+              '<span class="lfs-muted" style="font-family:monospace;font-size:.65rem">' + ts + '</span>' +
+              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.6rem;padding:2px 7px;border-radius:4px">' + statusText + '</span>' +
               '</div>';
           }).reverse().join('');
         }
@@ -8407,9 +8424,9 @@ ${renderStyles()}
           el.innerHTML = events.slice(-10).reverse().map((e) => {
             const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
             const text = (e.step || e.action || '').toString().slice(0, 200);
-            return '<div style="display:flex;gap:8px;font-size:.72rem;align-items:start"><span style="color:#5b6675;font-family:monospace;flex-shrink:0">' + ts + '</span>' +
+            return '<div style="display:flex;gap:8px;font-size:.72rem;align-items:start"><span class="lfs-muted" style="font-family:monospace;flex-shrink:0">' + ts + '</span>' +
               '<span style="color:#10b981;flex-shrink:0">●</span>' +
-              '<span style="color:#e0e6ed;flex:1">' + text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
+              '<span class="lfs-text" style="flex:1">' + text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
               '</div>';
           }).join('');
         }
