@@ -90,6 +90,15 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
         console.warn('[form-mcp-dispatcher] browser_navigate called without companyNo; screenshots will be ss-0-*.png');
       }
       sessionId = await ctx.formSessionManager.createSession(p.url, companyNo);
+      // v2.0.82: 作成完了後に dock を呼ぶ (failure は warn のみ、navigate result は OK 返す)
+      try {
+        if (typeof (ctx.formSessionManager as unknown as { showSession?: (id: string) => void }).showSession === 'function') {
+          (ctx.formSessionManager as unknown as { showSession: (id: string) => void }).showSession(sessionId);
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[form-mcp-dispatcher] showSession after createSession failed:', (e as Error).message);
+      }
     }
     const session = ctx.formSessionManager._sessions.get(sessionId)!;
     return {
@@ -117,8 +126,39 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     const screenshotDir = ctx.getScreenshotDir();
     const savePath = path.join(screenshotDir, `ss-${session.companyNo}-${p.suffix}.png`);
     if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+
+    // v2.0.84: webContents.capturePage() は WebContentsView が visible でないと
+    //   0-byte PNG を返す。internal mode で view が dock されていない (headless)
+    //   と全 screenshot が 0-byte になる (実機 No.455 で確認)。
+    //   CDP Page.captureScreenshot は visibility 不問で確実に PNG を取得できる。
+    //   失敗時のみ legacy capturePage() に fallback。
+    let pngBytes: Buffer | null = null;
+    try {
+      await cdp.attach(session.view.webContents);
+      const result = await cdp.sendCommand<{ data: string }>(
+        session.view.webContents,
+        'Page.captureScreenshot',
+        { format: 'png', captureBeyondViewport: p.fullPage === true },
+      );
+      if (result && result.data) {
+        pngBytes = Buffer.from(result.data, 'base64');
+      }
+    } catch (cdpErr) {
+      // eslint-disable-next-line no-console
+      console.warn('[form-mcp-dispatcher] CDP screenshot failed, falling back to capturePage:', (cdpErr as Error).message);
+    }
+
+    if (pngBytes && pngBytes.length > 100) {
+      fs.writeFileSync(savePath, pngBytes);
+      return { path: savePath, source: 'cdp', size: pngBytes.length };
+    }
+
+    // Fallback: 既存 captureScreenshot (visibility 依存)
     const finalPath = await ctx.formSessionManager.captureScreenshot(p.sessionId, savePath);
-    return { path: finalPath };
+    const fallbackSize = (() => {
+      try { return fs.statSync(finalPath).size; } catch { return 0; }
+    })();
+    return { path: finalPath, source: 'capturePage', size: fallbackSize };
   });
 
   register('fill_form', async (req: IpcRequest) => {

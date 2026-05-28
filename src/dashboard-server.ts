@@ -5287,6 +5287,15 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
       error: `${provider.cliLabel} が未ログインです。先に ${provider.displayName} を起動してログインを完了してください。`,
     };
   }
+  // v2.0.82: internal mode では Playwright Chromium 不要 (Electron 内蔵 WebContentsView を使う)
+  // installPlaywrightChromium を呼ぶ必要なし。skip して return ok。
+  if (getFormFillMode() === 'internal') {
+    appendDiagnosticEvent('ai_form_fill_skip_playwright_prep_internal_mode', {
+      provider: selectedProviderId,
+    });
+    // playwrightPackage check 全体を bypass して下に進む
+    // (Electron WebContentsView は常に available なので bundle / install check 不要)
+  } else {
   let playwrightPackage: any = await probePlaywrightPackageStatus();
   if (!playwrightPackage.available || !playwrightPackage.browserInstalled) {
     // v2.0.64: 旧仕様は「未準備です」エラーを返してユーザーに再度ボタン押下を強いていた。
@@ -5335,6 +5344,7 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
       };
     }
   }
+  } // v2.0.82: end of `if (getFormFillMode() !== 'internal')` (playwright Chromium prep block)
   if (selectedProviderId === 'codex') {
     ensureCodexWorkspaceTrusted(PROJECT_ROOT);
   }
@@ -7799,6 +7809,12 @@ ${renderStyles()}
     <span class="material-symbols-outlined tab-icon">playlist_add</span>
     ${_t['tab.listBuilder'] || 'List Builder'}
   </button>
+  <!-- v2.0.85: 操作中タブ — AI が WebContentsView 内で実フォーム操作する様子をリアルタイム表示 -->
+  <button class="tab-btn" data-tab="live-form" title="${_lang === 'ja' ? 'AI がフォームを操作する様子を表示' : 'Watch AI fill the form live'}">
+    <span class="material-symbols-outlined tab-icon">smart_toy</span>
+    ${_lang === 'ja' ? '操作中' : 'AI Live'}
+    <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
+  </button>
   <button class="tab-btn" data-tab="awaiting">
     <span class="material-symbols-outlined tab-icon">pending_actions</span>
     ${_t['tab.awaiting']}
@@ -8052,6 +8068,102 @@ ${renderStyles()}
         <tbody id="companyBody"></tbody>
       </table>
     </div>
+  </div>
+
+  <!-- v2.0.85: Live Form tab — AI が WebContentsView 内で実フォーム操作する様子をリアルタイム表示 -->
+  <div class="tab-content" id="tab-live-form">
+    <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid var(--primary);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary)">smart_toy</span>
+        <strong style="font-size:.85rem">${_lang === 'ja' ? 'AI 操作中ビュー (Electron 内蔵 WebView)' : 'AI Live Operation View (Electron WebView)'}</strong>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span id="liveFormStatus" style="font-size:.7rem;color:var(--on-surface-variant)">${_lang === 'ja' ? '待機中' : 'Idle'}</span>
+        <button class="btn btn-sm btn-outline-primary" id="liveFormRefresh">${_lang === 'ja' ? '更新' : 'Refresh'}</button>
+      </div>
+    </div>
+    <div id="liveFormContainer" style="position:relative;height:calc(100vh - 200px);background:#f5f5f5;padding:8px;display:flex;flex-direction:column;gap:6px">
+      <!-- session タブバー -->
+      <div id="liveFormSessions" style="display:flex;gap:4px;overflow-x:auto;padding:0 4px;min-height:32px"></div>
+      <!-- WebContentsView が物理的に重なる領域。HTML 側は plate のみ -->
+      <div id="liveFormViewSlot" style="flex:1;background:#fff;border:1px solid var(--outline-variant);border-radius:4px;position:relative">
+        <div id="liveFormEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--outline);font-size:.85rem;text-align:center;padding:24px">
+          ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作はここで直接行えます。' : 'When AI is filling a form, the WebView appears here. Solve CAPTCHAs directly inside this view.'}
+        </div>
+      </div>
+    </div>
+    <script>
+      (function(){
+        // v2.0.85: 操作中タブ active 時に WebView を dock、それ以外で hide
+        let _liveFormPollTimer = null;
+        async function refreshLiveFormSessions() {
+          try {
+            const r = await fetch('/api/form-session/list');
+            if (!r.ok) return;
+            const j = await r.json();
+            const list = j.sessions || [];
+            const bar = document.getElementById('liveFormSessions');
+            const empty = document.getElementById('liveFormEmpty');
+            if (!bar) return;
+            const badge = document.getElementById('liveFormBadge');
+            if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+            if (list.length === 0) {
+              bar.innerHTML = '<span style="color:var(--outline);font-size:.7rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
+              if (empty) empty.style.display = 'flex';
+              const statusEl = document.getElementById('liveFormStatus');
+              if (statusEl) statusEl.textContent = '${_lang === 'ja' ? '待機中' : 'Idle'}';
+              return;
+            }
+            if (empty) empty.style.display = 'none';
+            const statusEl = document.getElementById('liveFormStatus');
+            if (statusEl) statusEl.textContent = list.length + (${_lang === 'ja' ? '" 社が稼働中"' : '" sessions running"'});
+            bar.innerHTML = list.map(s => {
+              const active = s.active ? 'background:var(--primary);color:#fff' : 'background:#fff;color:var(--on-surface);border:1px solid var(--outline-variant)';
+              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + active + ';font-size:.7rem;padding:4px 10px;border-radius:6px;cursor:pointer;white-space:nowrap" class="lf-session-btn">No.' + (s.companyNo||'?') + ' ' + (s.status||'') + '</button>';
+            }).join('');
+            bar.querySelectorAll('.lf-session-btn').forEach(b => {
+              b.addEventListener('click', async () => {
+                const sid = b.getAttribute('data-sid');
+                try {
+                  await fetch('/api/form-session/' + sid + '/show', { method: 'POST' });
+                  setTimeout(refreshLiveFormSessions, 300);
+                } catch(e) {}
+              });
+            });
+          } catch (e) {}
+        }
+        function startLiveFormPolling() {
+          if (_liveFormPollTimer) return;
+          refreshLiveFormSessions();
+          _liveFormPollTimer = setInterval(refreshLiveFormSessions, 2000);
+        }
+        function stopLiveFormPolling() {
+          if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
+        }
+        // タブ切替を監視。live-form 以外なら WebView を hide (Electron 側にも通知)
+        async function notifyTabActive(tab) {
+          try {
+            await fetch('/api/form-session/tab-changed', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ activeTab: tab }),
+            });
+          } catch (e) {}
+        }
+        document.querySelectorAll('[data-tab]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const tab = btn.getAttribute('data-tab');
+            notifyTabActive(tab);
+            if (tab === 'live-form') startLiveFormPolling();
+            else stopLiveFormPolling();
+          });
+        });
+        const refreshBtn = document.getElementById('liveFormRefresh');
+        if (refreshBtn) refreshBtn.addEventListener('click', refreshLiveFormSessions);
+        // バックグラウンド polling: badge を常時更新 (タブ切替不要)
+        setInterval(refreshLiveFormSessions, 5000);
+      })();
+    </script>
   </div>
 
   <!-- Awaiting tab -->

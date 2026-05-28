@@ -242,6 +242,30 @@ module.exports = function createFormSessionRoutes(ctx) {
       return true;
     }
 
+    // v2.0.85: POST /api/form-session/tab-changed
+    //   HTML 側のタブ切替で呼ばれる。activeTab !== 'live-form' なら全 session hide。
+    if (pathname === '/api/form-session/tab-changed' && method === 'POST') {
+      try {
+        const body = await parseJsonBody(req).catch(() => ({}));
+        const activeTab = body && typeof body.activeTab === 'string' ? body.activeTab : '';
+        if (activeTab !== 'live-form') {
+          // 全 session hide
+          _formSessionManager.hideCurrentSession();
+        } else {
+          // live-form タブ active 化: 最新 active session を再 show
+          const sessions = (_formSessionManager._sessions && Array.from(_formSessionManager._sessions.values())) || [];
+          const candidate = sessions[sessions.length - 1];
+          if (candidate && candidate.id) {
+            try { _formSessionManager.showSession(candidate.id); } catch (_) {}
+          }
+        }
+        jsonResponse(res, 200, { ok: true, activeTab });
+      } catch (e) {
+        jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+      return true;
+    }
+
     // 動的 ID 付きパス ──────────────────────────────────
     // /api/form-session/:id  または /api/form-session/:id/:action
     const sessionMatch = pathname.match(/^\/api\/form-session\/([^/]+)(?:\/(.+))?$/);

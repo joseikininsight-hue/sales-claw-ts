@@ -362,25 +362,13 @@ class FormSessionManager {
       blockedReason: null,
     });
 
-    // v2.0.81: 既存の showSession() で mainWindow 右ペインに dock。
-    //   ユーザー報告 2026-05-28「操作してるブラウザどこ？ヘッドレスじゃ意味ない」
-    //   旧: createSession は view を作るだけ。dashboard-server 内で showSession を
-    //     呼ぶ経路が disable されていた (CLAUDE.md で "MCP Playwright mode only"
-    //     と封印されていた時期の遺産)。
-    //   新: createSession 完了時に自動 showSession → 右ペインに即表示。
-    //     AI が処理中も、awaiting_approval 後も、ユーザーが Sales Claw 内で
-    //     browser 操作を直接見える。複数 session は最新のものが active、
-    //     確認待ちタブからクリックで showSession(sessionId) で切替可能。
-    try {
-      const mainWin = this._getMainWindow && this._getMainWindow();
-      if (mainWin && !mainWin.isDestroyed()) {
-        this.showSession(id);
-      }
-    } catch (e) {
-      // best-effort: dock 失敗しても session 自体は使える
-      // eslint-disable-next-line no-console
-      console.warn('[form-session-manager] failed to dock WebContentsView:', (e as Error).message);
-    }
+    // v2.0.82: dock 呼びは dispatcher 側 (form-mcp-dispatcher.ts::navigate handler) で
+    //   try-catch 化して呼ぶ。createSession 内で同期 showSession を呼ぶと、
+    //   showSession 内 _positionView が Electron API 例外で throw した場合に
+    //   createSession 全体が失敗扱いになる → "Error processing argument at index 0,
+    //   conversion failure from undefined" で browser_navigate が連発 fail する
+    //   (v0.81 実機回帰)。createSession は session 作成のみに専念させ、dock は
+    //   呼び出し側 (dispatcher) の責任に分離。
 
     view.webContents.loadURL(safeFormUrl).catch((error) => {
       const session = this._sessions.get(id);
