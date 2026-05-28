@@ -288,24 +288,11 @@ export default [
   // ────────────────────────────────────────────────
   {
     files: [
-      'src/form-finder.cjs',
-      'src/form-validator.cjs',
-      'src/form-helpers.cjs',
-      'src/form-url-resolver.cjs',
-      'src/form-session-manager.cjs',
-      'src/email-fetcher.cjs',
-      'src/company-analyzer.cjs',
-      'src/approval-artifacts.cjs',
-      'src/parallel-analysis.cjs',
+      // 旧 .cjs はすべて .ts に移行済 (2026-05)。残るのは MCP server entry のみ。
+      'src/mcp-servers/**/*.cjs',
       'src/list-builder/**/*.cjs',
-      'scripts/capture-demo-screens.cjs',
-      'scripts/preview-dashboard.cjs',
-      'src/onboarding-wizard.cjs',
-      'src/cli-logger.cjs',
-      'src/cli-issue-classifier.cjs',
-      'src/message-builder.cjs',
-      'src/action-logger.cjs',
       'src/ai-runtime/**/*.cjs',
+      'scripts/**/*.cjs',
     ],
     languageOptions: {
       globals: {
@@ -346,7 +333,8 @@ export default [
   // electron-main.js: Electron globals
   // ────────────────────────────────────────────────
   {
-    files: ['electron-main.js', 'src/dashboard-server.cjs', 'src/ui/**/*.cjs', 'src/local-toolchain.cjs', 'src/ai-providers.cjs', 'src/settings-manager.cjs', 'src/contact-history.cjs', 'src/live-monitor.cjs', 'src/sendability-gate.cjs', 'src/llm-site-analyzer.cjs', 'src/llm-message-generator.cjs', 'src/message-quality-gate.cjs', 'src/dashboard-runtime.cjs', 'src/data-paths.cjs', 'src/file-lock.cjs', 'src/log-writer.cjs', 'src/list-builder-page.cjs', 'src/i18n.cjs', 'src/error-recovery.cjs', 'src/compliance.cjs', 'src/cost-estimator.cjs', 'src/onboarding-validator.cjs', 'src/target-list.cjs', 'src/target-list-validator.cjs', 'src/demo-mode.cjs', 'src/auto-update-installer.cjs', 'src/mcp-config-helpers.cjs', 'src/redact.cjs', 'src/routes/**/*.cjs', 'scripts/*.cjs'],
+    // electron-main.js は build 成果物 ignore 済。残った .cjs は MCP server entry / scripts のみ。
+    files: ['scripts/*.cjs'],
     languageOptions: {
       globals: {
         document: 'readonly',
