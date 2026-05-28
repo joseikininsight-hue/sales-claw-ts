@@ -702,7 +702,9 @@ class FormSessionManager {
         height = Math.max(1, Math.floor(reqH || 1));
         return { ok: true, detached: true, bounds: { x, y, width, height } };
       } else {
-        this._removeAllFromWindow(sessionId);
+        // v2.0.93: 旧実装は _removeAllFromWindow で他 session を全て外していたため
+        //   Phase B 並列 (3 セッション同時表示) で「結局 1 社ずつ」体験になっていた。
+        //   今は keep-all で各セッションが個別の bbox に dock 可能。
         const cv = win.contentView;
         if (!cv.children.includes(session.view)) cv.addChildView(session.view);
         const [winW, winH] = win.getContentSize();

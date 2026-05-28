@@ -247,7 +247,7 @@ const THEME_CSS = `
 /* =========================================================
    ANALYTICS — INSIGHT CARD with WAVE decoration
    ========================================================= */
-.insight-card{margin-top:14px;background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg)!important;padding:18px 22px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;position:relative;overflow:hidden;min-height:94px}
+.insight-card{margin-top:14px;background:transparent;border:1px solid color-mix(in srgb,var(--border-subtle) 70%,transparent);border-radius:var(--radius-lg)!important;padding:18px 22px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;position:relative;overflow:hidden;min-height:94px}
 .insight-icon{width:42px;height:42px;border-radius:var(--radius-md);background:var(--info-dim);color:var(--info);display:flex;align-items:center;justify-content:center;flex-shrink:0;z-index:2}
 .insight-icon .material-symbols-outlined{font-size:22px;font-variation-settings:'FILL' 1,'wght' 500}
 .insight-body{display:flex;flex-direction:column;gap:4px;min-width:0;z-index:2;position:relative}

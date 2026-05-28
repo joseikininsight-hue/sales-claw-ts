@@ -10,11 +10,12 @@
 
 const STYLE = [
   /* ---------- Layout shell ---------- */
-  '.settings-layout.set2-active{background:var(--bg-base)!important;gap:14px;padding:14px;align-items:flex-start}',
+  '.settings-layout.set2-active{background:transparent!important;gap:14px;padding:clamp(8px,1.2vw,18px);align-items:flex-start;border:none!important;width:100%}',
+  '@media (max-width: 880px){.settings-layout.set2-active{flex-direction:column}.settings-sidebar.set2-styled{position:static!important;width:100%!important;flex-direction:row!important;overflow-x:auto;gap:6px}}',
   '.settings-main.set2-active{background:transparent!important;padding:0!important;max-height:none!important;display:flex;flex-direction:column;gap:14px;flex:1 1 auto;min-width:0}',
 
   /* ---------- Sidebar ---------- */
-  '.settings-sidebar.set2-styled{width:248px!important;padding:14px 10px!important;background:var(--bg-card)!important;border:1px solid var(--border-subtle)!important;border-radius:var(--radius-lg)!important;box-shadow:var(--shadow-ambient);align-self:flex-start;display:flex;flex-direction:column;gap:0;flex-shrink:0;position:sticky;top:64px}',
+  '.settings-sidebar.set2-styled{width:248px!important;padding:14px 10px!important;background:color-mix(in srgb,var(--bg-card) 35%,transparent)!important;border:1px solid color-mix(in srgb,var(--border-subtle) 70%,transparent)!important;border-radius:var(--radius-lg)!important;box-shadow:none;align-self:flex-start;display:flex;flex-direction:column;gap:0;flex-shrink:0;position:sticky;top:64px;backdrop-filter:blur(4px)}',
   '.set2-side-title{font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);padding:6px 12px;margin-bottom:4px}',
   '.settings-sidebar-btn{display:flex!important;align-items:center!important;gap:12px;padding:14px 14px!important;border:1px solid transparent;border-radius:var(--radius-md)!important;background:transparent;color:var(--text-1);text-align:left;cursor:pointer;transition:all .15s var(--ease-out-expo);width:100%;margin-bottom:8px;font-weight:600!important;text-transform:none!important;letter-spacing:0!important}',
   '.settings-sidebar-btn:hover{background:var(--bg-hover);border-color:transparent}',

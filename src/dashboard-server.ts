@@ -7835,6 +7835,11 @@ ${renderStyles()}
     ${_lang === 'ja' ? '操作中' : 'AI Live'}
     <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
   </button>
+  <!-- v2.0.93: セッションを終了 — 操作中タブで active session が居る時だけ表示 -->
+  <button id="liveSessionEndInline" type="button" class="tab-end-btn" style="display:none" title="${_lang === 'ja' ? '稼働中の AI 操作セッションを終了' : 'End active AI operation session'}">
+    <span class="material-symbols-outlined" style="font-size:13px">close</span>
+    ${_lang === 'ja' ? 'セッションを終了' : 'End Session'}
+  </button>
   <button class="tab-btn" data-tab="awaiting">
     <span class="material-symbols-outlined tab-icon">pending_actions</span>
     ${_t['tab.awaiting']}
@@ -8090,112 +8095,155 @@ ${renderStyles()}
     </div>
   </div>
 
-  <!-- v2.0.87/.88: AI 操作セッション (theme 対応, CSS var 化) -->
+  <!-- v2.0.87/.88: AI 操作セッション (theme 対応, CSS var 化)
+       v2.0.93: 白カード台座撤去, body 背景に統合し透過。完全レスポンシブ。 -->
   <style>
-    /* live-form theme tokens (light/dark 両対応) */
-    .lfs-bg { background: var(--surface, #fff); color: var(--on-surface, #1a1a1a); }
-    .lfs-card { background: var(--surface-container, #f5f7fa); border: 1px solid var(--outline-variant, #d8dee5); border-radius: 10px; }
-    .lfs-card-bd { border-bottom: 1px solid var(--outline-variant, #d8dee5); }
+    /* live-form theme tokens (light/dark 両対応) — bg は親 body の透過に従う */
+    .lfs-bg { background: transparent; color: var(--on-surface, #1a1a1a); }
+    .lfs-card { background: transparent; border: none; border-radius: 0; padding: 0; }
+    .lfs-card-bd { border-bottom: 1px dashed color-mix(in srgb, var(--outline-variant,#d8dee5) 35%, transparent); }
     .lfs-text { color: var(--on-surface, #1a1a1a); }
     .lfs-muted { color: var(--on-surface-variant, #5b6675); }
     .lfs-strong { color: var(--on-surface, #111); font-weight: 600; }
-    .lfs-input-bg { background: var(--surface-variant, #e8edf2); }
+    .lfs-input-bg { background: transparent; }
     .lfs-active-bg { background: var(--primary, #1976d2); color: #fff; }
-    .lfs-row-bg { background: var(--surface-container-low, #fafbfc); }
+    .lfs-row-bg { background: color-mix(in srgb, var(--surface-container-low,#fafbfc) 40%, transparent); }
     .lfs-row-bg-active { background: var(--primary-container, #d6e6ff); color: var(--on-primary-container, #002a5c); }
-    [data-theme="dark"] .lfs-bg { background: #0f1419; color: #e0e6ed; }
-    [data-theme="dark"] .lfs-card { background: #1a2330; border-color: #2a3441; }
-    [data-theme="dark"] .lfs-card-bd { border-bottom-color: #2a3441; }
-    [data-theme="dark"] .lfs-text { color: #e0e6ed; }
-    [data-theme="dark"] .lfs-muted { color: #8895a5; }
-    [data-theme="dark"] .lfs-strong { color: #fff; }
-    [data-theme="dark"] .lfs-input-bg { background: #131b26; }
-    [data-theme="dark"] .lfs-row-bg { background: #131b26; }
+    [data-theme="dark"] .lfs-card { border-color: color-mix(in srgb, #2a3441 70%, transparent); }
+    [data-theme="dark"] .lfs-input-bg { background: color-mix(in srgb, #131b26 40%, transparent); }
+    [data-theme="dark"] .lfs-row-bg { background: color-mix(in srgb, #131b26 50%, transparent); }
     [data-theme="dark"] .lfs-row-bg-active { background: #1e3a5f; color: #fff; }
+
+    /* v2.0.93: 操作中タブ — 上部サマリ + 下部全幅 WebView */
+    .lfs-main-grid {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(8px, 1vw, 14px);
+      padding: clamp(6px, 1vw, 14px);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .lfs-summary-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: clamp(8px, 1.2vw, 16px);
+      padding: 4px 2px 8px;
+    }
+    @media (max-width: 880px) {
+      .lfs-summary-row { grid-template-columns: 1fr; }
+    }
+    .lfs-summary-item {
+      display: flex; flex-direction: column; gap: 6px; min-width: 0;
+    }
+    .lfs-summary-item .lfs-summary-head {
+      display: flex; align-items: center; gap: 6px;
+      font-size: .74rem; font-weight: 600;
+      color: var(--on-surface, #111);
+    }
+    .lfs-view-slot {
+      position: relative;
+      width: 100%;
+      min-height: clamp(420px, 68vh, 880px);
+      height: clamp(420px, 68vh, 880px);
+      overflow: hidden;
+      contain: layout paint;
+      isolation: isolate;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    /* v2.0.93: タブ横の End Session ボタン */
+    .tab-end-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: linear-gradient(180deg, #ef4444, #dc2626);
+      color: #fff; border: none; font-size: .68rem; font-weight: 700;
+      padding: 5px 10px; border-radius: 999px; cursor: pointer;
+      margin-left: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.15);
+      transition: filter .15s ease;
+    }
+    .tab-end-btn:hover { filter: brightness(1.08); }
+
+    /* v2.0.93: フォームセッションタブの × 削除ボタン */
+    .lf-session-close {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; margin-left: 4px;
+      background: rgba(255,255,255,.18); color: inherit;
+      border: none; border-radius: 50%; cursor: pointer;
+      font-size: 11px; line-height: 1; padding: 0;
+      transition: background .15s ease;
+    }
+    .lf-session-close:hover { background: rgba(239,68,68,.85); color: #fff; }
   </style>
   <div class="tab-content lfs-bg" id="tab-live-form" style="min-height:calc(100vh - 92px)">
-    <!-- ヘッダー -->
-    <div class="lfs-card-bd" style="padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span class="lfs-strong" style="font-size:1.3rem">${_lang === 'ja' ? 'AI 操作セッション' : 'AI Operation Session'}</span>
-          <span id="liveSessionStatus" style="background:#10b981;color:#fff;font-size:.65rem;font-weight:800;padding:3px 9px;border-radius:6px;letter-spacing:.05em">LIVE</span>
-        </div>
-        <div class="lfs-muted" style="font-size:.72rem;margin-top:3px" id="liveSessionId">${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}</div>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <div class="lfs-muted" style="display:flex;align-items:center;gap:6px;font-size:.75rem">
-          <span class="material-symbols-outlined" style="font-size:14px">visibility</span>
-          <span id="liveSessionMonitor">${_lang === 'ja' ? '監視中' : 'monitoring'}</span>
-        </div>
-        <button id="liveSessionEnd" style="background:#ef4444;color:#fff;border:none;font-size:.72rem;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer">${_lang === 'ja' ? 'セッションを終了' : 'End Session'}</button>
-      </div>
-    </div>
+    <!-- v2.0.93: ヘッダーカード撤去。状態は隠し span で保持 (script からの参照互換) -->
+    <span id="liveSessionStatus" data-status="IDLE" style="display:none"></span>
+    <span id="liveSessionId" style="display:none"></span>
+    <span id="liveSessionMonitor" style="display:none"></span>
+    <button id="liveSessionEnd" type="button" style="display:none" aria-hidden="true"></button>
 
-    <!-- メイン グリッド -->
-    <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;padding:14px">
-      <!-- 左カラム -->
-      <div class="lfs-card" style="overflow:hidden;min-width:0">
-        <div class="lfs-card-bd" style="padding:12px 16px">
-          <div class="lfs-strong" style="font-size:.85rem">${_lang === 'ja' ? 'AI がブラウザを操作中...' : 'AI is operating the browser...'}</div>
-          <div class="lfs-muted" style="font-size:.7rem;margin-top:2px">${_lang === 'ja' ? 'AI エージェントが Web サイトを操作しています。リアルタイムで進捗をご確認いただけます。' : 'Real-time progress of AI agent operations.'}</div>
-        </div>
-        <div class="lfs-card-bd" style="padding:10px 14px;display:flex;align-items:center;gap:8px">
-          <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">smart_toy</span>
-          <span class="lfs-text" style="font-size:.75rem">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
-          <span style="background:#10b981;width:6px;height:6px;border-radius:50%;display:inline-block"></span>
-          <span class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
-        </div>
-        <div id="liveFormSessions" class="lfs-card-bd lfs-input-bg" style="display:flex;gap:4px;overflow-x:auto;padding:6px 14px;min-height:34px"></div>
-        <div id="liveFormViewSlot" class="lfs-input-bg" style="position:relative;min-height:420px;height:min(62vh,640px);overflow:hidden;contain:layout paint;isolation:isolate">
-          <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
-            ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
-          </div>
-        </div>
+    <!-- メイン グリッド: 上部 = 進捗/現在の操作/実行ステップ サマリ, 下部 = 全幅 WebView -->
+    <div class="lfs-main-grid">
+
+      <!-- ヘッダー (タイトル + セッションタブ) -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 2px">
+        <span class="material-symbols-outlined" style="font-size:16px;color:#10b981">smart_toy</span>
+        <span class="lfs-text" style="font-size:.85rem;font-weight:600">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
+        <span style="background:#10b981;width:7px;height:7px;border-radius:50%;display:inline-block"></span>
+        <span class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
       </div>
 
-      <!-- 右カラム -->
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div class="lfs-card" style="padding:14px 16px">
-          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
+      <!-- 進捗 / 現在の操作 / 実行ステップ — 3 列 (mobile で 1 列) -->
+      <div class="lfs-summary-row">
+        <div class="lfs-summary-item">
+          <div class="lfs-summary-head">
             <span class="material-symbols-outlined" style="font-size:14px;color:#3b82f6">trending_up</span>
-            <strong class="lfs-strong">${_lang === 'ja' ? '進捗状況' : 'Progress'}</strong>
+            <span>${_lang === 'ja' ? '進捗状況' : 'Progress'}</span>
           </div>
-          <div style="display:flex;align-items:center;gap:14px">
-            <svg width="64" height="64" viewBox="0 0 36 36" style="flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:12px">
+            <svg width="56" height="56" viewBox="0 0 36 36" style="flex-shrink:0">
               <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--outline-variant,#d8dee5)" stroke-width="2.5"/>
               <path id="liveProgressArc" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-dasharray="0, 100"/>
               <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="var(--on-surface,#111)" font-weight="700">0%</text>
             </svg>
-            <div style="flex:1">
-              <div id="liveProgressStep" class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
-              <div id="liveProgressLabel" class="lfs-strong" style="font-size:.85rem;margin-top:2px">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
-              <div id="liveProgressEta" class="lfs-muted" style="font-size:.7rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
+            <div style="flex:1;min-width:0">
+              <div id="liveProgressStep" class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
+              <div id="liveProgressLabel" class="lfs-strong" style="font-size:.82rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
+              <div id="liveProgressEta" class="lfs-muted" style="font-size:.68rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
             </div>
           </div>
         </div>
 
-        <div class="lfs-card" style="padding:14px 16px">
-          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:8px">
+        <div class="lfs-summary-item">
+          <div class="lfs-summary-head">
             <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">play_circle</span>
-            <strong class="lfs-strong">${_lang === 'ja' ? '現在の操作' : 'Current Action'}</strong>
+            <span>${_lang === 'ja' ? '現在の操作' : 'Current Action'}</span>
           </div>
-          <div id="liveCurrentAction" class="lfs-text" style="font-size:.78rem;line-height:1.5">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
-          <div class="lfs-card-bd lfs-muted" style="margin-top:8px;padding-top:8px;font-size:.7rem;display:grid;gap:3px">
-            <div>URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
-            <div>${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#9333ea;font-family:monospace">-</span></div>
+          <div id="liveCurrentAction" class="lfs-text" style="font-size:.76rem;line-height:1.5;min-height:1.5em">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
+          <div class="lfs-muted" style="font-size:.68rem;display:grid;gap:2px">
+            <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
+            <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#9333ea;font-family:monospace">-</span></div>
             <div>${_lang === 'ja' ? 'ステータス' : 'Status'}: <span id="liveCurrentStatus" style="color:#10b981">${_lang === 'ja' ? '待機' : 'idle'}</span></div>
           </div>
         </div>
 
-        <div class="lfs-card" style="padding:14px 16px;flex:1;overflow:hidden;display:flex;flex-direction:column">
-          <div class="lfs-text" style="display:flex;align-items:center;gap:6px;font-size:.78rem;margin-bottom:10px">
+        <div class="lfs-summary-item" style="overflow:hidden">
+          <div class="lfs-summary-head">
             <span class="material-symbols-outlined" style="font-size:14px;color:#f59e0b">checklist</span>
-            <strong class="lfs-strong">${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</strong>
+            <span>${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</span>
           </div>
-          <div id="liveStepsList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:380px">
-            <div class="lfs-muted" style="font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
+          <div id="liveStepsList" style="overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:160px;min-height:60px;font-size:.7rem">
+            <div class="lfs-muted" style="font-size:.7rem;padding:4px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
           </div>
+        </div>
+      </div>
+
+      <!-- セッションタブ (No.226 · filled 等 + × ボタン) -->
+      <div id="liveFormSessions" class="lfs-card-bd" style="display:flex;gap:4px;overflow-x:auto;padding:6px 2px;min-height:34px"></div>
+
+      <!-- 全幅 WebView slot -->
+      <div id="liveFormViewSlot" class="lfs-view-slot">
+        <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
+          ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
         </div>
       </div>
     </div>
@@ -8214,11 +8262,10 @@ ${renderStyles()}
         let _liveFormPollTimer = null;
         let _activeSessionId = null;
 
+        // v2.0.93: 単一セッション dock 用 — 旧 API (チップクリック時に明示的に呼ぶ)
         async function syncViewBounds(sessionId) {
           if (!sessionId) return;
-          // v2.0.89: 仮想 session (parallel 外部 Chrome 経路) は dock 対象 WebView を持たない
           if (String(sessionId).startsWith('virtual:')) return;
-          // v2.0.92: live-form タブが非 active なら即 park (タブ切替後の追従防止)
           const currentTab = document.querySelector('.tab-content.active')?.id;
           if (currentTab !== 'tab-live-form') {
             try {
@@ -8274,6 +8321,73 @@ ${renderStyles()}
           } catch (e) {}
         }
 
+        // v2.0.93: 並列表示 — N 個のリアル session を slot 内タイルに同時 dock。
+        //   Phase B の並列実行 (parallelTabs=3) で 3 社の WebView を同時に見せる。
+        async function dockAllSessionsToTiles(realSessions) {
+          const currentTab = document.querySelector('.tab-content.active')?.id;
+          const slot = document.getElementById('liveFormViewSlot');
+          if (currentTab !== 'tab-live-form' || !slot) {
+            // 非 active 時は全 session を画面外 park
+            for (const s of realSessions) {
+              try {
+                await fetch('/api/form-session/' + s.id + '/set-bounds', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ x: -10000, y: -10000, width: 1, height: 1 }),
+                });
+              } catch (e) {}
+            }
+            return;
+          }
+          const rect = slot.getBoundingClientRect();
+          const winW = window.innerWidth;
+          const winH = window.innerHeight;
+          const nav = document.getElementById('mainTabNav');
+          const reservedTop = nav ? Math.max(0, Math.round(nav.getBoundingClientRect().bottom)) : 0;
+          const clippedTop = Math.max(reservedTop, rect.top);
+          const clippedBottom = Math.min(winH, rect.bottom);
+          const clippedHeight = clippedBottom - clippedTop;
+          const clippedLeft = Math.max(0, rect.left);
+          const clippedRight = Math.min(winW, rect.right);
+          const clippedWidth = clippedRight - clippedLeft;
+          const n = realSessions.length;
+          // 1 → 1x1, 2 → 1x2 horizontal, 3 → 1x3 horizontal, 4 → 2x2
+          let cols = 1, rows = 1;
+          if (n === 2) cols = 2;
+          else if (n === 3) cols = 3;
+          else if (n >= 4) { cols = 2; rows = 2; }
+          const gap = 4;
+          const tileW = Math.floor((clippedWidth - gap * (cols - 1)) / cols);
+          const tileH = Math.floor((clippedHeight - gap * (rows - 1)) / rows);
+          if (tileW < 50 || tileH < 50) {
+            // viewport が狭すぎる場合は active のみ表示、他は park
+            const activeId = _activeSessionId || (realSessions[realSessions.length - 1] || {}).id;
+            for (const s of realSessions) {
+              if (s.id === activeId) await syncViewBounds(s.id);
+              else {
+                try { await fetch('/api/form-session/' + s.id + '/set-bounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: -10000, y: -10000, width: 1, height: 1 }) }); } catch (e) {}
+              }
+            }
+            return;
+          }
+          for (let i = 0; i < n; i++) {
+            const s = realSessions[i];
+            const r = Math.floor(i / cols);
+            const c = i % cols;
+            const x = Math.round(clippedLeft + c * (tileW + gap));
+            const y = Math.round(clippedTop + r * (tileH + gap));
+            const w = tileW;
+            const h = tileH;
+            try {
+              await fetch('/api/form-session/' + s.id + '/set-bounds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x, y, width: w, height: h }),
+              });
+            } catch (e) {}
+          }
+        }
+
         async function refreshLiveFormSessions() {
           try {
             const [sessionsRes, dataRes] = await Promise.all([
@@ -8300,6 +8414,8 @@ ${renderStyles()}
               if (empty) empty.style.display = 'flex';
               if (sessionIdEl) sessionIdEl.textContent = '${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}';
               if (liveStatusEl) { liveStatusEl.textContent = 'IDLE'; liveStatusEl.style.background = '#5b6675'; }
+              const endBtnInline = document.getElementById('liveSessionEndInline');
+              if (endBtnInline) endBtnInline.style.display = 'none';
               _activeSessionId = null;
               renderProgress(null, events);
               renderCurrent(null, events);
@@ -8329,6 +8445,14 @@ ${renderStyles()}
               sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
             }
 
+            // v2.0.93: chip 再描画メモ化 — 同じ list なら innerHTML 置換をスキップして
+            //   無駄な reflow を抑える (Phase B 並列で 2 秒毎に呼ばれるため)
+            const sigParts = list.map(s => (s.id||'')+'/'+(s.status||'')+'/'+(s.captchaDetected?1:0)+'/'+(s.id===activeSid?'A':'-'));
+            const newSig = sigParts.join('|');
+            if (bar.dataset.sig === newSig) {
+              // chip だけスキップ。dock / 進捗等は続行
+            } else {
+              bar.dataset.sig = newSig;
             // v2.0.90: 社名表示 + CAPTCHA バッジ (ユーザー要望: 社名とロボチェッカだと残してわかりやすいように)
             bar.innerHTML = list.map(s => {
               const isActive = s.id === activeSid;
@@ -8341,12 +8465,15 @@ ${renderStyles()}
               const escName = nameStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const fullName = (s.companyName || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const titleAttr = 'No.' + (s.companyNo||'?') + ' ' + fullName + ' (' + (s.status||'') + ')';
-              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
-                '<span style="font-weight:700">No.' + (s.companyNo||'?') + '</span>' +
-                (escName ? ' <span style="opacity:.85">' + escName + '</span>' : '') +
-                ' <span style="opacity:.65;font-size:.62rem">· ' + (s.status||'') + '</span>' +
-                captchaBadge + virtualBadge +
-                '</button>';
+              return '<span data-sid="' + s.id + '" class="lf-session-chip-wrap" style="display:inline-flex;align-items:center">' +
+                '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 10px;border-radius:999px 0 0 999px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);border-right:none;max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
+                  '<span style="font-weight:700">No.' + (s.companyNo||'?') + '</span>' +
+                  (escName ? ' <span style="opacity:.85">' + escName + '</span>' : '') +
+                  ' <span style="opacity:.65;font-size:.62rem">· ' + (s.status||'') + '</span>' +
+                  captchaBadge + virtualBadge +
+                '</button>' +
+                '<button data-close-sid="' + s.id + '" class="lf-session-close ' + cls + '" title="${_lang === 'ja' ? 'このセッションを閉じる' : 'Close this session'}" style="border-radius:0 999px 999px 0;border:1px solid var(--outline-variant,#d8dee5);border-left:none;width:22px;height:auto;align-self:stretch">×</button>' +
+                '</span>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
               b.addEventListener('click', async () => {
@@ -8356,10 +8483,52 @@ ${renderStyles()}
                 setTimeout(refreshLiveFormSessions, 300);
               });
             });
+            bar.querySelectorAll('[data-close-sid]').forEach(b => {
+              b.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const sid = b.getAttribute('data-close-sid');
+                if (!sid) return;
+                try {
+                  if (String(sid).startsWith('virtual:')) {
+                    // virtual session は API 削除対象外。UI だけ即時消す。
+                    b.closest('.lf-session-chip-wrap')?.remove();
+                  } else {
+                    await fetch('/api/form-session/' + encodeURIComponent(sid), { method: 'DELETE' });
+                  }
+                } catch (e) {}
+                if (_activeSessionId === sid) _activeSessionId = null;
+                refreshLiveFormSessions();
+              });
+            });
+            } // close memoization else
+
+            // v2.0.93: タブ横の "セッションを終了" ボタン制御
+            const endBtnInline = document.getElementById('liveSessionEndInline');
+            if (endBtnInline) {
+              endBtnInline.style.display = hasRealSession ? 'inline-flex' : 'none';
+              if (!endBtnInline.dataset.bound) {
+                endBtnInline.dataset.bound = '1';
+                endBtnInline.addEventListener('click', async () => {
+                  if (!confirm('${_lang === 'ja' ? '稼働中のすべてのフォームセッションを終了しますか？' : 'End all active form sessions?'}')) return;
+                  try {
+                    const r = await fetch('/api/form-session');
+                    if (r.ok) {
+                      const jj = await r.json();
+                      const all = (jj.sessions || []).filter(x => !String(x.id||'').startsWith('virtual:'));
+                      await Promise.all(all.map(x => fetch('/api/form-session/' + encodeURIComponent(x.id), { method: 'DELETE' }).catch(()=>{})));
+                    }
+                  } catch (e) {}
+                  _activeSessionId = null;
+                  refreshLiveFormSessions();
+                });
+              }
+            }
             const currentTab = document.querySelector('.tab-content.active')?.id;
-            if (currentTab === 'tab-live-form' && activeSid) {
+            if (currentTab === 'tab-live-form') {
               _activeSessionId = activeSid;
-              await syncViewBounds(activeSid);
+              // v2.0.93: 並列タイル表示 — N セッションを同時に slot 内タイルへ dock
+              const realSessions = list.filter(s => !String(s.id||'').startsWith('virtual:'));
+              if (realSessions.length > 0) await dockAllSessionsToTiles(realSessions);
             }
 
             // 進捗・現在の操作・ステップ更新 (active session の companyNo を使う)
@@ -8648,14 +8817,23 @@ ${renderStyles()}
           } catch (e) {}
         }
 
+        // v2.0.93: visibility-aware polling — タブが見えていない時は更新しない
         function startLiveFormPolling() {
           if (_liveFormPollTimer) return;
           refreshLiveFormSessions();
-          _liveFormPollTimer = setInterval(refreshLiveFormSessions, 2000);
+          _liveFormPollTimer = setInterval(() => {
+            if (document.hidden) return;
+            refreshLiveFormSessions();
+          }, 2000);
         }
         function stopLiveFormPolling() {
           if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
         }
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && document.querySelector('.tab-content.active')?.id === 'tab-live-form') {
+            refreshLiveFormSessions();
+          }
+        });
         async function notifyTabActive(tab) {
           // v2.0.93: live-form 以外のタブに切替時、HTML 側から
           //   即座に WebView を detach するための park sentinel を送る。
@@ -8682,9 +8860,9 @@ ${renderStyles()}
               body: JSON.stringify({ activeTab: tab }),
             });
           } catch (e) {}
-          if (tab === 'live-form' && _activeSessionId) {
-            // 100ms 待って DOM 再描画 → bounds 取得
-            setTimeout(() => syncViewBounds(_activeSessionId), 100);
+          if (tab === 'live-form') {
+            // v2.0.93: 並列タイル再 dock — 100ms 待って refreshLiveFormSessions に任せる
+            setTimeout(refreshLiveFormSessions, 100);
           }
         }
         document.querySelectorAll('[data-tab]').forEach(btn => {
@@ -8695,11 +8873,16 @@ ${renderStyles()}
             else stopLiveFormPolling();
           });
         });
-        // window resize で bounds 再同期
+        // v2.0.93: window resize → 並列タイル再 dock
+        let _resizeSyncPending = false;
         window.addEventListener('resize', () => {
-          if (_activeSessionId && document.querySelector('.tab-content.active')?.id === 'tab-live-form') {
-            syncViewBounds(_activeSessionId);
-          }
+          if (document.querySelector('.tab-content.active')?.id !== 'tab-live-form') return;
+          if (_resizeSyncPending) return;
+          _resizeSyncPending = true;
+          requestAnimationFrame(() => {
+            _resizeSyncPending = false;
+            refreshLiveFormSessions();
+          });
         });
         // v2.0.90: scroll (window / 全 scrollable 親) でも追従させる。
         //   旧 (~v0.89) は scroll イベント listener 無し → ページを下にスクロール
@@ -8709,13 +8892,13 @@ ${renderStyles()}
         //   過剰呼びを抑制 (throttle)。
         let _scrollSyncPending = false;
         function _onScrollSync() {
-          if (!_activeSessionId) return;
           if (document.querySelector('.tab-content.active')?.id !== 'tab-live-form') return;
           if (_scrollSyncPending) return;
           _scrollSyncPending = true;
           requestAnimationFrame(() => {
             _scrollSyncPending = false;
-            syncViewBounds(_activeSessionId);
+            // v2.0.93: 並列タイル対応 — refreshLiveFormSessions 内で dockAllSessionsToTiles を呼ぶ
+            refreshLiveFormSessions();
           });
         }
         window.addEventListener('scroll', _onScrollSync, { passive: true, capture: true });
@@ -8723,7 +8906,8 @@ ${renderStyles()}
         const refreshBtn = document.getElementById('liveFormRefresh');
         if (refreshBtn) refreshBtn.addEventListener('click', refreshLiveFormSessions);
         // バックグラウンド polling (badge 用)
-        setInterval(refreshLiveFormSessions, 5000);
+        // v2.0.93: バックグラウンド polling (badge 用) — 非表示時はスキップ
+        setInterval(() => { if (!document.hidden) refreshLiveFormSessions(); }, 10000);
         // v2.0.89: 初期 load 時に live-form タブが既に active なら即 2 秒 polling 起動
         //   (旧: タブ click 時のみ起動 → load 直後は最大 5 秒待ち)
         function _bootLiveFormIfActive() {
@@ -9239,7 +9423,7 @@ ${renderStyles()}
 
   <!-- Settings tab -->
   <div class="tab-content" id="tab-settings">
-    <div style="background:#fff;border:1px solid var(--outline-variant)" class="settings-layout">
+    <div class="settings-layout">
       <div class="settings-sidebar">
         <button class="settings-sidebar-btn active" data-section="companyProfile"><span class="settings-sidebar-label">${_t['settings.companyProfile']}</span><span class="settings-sidebar-status" id="settingsSidebarStatus-companyProfile"></span></button>
         <button class="settings-sidebar-btn" data-section="valuePropositions"><span class="settings-sidebar-label">${_t['settings.valuePropositions']}</span><span class="settings-sidebar-status" id="settingsSidebarStatus-valuePropositions"></span></button>
@@ -9929,6 +10113,43 @@ ${renderStyles()}
             </div>
           </div>
 
+          <!-- v2.1.0: フォーム入力モード (環境設定に統合) -->
+          <div class="settings-group" style="margin-top:8px">
+            <label>${_lang === 'ja' ? 'フォーム入力モード' : 'Form Fill Mode'}</label>
+            <div class="help-text">
+              ${_lang === 'ja'
+                ? 'AI がフォーム入力に使うブラウザエンジン。internal は Sales Claw アプリ内で完結 (推奨)、playwright は外部 Chrome を起動する旧モード。'
+                : 'Browser engine used by AI for form filling. internal completes inside the Sales Claw app (recommended), playwright launches external Chrome (legacy).'}
+            </div>
+          </div>
+          <div class="settings-row-3">
+            <div class="settings-group">
+              <label>${_lang === 'ja' ? 'モード' : 'Mode'}</label>
+              <select id="ff-mode">
+                <option value="internal">internal (${_lang === 'ja' ? '推奨・アプリ内完結' : 'Recommended — in-app'})</option>
+                <option value="playwright">playwright (${_lang === 'ja' ? '旧・外部 Chrome' : 'Legacy — external Chrome'})</option>
+                <option value="both">both (${_lang === 'ja' ? 'A/B テスト用' : 'A/B testing'})</option>
+              </select>
+              <div class="help-text">
+                ${_lang === 'ja'
+                  ? 'internal: Electron 内蔵 WebContentsView (外部ブラウザを開かない)'
+                  : 'internal: Electron-embedded WebContentsView (no external browser)'}
+              </div>
+            </div>
+            <div class="settings-group">
+              <label>${_lang === 'ja' ? '並列度' : 'Parallelism'}</label>
+              <input type="number" id="ff-parallelism" min="1" max="5" placeholder="3">
+              <div class="help-text">
+                ${_lang === 'ja' ? '1-5。同時に処理する社数。デフォルト 3' : '1-5. Companies processed in parallel. Default 3'}
+              </div>
+            </div>
+            <div class="settings-group">
+              <label style="opacity:.6">${_lang === 'ja' ? '現在のモード' : 'Current mode'}</label>
+              <div id="ff-currentMode" style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:.8rem">—</div>
+              <div class="help-text">${_lang === 'ja' ? '保存後、次回 AI 起動から反映 (再起動推奨)' : 'Applies on next AI launch (restart recommended)'}</div>
+            </div>
+          </div>
+
           <div class="settings-group" style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
             <label>${_t['field.aiProvider']} ${settingsTag('recommended')}</label>
             <select id="pf-aiProvider">
@@ -9956,51 +10177,7 @@ ${renderStyles()}
           </div>
 
           <div class="save-bar">
-            <button class="btn-save" onclick="saveSection('preferences')">${_t['settings.save']} ${_t['settings.preferences']}</button>
-          </div>
-        </div>
-
-        <!-- v2.1.0: formFill モード設定 (Electron 内蔵 WebContentsView ↔ 外部 Playwright Chrome) -->
-        <!-- preferences panel 内のサブセクションとして配置 (tab switcher の display:none を回避) -->
-        <div style="margin-top:32px;padding-top:24px;border-top:2px solid var(--border)">
-          <div style="margin-bottom:16px">
-            <h3 style="margin:0 0 6px 0;font-size:1.05rem;font-weight:700">${_lang === 'ja' ? 'フォーム入力モード (v2.1.0)' : 'Form Fill Mode (v2.1.0)'}</h3>
-            <div class="help-text">
-              ${_lang === 'ja'
-                ? 'AI がフォーム入力に使うブラウザエンジン。internal は Sales Claw アプリ内で完結 (推奨)、playwright は外部 Chrome を起動する旧モード。'
-                : 'Browser engine used by AI for form filling. internal completes inside the Sales Claw app (recommended), playwright launches external Chrome (legacy).'}
-            </div>
-          </div>
-
-          <div class="settings-row-3">
-            <div class="settings-group">
-              <label>${_lang === 'ja' ? 'モード' : 'Mode'}</label>
-              <select id="ff-mode">
-                <option value="internal">internal (${_lang === 'ja' ? '推奨・アプリ内完結' : 'Recommended — in-app'})</option>
-                <option value="playwright">playwright (${_lang === 'ja' ? '旧・外部 Chrome' : 'Legacy — external Chrome'})</option>
-                <option value="both">both (${_lang === 'ja' ? 'A/B テスト用' : 'A/B testing'})</option>
-              </select>
-              <div class="help-text">
-                ${_lang === 'ja'
-                  ? 'internal: Electron 内蔵 WebContentsView (外部ブラウザを開かない)'
-                  : 'internal: Electron-embedded WebContentsView (no external browser)'}
-              </div>
-            </div>
-            <div class="settings-group">
-              <label>${_lang === 'ja' ? '並列度' : 'Parallelism'}</label>
-              <input type="number" id="ff-parallelism" min="1" max="5" placeholder="3">
-              <div class="help-text">
-                ${_lang === 'ja' ? '1-5。同時に処理する社数。デフォルト 3' : '1-5. Companies processed in parallel. Default 3'}
-              </div>
-            </div>
-            <div class="settings-group">
-              <label style="opacity:.6">${_lang === 'ja' ? '現在のモード' : 'Current mode'}</label>
-              <div id="ff-currentMode" style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:.8rem">—</div>
-            </div>
-          </div>
-
-          <div class="save-bar">
-            <button class="btn-save" id="ff-saveBtn" type="button">${_t['settings.save']} ${_lang === 'ja' ? 'フォーム入力モード' : 'Form Fill Mode'}</button>
+            <button class="btn-save" onclick="saveSection('preferences'); if(window.__saveFormFill)window.__saveFormFill();">${_t['settings.save']} ${_t['settings.preferences']}</button>
             <span id="ff-saveStatus" style="margin-left:12px;font-size:.8rem"></span>
           </div>
         </div>
@@ -10025,13 +10202,12 @@ ${renderStyles()}
               }
             }
             async function saveFormFill() {
-              const btn = document.getElementById('ff-saveBtn');
               const status = document.getElementById('ff-saveStatus');
               const modeEl = document.getElementById('ff-mode');
               const parEl = document.getElementById('ff-parallelism');
+              if (!modeEl || !parEl || !status) return;
               const mode = modeEl.value;
               const parallelism = Math.min(5, Math.max(1, parseInt(parEl.value, 10) || 3));
-              btn.disabled = true;
               status.textContent = ${_lang === 'ja' ? "'保存中…'" : "'Saving…'"};
               status.style.color = 'var(--text-2)';
               try {
@@ -10051,11 +10227,10 @@ ${renderStyles()}
                 status.textContent = ${_lang === 'ja' ? "'保存失敗: '" : "'Save failed: '"} + (e.message || e);
                 status.style.color = 'var(--error, #dc2626)';
               } finally {
-                btn.disabled = false;
                 setTimeout(function(){ status.textContent = ''; }, 6000);
               }
             }
-            document.getElementById('ff-saveBtn').addEventListener('click', saveFormFill);
+            window.__saveFormFill = saveFormFill;
             loadFormFill();
           })();
         </script>
