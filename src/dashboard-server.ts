@@ -8070,25 +8070,122 @@ ${renderStyles()}
     </div>
   </div>
 
-  <!-- v2.0.85: Live Form tab — AI が WebContentsView 内で実フォーム操作する様子をリアルタイム表示 -->
-  <div class="tab-content" id="tab-live-form">
-    <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid var(--primary);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span class="material-symbols-outlined" style="font-size:18px;color:var(--primary)">smart_toy</span>
-        <strong style="font-size:.85rem">${_lang === 'ja' ? 'AI 操作中ビュー (Electron 内蔵 WebView)' : 'AI Live Operation View (Electron WebView)'}</strong>
+  <!-- v2.0.87: AI 操作セッション (full dashboard UI) — リアルタイム監視ビュー -->
+  <div class="tab-content" id="tab-live-form" style="background:#0f1419;color:#e0e6ed;min-height:calc(100vh - 92px)">
+    <!-- ヘッダー -->
+    <div style="padding:18px 24px;border-bottom:1px solid #1f2933;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:1.3rem;font-weight:700;color:#fff">${_lang === 'ja' ? 'AI 操作セッション' : 'AI Operation Session'}</span>
+          <span id="liveSessionStatus" style="background:#10b981;color:#fff;font-size:.65rem;font-weight:800;padding:3px 9px;border-radius:6px;letter-spacing:.05em">LIVE</span>
+        </div>
+        <div style="font-size:.72rem;color:#8895a5;margin-top:3px" id="liveSessionId">${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <span id="liveFormStatus" style="font-size:.7rem;color:var(--on-surface-variant)">${_lang === 'ja' ? '待機中' : 'Idle'}</span>
-        <button class="btn btn-sm btn-outline-primary" id="liveFormRefresh">${_lang === 'ja' ? '更新' : 'Refresh'}</button>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px;color:#8895a5;font-size:.75rem">
+          <span class="material-symbols-outlined" style="font-size:14px">visibility</span>
+          <span id="liveSessionMonitor">${_lang === 'ja' ? '監視中' : 'monitoring'}</span>
+        </div>
+        <button id="liveSessionEnd" style="background:#ef4444;color:#fff;border:none;font-size:.72rem;font-weight:700;padding:6px 14px;border-radius:6px;cursor:pointer">${_lang === 'ja' ? 'セッションを終了' : 'End Session'}</button>
       </div>
     </div>
-    <div id="liveFormContainer" style="position:relative;height:calc(100vh - 200px);background:#f5f5f5;padding:8px;display:flex;flex-direction:column;gap:6px">
-      <!-- session タブバー -->
-      <div id="liveFormSessions" style="display:flex;gap:4px;overflow-x:auto;padding:0 4px;min-height:32px"></div>
-      <!-- WebContentsView が物理的に重なる領域。HTML 側は plate のみ -->
-      <div id="liveFormViewSlot" style="flex:1;background:#fff;border:1px solid var(--outline-variant);border-radius:4px;position:relative">
-        <div id="liveFormEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--outline);font-size:.85rem;text-align:center;padding:24px">
-          ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作はここで直接行えます。' : 'When AI is filling a form, the WebView appears here. Solve CAPTCHAs directly inside this view.'}
+
+    <!-- メイン グリッド: 左 (WebView preview) + 右 (進捗/操作/ステップ) -->
+    <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;padding:14px">
+      <!-- 左カラム: ブラウザプレビュー -->
+      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid #2a3441">
+          <div style="font-weight:600;color:#fff;font-size:.85rem">${_lang === 'ja' ? 'AI がブラウザを操作中...' : 'AI is operating the browser...'}</div>
+          <div style="font-size:.7rem;color:#8895a5;margin-top:2px">${_lang === 'ja' ? 'AI エージェントが Web サイトを操作しています。リアルタイムで進捗をご確認いただけます。' : 'Real-time progress of AI agent operations.'}</div>
+        </div>
+        <div style="padding:10px 14px;border-bottom:1px solid #2a3441;display:flex;align-items:center;gap:8px">
+          <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">smart_toy</span>
+          <span style="font-size:.75rem;color:#e0e6ed">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
+          <span style="background:#10b981;width:6px;height:6px;border-radius:50%;display:inline-block"></span>
+          <span style="font-size:.7rem;color:#8895a5">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
+        </div>
+        <!-- session タブバー -->
+        <div id="liveFormSessions" style="display:flex;gap:4px;overflow-x:auto;padding:6px 14px;border-bottom:1px solid #2a3441;min-height:34px;background:#131b26"></div>
+        <!-- WebContentsView dock 領域 -->
+        <div id="liveFormViewSlot" style="position:relative;min-height:560px;background:#0a0d12">
+          <div id="liveFormEmpty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#5b6675;font-size:.85rem;text-align:center;padding:30px">
+            ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling. Solve CAPTCHAs directly.'}
+          </div>
+        </div>
+      </div>
+
+      <!-- 右カラム: 進捗・操作・ステップ -->
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <!-- 進捗状況カード -->
+        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+            <span class="material-symbols-outlined" style="font-size:14px;color:#3b82f6">trending_up</span>
+            <strong>${_lang === 'ja' ? '進捗状況' : 'Progress'}</strong>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="64" height="64" viewBox="0 0 36 36" style="flex-shrink:0">
+              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#2a3441" stroke-width="2.5"/>
+              <path id="liveProgressArc" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-dasharray="0, 100"/>
+              <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="#fff" font-weight="700">0%</text>
+            </svg>
+            <div style="flex:1">
+              <div id="liveProgressStep" style="font-size:.72rem;color:#8895a5">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
+              <div id="liveProgressLabel" style="font-size:.85rem;color:#fff;font-weight:600;margin-top:2px">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
+              <div id="liveProgressEta" style="font-size:.7rem;color:#8895a5;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 現在の操作カード -->
+        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:8px">
+            <span class="material-symbols-outlined" style="font-size:14px;color:#10b981">play_circle</span>
+            <strong>${_lang === 'ja' ? '現在の操作' : 'Current Action'}</strong>
+          </div>
+          <div id="liveCurrentAction" style="font-size:.78rem;color:#e0e6ed;line-height:1.5">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #2a3441;font-size:.7rem;color:#8895a5;display:grid;gap:3px">
+            <div>URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
+            <div>${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#a78bfa;font-family:monospace">-</span></div>
+            <div>${_lang === 'ja' ? 'ステータス' : 'Status'}: <span id="liveCurrentStatus" style="color:#10b981">${_lang === 'ja' ? '待機' : 'idle'}</span></div>
+          </div>
+        </div>
+
+        <!-- 実行ステップリスト -->
+        <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px;flex:1;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+            <span class="material-symbols-outlined" style="font-size:14px;color:#f59e0b">checklist</span>
+            <strong>${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</strong>
+          </div>
+          <div id="liveStepsList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:380px">
+            <div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下部 2列: 思考プロセス + スクリーンショット履歴 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 14px 14px">
+      <!-- AI 思考プロセス -->
+      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed;margin-bottom:10px">
+          <span class="material-symbols-outlined" style="font-size:14px;color:#06b6d4">psychology</span>
+          <strong>${_lang === 'ja' ? 'AI 思考プロセス' : 'AI Reasoning'}</strong>
+        </div>
+        <div id="liveThoughts" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto">
+          <div style="color:#5b6675;font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>
+        </div>
+      </div>
+      <!-- スクリーンショット履歴 -->
+      <div style="background:#1a2330;border:1px solid #2a3441;border-radius:10px;padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:#e0e6ed">
+            <span class="material-symbols-outlined" style="font-size:14px;color:#ec4899">photo_library</span>
+            <strong>${_lang === 'ja' ? 'スクリーンショット履歴' : 'Screenshots'}</strong>
+          </div>
+          <button id="liveScreenshotsShowAll" style="background:none;border:none;color:#3b82f6;font-size:.7rem;cursor:pointer">${_lang === 'ja' ? 'すべて表示' : 'View all'}</button>
+        </div>
+        <div id="liveScreenshots" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+          <div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>
         </div>
       </div>
     </div>
@@ -8127,34 +8224,51 @@ ${renderStyles()}
 
         async function refreshLiveFormSessions() {
           try {
-            const r = await fetch('/api/form-session');
-            if (!r.ok) return;
-            const j = await r.json();
+            const [sessionsRes, dataRes] = await Promise.all([
+              fetch('/api/form-session'),
+              fetch('/api/data'),
+            ]);
+            if (!sessionsRes.ok) return;
+            const j = await sessionsRes.json();
             const list = j.sessions || [];
+            const data = dataRes.ok ? await dataRes.json() : { liveMonitor: { events: [] } };
+            const events = (data.liveMonitor && data.liveMonitor.events) || [];
+
             const bar = document.getElementById('liveFormSessions');
             const empty = document.getElementById('liveFormEmpty');
             if (!bar) return;
             const badge = document.getElementById('liveFormBadge');
             if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+
+            // セッション ID / ステータス更新
+            const sessionIdEl = document.getElementById('liveSessionId');
+            const liveStatusEl = document.getElementById('liveSessionStatus');
             if (list.length === 0) {
-              bar.innerHTML = '<span style="color:var(--outline);font-size:.7rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
+              bar.innerHTML = '<span style="color:#5b6675;font-size:.7rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
               if (empty) empty.style.display = 'flex';
-              const statusEl = document.getElementById('liveFormStatus');
-              if (statusEl) statusEl.textContent = '${_lang === 'ja' ? '待機中' : 'Idle'}';
+              if (sessionIdEl) sessionIdEl.textContent = '${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}';
+              if (liveStatusEl) { liveStatusEl.textContent = 'IDLE'; liveStatusEl.style.background = '#5b6675'; }
               _activeSessionId = null;
+              renderProgress(null, events);
+              renderCurrent(null, events);
+              renderSteps([]);
+              renderThoughts([]);
+              refreshScreenshots([]);
               return;
             }
             if (empty) empty.style.display = 'none';
-            const statusEl = document.getElementById('liveFormStatus');
-            if (statusEl) statusEl.textContent = list.length + (${_lang === 'ja' ? '" 社が稼働中"' : '" sessions running"'});
-            // active session が無ければ最新を選ぶ
+            if (liveStatusEl) { liveStatusEl.textContent = 'LIVE'; liveStatusEl.style.background = '#10b981'; }
             const activeSid = list.find(s => s.active)?.id || list[list.length - 1]?.id;
+            const activeSession = list.find(s => s.id === activeSid) || list[list.length - 1];
+            if (sessionIdEl && activeSession) {
+              sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
+            }
+
             bar.innerHTML = list.map(s => {
               const isActive = s.id === activeSid;
-              const bg = isActive ? 'background:var(--primary,#1976d2);color:#fff' : 'background:#fff;color:#333;border:1px solid #ddd';
-              const ring = isActive ? 'box-shadow:0 0 0 2px var(--primary,#1976d2)' : '';
-              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + bg + ';' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s" class="lf-session-btn">' +
-                'No.' + (s.companyNo||'?') + ' ' + (s.status||'') + '</button>';
+              const bg = isActive ? 'background:#3b82f6;color:#fff' : 'background:#243040;color:#e0e6ed;border:1px solid #2a3441';
+              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + bg + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap" class="lf-session-btn">' +
+                'No.' + (s.companyNo||'?') + ' · ' + (s.status||'') + '</button>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
               b.addEventListener('click', async () => {
@@ -8164,12 +8278,169 @@ ${renderStyles()}
                 setTimeout(refreshLiveFormSessions, 300);
               });
             });
-            // active session の bounds を slot に合わせる (live-form タブ active 時のみ)
             const currentTab = document.querySelector('.tab-content.active')?.id;
             if (currentTab === 'tab-live-form' && activeSid) {
               _activeSessionId = activeSid;
               await syncViewBounds(activeSid);
             }
+
+            // 進捗・現在の操作・ステップ更新 (active session の companyNo を使う)
+            const activeNo = activeSession ? Number(activeSession.companyNo) : null;
+            const companyEvents = activeNo ? events.filter(e => Number(e.companyNo) === activeNo) : [];
+            renderProgress(activeSession, companyEvents);
+            renderCurrent(activeSession, companyEvents);
+            renderSteps(companyEvents);
+            renderThoughts(companyEvents);
+            refreshScreenshots(list);
+          } catch (e) {}
+        }
+
+        // 進捗 (% 円グラフ + ステップ数 + ETA)
+        function renderProgress(activeSession, events) {
+          // 想定ステップ: site_analysis → form_fill → confirm_reached → awaiting_approval (最大20)
+          const TOTAL_STEPS = 20;
+          const STEP_WEIGHTS = { site_discovery: 2, site_analysis: 3, message_draft: 5, form_fill: 13, confirm_reached: 16, awaiting_approval: 20, submitted: 20, skipped: 20, error: 20 };
+          let currentStep = 1;
+          let label = '${_lang === 'ja' ? '待機中' : 'Idle'}';
+          const latest = events[events.length - 1];
+          if (latest && latest.action && STEP_WEIGHTS[latest.action]) {
+            currentStep = STEP_WEIGHTS[latest.action];
+            label = ({
+              site_discovery: '${_lang === 'ja' ? 'サイトを確認中…' : 'Probing site...'}',
+              site_analysis: '${_lang === 'ja' ? 'サイトを分析中…' : 'Analyzing site...'}',
+              message_draft: '${_lang === 'ja' ? 'メッセージを起草中…' : 'Drafting message...'}',
+              form_fill: '${_lang === 'ja' ? 'フォームに情報を入力しています' : 'Filling form...'}',
+              confirm_reached: '${_lang === 'ja' ? '確認画面に到達' : 'Reached confirm page'}',
+              awaiting_approval: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
+              submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
+              skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
+              error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
+            })[latest.action] || latest.action;
+          }
+          const pct = Math.round((currentStep / TOTAL_STEPS) * 100);
+          const arcEl = document.getElementById('liveProgressArc');
+          const textEl = document.getElementById('liveProgressText');
+          const stepEl = document.getElementById('liveProgressStep');
+          const labelEl = document.getElementById('liveProgressLabel');
+          const etaEl = document.getElementById('liveProgressEta');
+          if (arcEl) arcEl.setAttribute('stroke-dasharray', pct + ', 100');
+          if (textEl) textEl.textContent = pct + '%';
+          if (stepEl) stepEl.textContent = '${_lang === 'ja' ? 'ステップ' : 'Step'} ' + currentStep + ' / ' + TOTAL_STEPS;
+          if (labelEl) labelEl.textContent = label;
+          if (etaEl) {
+            if (currentStep >= TOTAL_STEPS) etaEl.textContent = '${_lang === 'ja' ? '完了' : 'Done'}';
+            else {
+              const remainingSec = (TOTAL_STEPS - currentStep) * 6;
+              const mins = Math.ceil(remainingSec / 60);
+              etaEl.textContent = '${_lang === 'ja' ? '完了予定: 約' : 'ETA: ~'}' + mins + '${_lang === 'ja' ? '分' : 'min'}';
+            }
+          }
+        }
+
+        // 現在の操作 (URL / element / status)
+        function renderCurrent(activeSession, events) {
+          const actionEl = document.getElementById('liveCurrentAction');
+          const urlEl = document.getElementById('liveCurrentUrl');
+          const elemEl = document.getElementById('liveCurrentElement');
+          const statusEl = document.getElementById('liveCurrentStatus');
+          const latest = events[events.length - 1];
+          if (!latest) {
+            if (actionEl) actionEl.textContent = '${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}';
+            if (urlEl) urlEl.textContent = '-';
+            if (elemEl) elemEl.textContent = '-';
+            if (statusEl) { statusEl.textContent = '${_lang === 'ja' ? '待機' : 'idle'}'; statusEl.style.color = '#5b6675'; }
+            return;
+          }
+          if (actionEl) actionEl.textContent = (latest.step || latest.action || '').toString().slice(0, 200);
+          if (urlEl) urlEl.textContent = (latest.currentUrl || activeSession?.formUrl || '-').toString().slice(0, 80);
+          if (elemEl) elemEl.textContent = (latest.element || latest.selector || '-').toString().slice(0, 60);
+          if (statusEl) {
+            statusEl.textContent = latest.status || '${_lang === 'ja' ? '進行中' : 'running'}';
+            statusEl.style.color = latest.status === 'error' ? '#ef4444' : (latest.status === 'submitted' ? '#10b981' : '#3b82f6');
+          }
+        }
+
+        // 実行ステップリスト
+        function renderSteps(events) {
+          const el = document.getElementById('liveStepsList');
+          if (!el) return;
+          if (events.length === 0) {
+            el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>';
+            return;
+          }
+          const ACTION_LABEL = {
+            site_discovery: '${_lang === 'ja' ? 'サイト URL を確認' : 'Probe site URL'}',
+            site_analysis: '${_lang === 'ja' ? 'サイト本文を分析' : 'Analyze site text'}',
+            message_draft: '${_lang === 'ja' ? 'メッセージを起草' : 'Draft message'}',
+            form_fill: '${_lang === 'ja' ? 'フォームに入力' : 'Fill form'}',
+            confirm_reached: '${_lang === 'ja' ? '確認画面に到達' : 'Reach confirm page'}',
+            awaiting_approval: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
+            submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
+            skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
+            error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
+          };
+          el.innerHTML = events.slice(-20).map((e, i) => {
+            const isLatest = i === Math.min(events.length, 20) - 1;
+            const isTerminal = ['submitted','skipped','error','awaiting_approval'].includes(e.action);
+            const dotColor = isLatest && !isTerminal ? '#3b82f6' : (e.action === 'error' ? '#ef4444' : '#10b981');
+            const statusText = isLatest && !isTerminal ? '${_lang === 'ja' ? '実行中' : 'running'}' : '${_lang === 'ja' ? '完了' : 'done'}';
+            const statusBg = isLatest && !isTerminal ? '#3b82f6' : '#243040';
+            const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
+            const label = ACTION_LABEL[e.action] || e.action || '?';
+            return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:' + (isLatest && !isTerminal ? '#1e3a5f' : '#131b26') + ';border-radius:6px;font-size:.72rem">' +
+              '<span style="width:18px;height:18px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.62rem">' + (i+1) + '</span>' +
+              '<span style="flex:1;color:#e0e6ed">' + label + '</span>' +
+              '<span style="color:#5b6675;font-family:monospace;font-size:.65rem">' + ts + '</span>' +
+              '<span style="background:' + statusBg + ';color:#fff;font-size:.6rem;padding:2px 7px;border-radius:4px">' + statusText + '</span>' +
+              '</div>';
+          }).reverse().join('');
+        }
+
+        // AI 思考プロセス
+        function renderThoughts(events) {
+          const el = document.getElementById('liveThoughts');
+          if (!el) return;
+          if (events.length === 0) {
+            el.innerHTML = '<div style="color:#5b6675;font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>';
+            return;
+          }
+          el.innerHTML = events.slice(-10).reverse().map((e) => {
+            const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
+            const text = (e.step || e.action || '').toString().slice(0, 200);
+            return '<div style="display:flex;gap:8px;font-size:.72rem;align-items:start"><span style="color:#5b6675;font-family:monospace;flex-shrink:0">' + ts + '</span>' +
+              '<span style="color:#10b981;flex-shrink:0">●</span>' +
+              '<span style="color:#e0e6ed;flex:1">' + text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
+              '</div>';
+          }).join('');
+        }
+
+        // スクリーンショット履歴
+        async function refreshScreenshots(sessions) {
+          const el = document.getElementById('liveScreenshots');
+          if (!el) return;
+          // session 各社の screenshot path を収集 (action-log の screenshot field から)
+          try {
+            const r = await fetch('/api/data');
+            if (!r.ok) return;
+            const j = await r.json();
+            const events = (j.liveMonitor && j.liveMonitor.events) || [];
+            const noSet = new Set(sessions.map(s => Number(s.companyNo)).filter(n => Number.isFinite(n)));
+            const shots = [];
+            for (const no of noSet) {
+              for (const suffix of ['input','confirm','sent']) {
+                const url = '/screenshots/ss-' + no + '-' + suffix + '.png';
+                shots.push({ no, suffix, url, ts: '' });
+              }
+            }
+            if (shots.length === 0) {
+              el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
+              return;
+            }
+            el.innerHTML = shots.map(s => {
+              return '<div style="flex-shrink:0;width:140px;cursor:pointer" onclick="window.open(\'' + s.url + '\',\'_blank\')">' +
+                '<img src="' + s.url + '?t=' + Date.now() + '" style="width:140px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #2a3441;background:#0a0d12" onerror="this.style.opacity=\'0.2\';this.title=\'(not captured yet)\'">' +
+                '<div style="font-size:.62rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
+            }).join('');
           } catch (e) {}
         }
 
@@ -11003,6 +11274,32 @@ const server = http.createServer(async (req, res) => {
     res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
     sseClients.add(res);
     req.on('close', () => sseClients.delete(res));
+    return;
+  }
+
+  // v2.0.87: Screenshots serving
+  // /screenshots/ss-{No}-{suffix}.png → settings.getScreenshotDir() 配下
+  // 操作セッション UI が AI 撮影した PNG をサムネ表示するため。
+  if (pathname.startsWith('/screenshots/')) {
+    const relative = decodeURIComponent(pathname.slice('/screenshots/'.length));
+    // path traversal guard
+    if (relative.includes('..') || relative.includes('\0') || !relative.endsWith('.png')) {
+      res.writeHead(400); res.end('Bad request'); return;
+    }
+    try {
+      const ssDir = settings.getScreenshotDir ? settings.getScreenshotDir() : 'screenshots';
+      const filepath = path.join(ssDir, relative);
+      // resolved path が ssDir 配下にあることを再確認
+      const normalized = path.resolve(filepath);
+      if (!normalized.startsWith(path.resolve(ssDir))) {
+        res.writeHead(403); res.end('Forbidden'); return;
+      }
+      const data = fs.readFileSync(normalized);
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    } catch (_) {
+      res.writeHead(404); res.end('Not found');
+    }
     return;
   }
 
