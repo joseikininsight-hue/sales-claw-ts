@@ -679,11 +679,29 @@ class FormSessionManager {
       // mainWindow にまだ attach されていなければ attach
       const cv = win.contentView;
       if (!cv.children.includes(session.view)) cv.addChildView(session.view);
-      // 受け取った bounds で setBounds (整数化)
-      const x = Math.max(0, Math.floor(Number(bounds?.x) || 0));
-      const y = Math.max(0, Math.floor(Number(bounds?.y) || 0));
-      const width = Math.max(50, Math.floor(Number(bounds?.width) || 800));
-      const height = Math.max(50, Math.floor(Number(bounds?.height) || 600));
+      // v2.0.92: park 用の負座標は通す。それ以外は window contentSize を越えないように
+      //   hard cap。これで万一 HTML 側が誤った bounds (e.g. window 全幅) を送ってきても
+      //   右半分占有のような UI 破壊を起こさない。
+      const reqX = Number(bounds?.x);
+      const reqY = Number(bounds?.y);
+      const reqW = Number(bounds?.width);
+      const reqH = Number(bounds?.height);
+      const isPark = reqX <= -1000 || reqY <= -1000;
+      let x: number, y: number, width: number, height: number;
+      if (isPark) {
+        x = Math.floor(reqX || -10000);
+        y = Math.floor(reqY || -10000);
+        width = Math.max(1, Math.floor(reqW || 1));
+        height = Math.max(1, Math.floor(reqH || 1));
+      } else {
+        const [winW, winH] = win.getContentSize();
+        x = Math.min(winW - 50, Math.max(0, Math.floor(reqX || 0)));
+        y = Math.min(winH - 50, Math.max(0, Math.floor(reqY || 0)));
+        const maxW = Math.max(50, winW - x);
+        const maxH = Math.max(50, winH - y);
+        width = Math.min(maxW, Math.max(50, Math.floor(reqW || 800)));
+        height = Math.min(maxH, Math.max(50, Math.floor(reqH || 600)));
+      }
       session.view.setBounds({ x, y, width, height });
       this._activeSessionId = sessionId;
       return { ok: true, bounds: { x, y, width, height } };

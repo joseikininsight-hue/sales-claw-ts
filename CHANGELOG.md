@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.92 - 2026-05-28 — タブ切替時 WebView 追従バグ + slot 外漏れ hard guard
+
+### ユーザー報告 (2026-05-28 v2.0.91 実機)
+
+「タブ変更した時にまたおかしい挙動」「他のタブに移動した時にもひっついてくる」
+「しっかりとビューの中には必ず収める」
+
+### 修正
+
+#### A. notifyTabActive (HTML 側) で即 park
+旧 (~v0.91): タブ切替 → サーバ `/api/form-session/tab-changed` POST → サーバが
+`parkActiveView` で setBounds(-10000) する流れ。fetch 完了まで 50-200ms ラグ
+があり、その間 WebView が前タブの位置に残って「ついてくる」体験になる。
+
+新: クライアント側で先に `/api/form-session/:id/set-bounds` を直接呼んで
+画面外 park、その後サーバへ tab-changed 通知。レース解消。
+
+#### B. syncViewBounds に tab guard
+live-form タブ非 active で syncViewBounds が呼ばれた場合は即 park 経路に
+入る (resize/scroll listener が他タブ active 時にも発火しうるため)。
+
+#### C. syncViewBounds で slot bbox を window 内にクリップ
+`rect.left` / `rect.right` も viewport にクリップ。これにより HTML の slot が
+ウィンドウ外に出ているケースでも WebView がはみ出さない。
+
+#### D. setViewBounds (Electron 側) に hard cap
+`form-session-manager.ts::setViewBounds` で受け取った bounds を window
+contentSize でクリップ。x/y は window 内、width/height は残りスペース以下。
+park 用の負座標 (≤ -1000) は通す。万一 HTML が誤った bounds を送ってきても、
+window 右半分占有のような UI 破壊が **構造上発生しない** 保証。
+
+---
+
 ## 2.0.91 - 2026-05-28 — WebView が画面右半分を占有する致命バグ修正
 
 ### ユーザー報告 (2026-05-28 v2.0.90 実機)

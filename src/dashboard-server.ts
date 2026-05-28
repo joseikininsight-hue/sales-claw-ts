@@ -8202,20 +8202,37 @@ ${renderStyles()}
           if (!sessionId) return;
           // v2.0.89: 仮想 session (parallel 外部 Chrome 経路) は dock 対象 WebView を持たない
           if (String(sessionId).startsWith('virtual:')) return;
+          // v2.0.92: live-form タブが非 active なら即 park (タブ切替後の追従防止)
+          const currentTab = document.querySelector('.tab-content.active')?.id;
+          if (currentTab !== 'tab-live-form') {
+            try {
+              await fetch('/api/form-session/' + sessionId + '/set-bounds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: -10000, y: -10000, width: 1, height: 1 }),
+              });
+            } catch (e) {}
+            return;
+          }
           const slot = document.getElementById('liveFormViewSlot');
           if (!slot) return;
           const rect = slot.getBoundingClientRect();
           // v2.0.90: viewport 外 (上スクロール時 rect.top < 0) は clip して
           //   表示領域だけに dock。完全に画面外に出たら hide (画面外に park)。
           //   page coord (window 内座標) → Electron setBounds は content area の page coord と一致する想定。
+          // v2.0.92: hard guard — slot bbox 外には絶対に出さない (window 右半分占有の再発防止)。
+          const winW = window.innerWidth;
           const winH = window.innerHeight;
           const clippedTop = Math.max(0, rect.top);
           const clippedBottom = Math.min(winH, rect.bottom);
           const clippedHeight = clippedBottom - clippedTop;
+          const clippedLeft = Math.max(0, rect.left);
+          const clippedRight = Math.min(winW, rect.right);
+          const clippedWidth = clippedRight - clippedLeft;
           const bounds = {
-            x: Math.round(rect.left),
+            x: Math.round(clippedLeft),
             y: Math.round(clippedTop),
-            width: Math.round(rect.width),
+            width: Math.round(Math.max(0, clippedWidth)),
             height: Math.round(Math.max(0, clippedHeight)),
           };
           if (bounds.width < 50 || bounds.height < 50) {
@@ -8622,6 +8639,22 @@ ${renderStyles()}
           if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
         }
         async function notifyTabActive(tab) {
+          // v2.0.92: live-form / awaiting 以外のタブに切替時、HTML 側から
+          //   即座に WebView を画面外 park (-10000,-10000) する。
+          //   旧 (~v0.91): サーバ /api/form-session/tab-changed に POST → サーバが
+          //   parkActiveView 呼ぶ流れだが、fetch 完了まで 50-200ms ラグがあり、
+          //   その間 WebView が前タブの位置に残って「ついてくる」体験になる。
+          //   新: クライアントから set-bounds で先に画面外送り、その後サーバへ通知。
+          const needsPark = (tab !== 'live-form' && tab !== 'awaiting') && _activeSessionId;
+          if (needsPark) {
+            try {
+              await fetch('/api/form-session/' + _activeSessionId + '/set-bounds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: -10000, y: -10000, width: 1, height: 1 }),
+              });
+            } catch (e) {}
+          }
           try {
             await fetch('/api/form-session/tab-changed', {
               method: 'POST',
