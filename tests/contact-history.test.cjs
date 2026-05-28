@@ -30,9 +30,9 @@ function freshRequire(modulePath) {
   return require(modulePath);
 }
 
-freshRequire('../src/settings-manager');
-freshRequire('../src/data-paths');
-const history = freshRequire('../src/contact-history');
+freshRequire('../dist-ts/src/settings-manager');
+freshRequire('../dist-ts/src/data-paths');
+const history = freshRequire('../dist-ts/src/contact-history');
 
 let passed = 0;
 let failed = 0;

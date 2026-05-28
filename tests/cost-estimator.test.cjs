@@ -29,9 +29,9 @@ function freshRequire(modulePath) {
   return require(modulePath);
 }
 
-freshRequire('../src/settings-manager');
-freshRequire('../src/data-paths');
-const cost = freshRequire('../src/cost-estimator');
+freshRequire('../dist-ts/src/settings-manager');
+freshRequire('../dist-ts/src/data-paths');
+const cost = freshRequire('../dist-ts/src/cost-estimator');
 
 let passed = 0;
 let failed = 0;

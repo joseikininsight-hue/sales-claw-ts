@@ -43,12 +43,12 @@ fs.mkdirSync(path.join(TMP_ROOT, 'data'), { recursive: true });
 
 // settings-manager is cached per-module — invalidate so the env override applies.
 function freshSettings() {
-  delete require.cache[require.resolve('../src/settings-manager')];
-  delete require.cache[require.resolve('../src/data-paths')];
-  delete require.cache[require.resolve('../src/action-logger')];
-  delete require.cache[require.resolve('../src/contact-history')];
-  delete require.cache[require.resolve('../src/cost-estimator')];
-  delete require.cache[require.resolve('../src/routes/simple-api')];
+  delete require.cache[require.resolve('../dist-ts/src/settings-manager')];
+  delete require.cache[require.resolve('../dist-ts/src/data-paths')];
+  delete require.cache[require.resolve('../dist-ts/src/action-logger')];
+  delete require.cache[require.resolve('../dist-ts/src/contact-history')];
+  delete require.cache[require.resolve('../dist-ts/src/cost-estimator')];
+  delete require.cache[require.resolve('../dist-ts/src/routes/simple-api')];
 }
 freshSettings();
 // Pre-create a minimal settings.json so getSection('preferences') etc. work.

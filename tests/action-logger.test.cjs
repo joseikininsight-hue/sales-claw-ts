@@ -32,9 +32,9 @@ function freshRequire(modulePath) {
   return require(modulePath);
 }
 
-const settings = freshRequire('../src/settings-manager');
-freshRequire('../src/data-paths');
-const actionLogger = freshRequire('../src/action-logger');
+const settings = freshRequire('../dist-ts/src/settings-manager');
+freshRequire('../dist-ts/src/data-paths');
+const actionLogger = freshRequire('../dist-ts/src/action-logger');
 
 let passed = 0;
 let failed = 0;
