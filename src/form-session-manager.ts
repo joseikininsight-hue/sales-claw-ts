@@ -649,6 +649,51 @@ class FormSessionManager {
     this._positionView(sessionId);
   }
 
+  /**
+   * v2.0.86: HTML 側で計算した slot 要素の bbox (page coords) を受け取って
+   * WebContentsView をその位置に正確に配置する。dashboard 側の `getBoundingClientRect()` +
+   * `window.devicePixelRatio` 補正済の bounds を渡すこと。
+   */
+  setViewBounds(sessionId, bounds) {
+    const session = this._sessions.get(sessionId);
+    if (!session || !session.view) return { ok: false, reason: 'session_not_found' };
+    const win = this._getMainWindow();
+    if (!win || win.isDestroyed()) return { ok: false, reason: 'no_window' };
+    try {
+      // mainWindow にまだ attach されていなければ attach
+      const cv = win.contentView;
+      if (!cv.children.includes(session.view)) cv.addChildView(session.view);
+      // 受け取った bounds で setBounds (整数化)
+      const x = Math.max(0, Math.floor(Number(bounds?.x) || 0));
+      const y = Math.max(0, Math.floor(Number(bounds?.y) || 0));
+      const width = Math.max(50, Math.floor(Number(bounds?.width) || 800));
+      const height = Math.max(50, Math.floor(Number(bounds?.height) || 600));
+      session.view.setBounds({ x, y, width, height });
+      this._activeSessionId = sessionId;
+      return { ok: true, bounds: { x, y, width, height } };
+    } catch (e) {
+      return { ok: false, reason: e && e.message ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * v2.0.86: HTML 側のタブ切替で「操作中タブが non-active」の時に呼ぶ。
+   * 現 session を mainWindow の外 (画面外座標) に setBounds して見えなくする。
+   * destroy はしない (タブ戻ったら setViewBounds で復活)。
+   */
+  parkActiveView() {
+    if (!this._activeSessionId) return { ok: true, parked: false };
+    const session = this._sessions.get(this._activeSessionId);
+    if (!session || !session.view) return { ok: true, parked: false };
+    try {
+      // 画面外 (負座標) に移動 = visibility:hidden 相当
+      session.view.setBounds({ x: -10000, y: -10000, width: 1, height: 1 });
+      return { ok: true, parked: true };
+    } catch (e) {
+      return { ok: false, reason: e && e.message ? e.message : String(e) };
+    }
+  }
+
   hideCurrentSession() {
     if (this._activeSessionId) {
       this._removeFromWindow(this._activeSessionId);

@@ -8094,11 +8094,40 @@ ${renderStyles()}
     </div>
     <script>
       (function(){
-        // v2.0.85: 操作中タブ active 時に WebView を dock、それ以外で hide
+        // v2.0.86: 操作中タブで HTML slot 位置に WebContentsView を dock。
+        //   旧 (v0.85): showSession で固定座標 (winW*0.45) → window 外に表示される実機 bug
+        //   新: HTML slot 要素の getBoundingClientRect() + devicePixelRatio で正確な
+        //       page coords を計算 → /api/form-session/:id/set-bounds に POST。
+        //       Electron は session.view.setBounds で物理的にその位置に配置。
         let _liveFormPollTimer = null;
+        let _activeSessionId = null;
+
+        async function syncViewBounds(sessionId) {
+          if (!sessionId) return;
+          const slot = document.getElementById('liveFormViewSlot');
+          if (!slot) return;
+          const rect = slot.getBoundingClientRect();
+          // page coord (window 内座標)。Electron setBounds は content area の page coord と一致する想定。
+          // devicePixelRatio 補正は Electron 側で window.getContentSize と一致するので不要。
+          const bounds = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          };
+          if (bounds.width < 50 || bounds.height < 50) return; // hidden
+          try {
+            await fetch('/api/form-session/' + sessionId + '/set-bounds', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bounds),
+            });
+          } catch (e) {}
+        }
+
         async function refreshLiveFormSessions() {
           try {
-            const r = await fetch('/api/form-session/list');
+            const r = await fetch('/api/form-session');
             if (!r.ok) return;
             const j = await r.json();
             const list = j.sessions || [];
@@ -8112,26 +8141,38 @@ ${renderStyles()}
               if (empty) empty.style.display = 'flex';
               const statusEl = document.getElementById('liveFormStatus');
               if (statusEl) statusEl.textContent = '${_lang === 'ja' ? '待機中' : 'Idle'}';
+              _activeSessionId = null;
               return;
             }
             if (empty) empty.style.display = 'none';
             const statusEl = document.getElementById('liveFormStatus');
             if (statusEl) statusEl.textContent = list.length + (${_lang === 'ja' ? '" 社が稼働中"' : '" sessions running"'});
+            // active session が無ければ最新を選ぶ
+            const activeSid = list.find(s => s.active)?.id || list[list.length - 1]?.id;
             bar.innerHTML = list.map(s => {
-              const active = s.active ? 'background:var(--primary);color:#fff' : 'background:#fff;color:var(--on-surface);border:1px solid var(--outline-variant)';
-              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + active + ';font-size:.7rem;padding:4px 10px;border-radius:6px;cursor:pointer;white-space:nowrap" class="lf-session-btn">No.' + (s.companyNo||'?') + ' ' + (s.status||'') + '</button>';
+              const isActive = s.id === activeSid;
+              const bg = isActive ? 'background:var(--primary,#1976d2);color:#fff' : 'background:#fff;color:#333;border:1px solid #ddd';
+              const ring = isActive ? 'box-shadow:0 0 0 2px var(--primary,#1976d2)' : '';
+              return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" style="' + bg + ';' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s" class="lf-session-btn">' +
+                'No.' + (s.companyNo||'?') + ' ' + (s.status||'') + '</button>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
               b.addEventListener('click', async () => {
                 const sid = b.getAttribute('data-sid');
-                try {
-                  await fetch('/api/form-session/' + sid + '/show', { method: 'POST' });
-                  setTimeout(refreshLiveFormSessions, 300);
-                } catch(e) {}
+                _activeSessionId = sid;
+                await syncViewBounds(sid);
+                setTimeout(refreshLiveFormSessions, 300);
               });
             });
+            // active session の bounds を slot に合わせる (live-form タブ active 時のみ)
+            const currentTab = document.querySelector('.tab-content.active')?.id;
+            if (currentTab === 'tab-live-form' && activeSid) {
+              _activeSessionId = activeSid;
+              await syncViewBounds(activeSid);
+            }
           } catch (e) {}
         }
+
         function startLiveFormPolling() {
           if (_liveFormPollTimer) return;
           refreshLiveFormSessions();
@@ -8140,7 +8181,6 @@ ${renderStyles()}
         function stopLiveFormPolling() {
           if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
         }
-        // タブ切替を監視。live-form 以外なら WebView を hide (Electron 側にも通知)
         async function notifyTabActive(tab) {
           try {
             await fetch('/api/form-session/tab-changed', {
@@ -8149,6 +8189,10 @@ ${renderStyles()}
               body: JSON.stringify({ activeTab: tab }),
             });
           } catch (e) {}
+          if (tab === 'live-form' && _activeSessionId) {
+            // 100ms 待って DOM 再描画 → bounds 取得
+            setTimeout(() => syncViewBounds(_activeSessionId), 100);
+          }
         }
         document.querySelectorAll('[data-tab]').forEach(btn => {
           btn.addEventListener('click', () => {
@@ -8158,9 +8202,15 @@ ${renderStyles()}
             else stopLiveFormPolling();
           });
         });
+        // window resize で bounds 再同期
+        window.addEventListener('resize', () => {
+          if (_activeSessionId && document.querySelector('.tab-content.active')?.id === 'tab-live-form') {
+            syncViewBounds(_activeSessionId);
+          }
+        });
         const refreshBtn = document.getElementById('liveFormRefresh');
         if (refreshBtn) refreshBtn.addEventListener('click', refreshLiveFormSessions);
-        // バックグラウンド polling: badge を常時更新 (タブ切替不要)
+        // バックグラウンド polling (badge 用)
         setInterval(refreshLiveFormSessions, 5000);
       })();
     </script>

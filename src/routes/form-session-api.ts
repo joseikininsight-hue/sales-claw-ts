@@ -248,18 +248,36 @@ module.exports = function createFormSessionRoutes(ctx) {
       try {
         const body = await parseJsonBody(req).catch(() => ({}));
         const activeTab = body && typeof body.activeTab === 'string' ? body.activeTab : '';
-        if (activeTab !== 'live-form') {
-          // 全 session hide
-          _formSessionManager.hideCurrentSession();
-        } else {
-          // live-form タブ active 化: 最新 active session を再 show
-          const sessions = (_formSessionManager._sessions && Array.from(_formSessionManager._sessions.values())) || [];
-          const candidate = sessions[sessions.length - 1];
-          if (candidate && candidate.id) {
-            try { _formSessionManager.showSession(candidate.id); } catch (_) {}
+        if (activeTab !== 'live-form' && activeTab !== 'awaiting') {
+          // v2.0.86: live-form / awaiting 以外なら view を画面外に park (destroy しない)
+          if (typeof _formSessionManager.parkActiveView === 'function') {
+            _formSessionManager.parkActiveView();
+          } else {
+            _formSessionManager.hideCurrentSession();
           }
         }
+        // live-form / awaiting タブの場合は HTML 側が setViewBounds を後追いで呼ぶ
         jsonResponse(res, 200, { ok: true, activeTab });
+      } catch (e) {
+        jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+      return true;
+    }
+
+    // v2.0.86: POST /api/form-session/:id/set-bounds
+    //   HTML 側で計算した slot 要素の bbox (page coords) を渡す。
+    //   WebContentsView をその位置に正確配置 = HTML 上で「ここに表示」と思った所に必ず重なる。
+    //   Body: { x: number, y: number, width: number, height: number }
+    if (pathname.match(/^\/api\/form-session\/[^/]+\/set-bounds$/) && method === 'POST') {
+      const sid = pathname.split('/')[3];
+      try {
+        const body = await parseJsonBody(req).catch(() => ({}));
+        if (typeof _formSessionManager.setViewBounds === 'function') {
+          const r = _formSessionManager.setViewBounds(sid, body);
+          jsonResponse(res, r.ok ? 200 : 500, r);
+        } else {
+          jsonResponse(res, 501, { ok: false, error: 'setViewBounds not available' });
+        }
       } catch (e) {
         jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
       }
