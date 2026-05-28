@@ -455,6 +455,9 @@ const SCRIPT = `(function(){
       + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel">' + safeText(aw2T('awaitingCard.btn.cancel', 'キャンセル')) + '</button>'
       + '<div class="aw2-foot-right">'
       + (formUrl ? '<span class="aw2-form-url" title="' + formUrl + '">' + formUrl + '</span>' : '')
+      // v2.0.89: 確認待ちカードから WebView 復活 (goal #6)。AI が CAPTCHA 等
+      // で停止したフォームを人が WebView 内で直接操作できるようにする。
+      + (formUrl ? '<button type="button" class="aw2-btn aw2-btn-edit" data-action="open-webview" title="' + safeText(aw2T('awaitingCard.btn.openWebView.title', '操作中タブで WebView を開く (CAPTCHA を手で解く等)')) + '"><span class="material-symbols-outlined">smart_display</span>' + safeText(aw2T('awaitingCard.btn.openWebView', 'WebView で開く')) + '</button>' : '')
       + '<button type="button" class="aw2-btn aw2-btn-edit" data-action="edit"><span class="material-symbols-outlined">edit</span>' + safeText(aw2T('awaitingCard.btn.edit', '編集して修正')) + '</button>'
       // 送信フローは 2 ボタンに分離:
       //  1. ai-send: AI に実際に submit ボタンをクリックさせる (実送信)
@@ -534,6 +537,39 @@ const SCRIPT = `(function(){
           ev.preventDefault();
           var img = card.querySelector('.aw2-shot-img');
           if (img && img.src) window.open(img.src, '_blank');
+        } else if (action === 'open-webview') {
+          ev.preventDefault();
+          // v2.0.89: 確認待ちカードクリックで WebView 復活 (goal #6)
+          //   1. 操作中タブに切替
+          //   2. /api/form-session/create で formUrl を Electron 内蔵 WebView に load
+          //   3. polling/refresh が新しい session を拾って自動 dock
+          var formUrl = card.getAttribute('data-form-url') || '';
+          if (!formUrl) {
+            if (typeof window.toast === 'function') window.toast(aw2T('awaitingCard.openWebView.noUrl', 'フォーム URL が記録されていません'), 'warn');
+            return;
+          }
+          var liveTabBtn = document.querySelector('[data-tab="live-form"]');
+          if (liveTabBtn) liveTabBtn.click();
+          fetch('/api/form-session/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formUrl: formUrl, companyNo: no })
+          }).then(function(r){ return r.json().catch(function(){ return null; }); }).then(function(j){
+            if (!j || !j.ok) {
+              var msg = (j && j.error) || aw2T('awaitingCard.openWebView.failGeneric', 'WebView を開けませんでした');
+              if (typeof window.toast === 'function') window.toast(msg, 'error');
+              else alert(msg);
+              return;
+            }
+            // 成功通知
+            if (typeof window.toast === 'function') {
+              window.toast(aw2T('awaitingCard.openWebView.opened', 'WebView を開きました。CAPTCHA など人手操作を行えます'), 'success');
+            }
+          }).catch(function(e){
+            var failMsg = aw2T('awaitingCard.openWebView.failPrefix', 'WebView 起動失敗: ') + (e && e.message || String(e));
+            if (typeof window.toast === 'function') window.toast(failMsg, 'error');
+            else alert(failMsg);
+          });
         }
         return;
       }

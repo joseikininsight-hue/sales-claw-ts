@@ -4672,10 +4672,14 @@ function buildFallbackMonitorEventsFromLogs(sourceLogs: any[] = []) {
       events.push({
         companyNo: Number(log.companyNo),
         companyName: log.companyName || '',
+        // v2.0.89: UI の STEP_WEIGHTS / 進捗バーは action フィールドを使う。
+        //   旧来は status/step だけ含めていたので 0% のまま動かなかった。
+        action: log.action || '',
         status: mapLogToMonitorStatus(log.action),
         step: mapLogToMonitorStep(log),
         currentUrl: extractFormUrlFromLog(log),
         updatedAt: log.timestamp || null,
+        timestamp: log.timestamp || null,
         active: false,
         source: 'action-log',
       });
@@ -8215,6 +8219,8 @@ ${renderStyles()}
 
         async function syncViewBounds(sessionId) {
           if (!sessionId) return;
+          // v2.0.89: 仮想 session (parallel 外部 Chrome 経路) は dock 対象 WebView を持たない
+          if (String(sessionId).startsWith('virtual:')) return;
           const slot = document.getElementById('liveFormViewSlot');
           if (!slot) return;
           const rect = slot.getBoundingClientRect();
@@ -8270,9 +8276,22 @@ ${renderStyles()}
               refreshScreenshots([]);
               return;
             }
-            if (empty) empty.style.display = 'none';
+            const hasRealSession = list.some(s => !String(s.id||'').startsWith('virtual:'));
+            if (empty) {
+              empty.style.display = hasRealSession ? 'none' : 'flex';
+              if (!hasRealSession) {
+                empty.innerHTML = '${_lang === 'ja' ? '並列実行中 (外部 Chromium 経路) — WebView は内蔵モード時のみ表示されます。<br>進捗・スクショは右側で確認できます。' : 'Parallel run (external Chromium). WebView only shown in internal mode.'}';
+              }
+            }
             if (liveStatusEl) { liveStatusEl.textContent = 'LIVE'; liveStatusEl.style.background = '#10b981'; }
-            const activeSid = list.find(s => s.active)?.id || list[list.length - 1]?.id;
+            // v2.0.89: FormSessionManager.listSessions() は isActive を返す。
+            //   旧 (~v0.88) は s.active を見ていて、fallback で常に list[last] が選ばれ
+            //   "active 強調が動かない" 体験になっていた。
+            //   さらにユーザーがタブをクリックして _activeSessionId をセットしたら
+            //   その選択を最優先する (API は仮想 session を isActive:false で返すので
+            //   それだけだと毎 refresh で active が list[last] に戻ってしまう)。
+            const clientActive = _activeSessionId && list.some(s => s.id === _activeSessionId) ? _activeSessionId : null;
+            const activeSid = clientActive || list.find(s => s.isActive)?.id || list.find(s => s.active)?.id || list[list.length - 1]?.id;
             const activeSession = list.find(s => s.id === activeSid) || list[list.length - 1];
             if (sessionIdEl && activeSession) {
               sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
@@ -8282,8 +8301,10 @@ ${renderStyles()}
               const isActive = s.id === activeSid;
               const cls = isActive ? 'lfs-active-bg' : 'lfs-row-bg lfs-text';
               const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
+              const isVirtual = String(s.id||'').startsWith('virtual:');
+              const virtualBadge = isVirtual ? '<span style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
               return '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5)">' +
-                'No.' + (s.companyNo||'?') + ' · ' + (s.status||'') + '</button>';
+                'No.' + (s.companyNo||'?') + ' · ' + (s.status||'') + virtualBadge + '</button>';
             }).join('');
             bar.querySelectorAll('.lf-session-btn').forEach(b => {
               b.addEventListener('click', async () => {
@@ -8312,25 +8333,53 @@ ${renderStyles()}
 
         // 進捗 (% 円グラフ + ステップ数 + ETA)
         function renderProgress(activeSession, events) {
-          // 想定ステップ: site_analysis → form_fill → confirm_reached → awaiting_approval (最大20)
+          // v2.0.89: live-monitor.events は action フィールドを持たない (status + step のみ)。
+          //   旧コード (~v0.88) は latest.action だけ見ていたので、parallel form-fill 中
+          //   ずっと 0% / 「待機中」のままになっていた。status と activeSession.status を
+          //   合算判定するように拡張。
           const TOTAL_STEPS = 20;
-          const STEP_WEIGHTS = { site_discovery: 2, site_analysis: 3, message_draft: 5, form_fill: 13, confirm_reached: 16, awaiting_approval: 20, submitted: 20, skipped: 20, error: 20 };
+          const STATUS_WEIGHTS = {
+            analyzing: 3, drafting: 5, navigating: 8, loading: 8,
+            filling: 13, confirming: 16,
+            awaiting_approval: 18, awaiting: 18,
+            submitted: 20, skipped: 20, error: 20, done: 20,
+          };
+          const ACTION_WEIGHTS = {
+            site_discovery: 2, site_analysis: 3, message_draft: 5,
+            form_fill: 13, confirm_reached: 16,
+            awaiting_approval: 18, submitted: 20, skipped: 20, error: 20,
+          };
+          const LABELS = {
+            analyzing: '${_lang === 'ja' ? 'サイトを分析中…' : 'Analyzing site...'}',
+            drafting: '${_lang === 'ja' ? 'メッセージを起草中…' : 'Drafting message...'}',
+            navigating: '${_lang === 'ja' ? 'フォームへ遷移中…' : 'Navigating...'}',
+            loading: '${_lang === 'ja' ? 'ページを読み込み中…' : 'Loading page...'}',
+            filling: '${_lang === 'ja' ? 'フォームに情報を入力しています' : 'Filling form...'}',
+            confirming: '${_lang === 'ja' ? '確認画面に到達' : 'Reached confirm page'}',
+            awaiting_approval: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
+            awaiting: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
+            submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
+            skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
+            error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
+            done: '${_lang === 'ja' ? '完了' : 'Done'}',
+            site_discovery: '${_lang === 'ja' ? 'サイトを確認中…' : 'Probing site...'}',
+            site_analysis: '${_lang === 'ja' ? 'サイトを分析中…' : 'Analyzing site...'}',
+            message_draft: '${_lang === 'ja' ? 'メッセージを起草中…' : 'Drafting message...'}',
+            form_fill: '${_lang === 'ja' ? 'フォームに情報を入力しています' : 'Filling form...'}',
+            confirm_reached: '${_lang === 'ja' ? '確認画面に到達' : 'Reached confirm page'}',
+          };
           let currentStep = 1;
           let label = '${_lang === 'ja' ? '待機中' : 'Idle'}';
           const latest = events[events.length - 1];
-          if (latest && latest.action && STEP_WEIGHTS[latest.action]) {
-            currentStep = STEP_WEIGHTS[latest.action];
-            label = ({
-              site_discovery: '${_lang === 'ja' ? 'サイトを確認中…' : 'Probing site...'}',
-              site_analysis: '${_lang === 'ja' ? 'サイトを分析中…' : 'Analyzing site...'}',
-              message_draft: '${_lang === 'ja' ? 'メッセージを起草中…' : 'Drafting message...'}',
-              form_fill: '${_lang === 'ja' ? 'フォームに情報を入力しています' : 'Filling form...'}',
-              confirm_reached: '${_lang === 'ja' ? '確認画面に到達' : 'Reached confirm page'}',
-              awaiting_approval: '${_lang === 'ja' ? '承認待ち' : 'Awaiting approval'}',
-              submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
-              skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
-              error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
-            })[latest.action] || latest.action;
+          // 優先順: latest.action > latest.status > activeSession.status
+          const key = (latest && (latest.action || latest.status)) || (activeSession && activeSession.status) || '';
+          const weight = ACTION_WEIGHTS[key] || STATUS_WEIGHTS[key];
+          if (weight) {
+            currentStep = weight;
+            label = LABELS[key] || key;
+          } else if (latest && latest.step) {
+            currentStep = Math.max(currentStep, 2);
+            label = String(latest.step).slice(0, 80);
           }
           const pct = Math.round((currentStep / TOTAL_STEPS) * 100);
           const arcEl = document.getElementById('liveProgressArc');
@@ -8383,6 +8432,7 @@ ${renderStyles()}
             el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>';
             return;
           }
+          // v2.0.89: action と status の両方をラベル対象に。step (人間可読の自由文字列) も拾う。
           const ACTION_LABEL = {
             site_discovery: '${_lang === 'ja' ? 'サイト URL を確認' : 'Probe site URL'}',
             site_analysis: '${_lang === 'ja' ? 'サイト本文を分析' : 'Analyze site text'}',
@@ -8393,17 +8443,25 @@ ${renderStyles()}
             submitted: '${_lang === 'ja' ? '送信完了' : 'Submitted'}',
             skipped: '${_lang === 'ja' ? 'スキップ' : 'Skipped'}',
             error: '${_lang === 'ja' ? 'エラー' : 'Error'}',
+            analyzing: '${_lang === 'ja' ? 'サイト分析中' : 'Analyzing site'}',
+            drafting: '${_lang === 'ja' ? 'メッセージ起草中' : 'Drafting message'}',
+            navigating: '${_lang === 'ja' ? 'フォーム遷移中' : 'Navigating'}',
+            loading: '${_lang === 'ja' ? 'ページ読み込み中' : 'Loading'}',
+            filling: '${_lang === 'ja' ? 'フォーム入力中' : 'Filling form'}',
+            confirming: '${_lang === 'ja' ? '確認画面到達' : 'Reached confirm'}',
           };
+          const TERMINAL = new Set(['submitted','skipped','error','awaiting_approval','done']);
           el.innerHTML = events.slice(-20).map((e, i) => {
             const isLatest = i === Math.min(events.length, 20) - 1;
-            const isTerminal = ['submitted','skipped','error','awaiting_approval'].includes(e.action);
-            const dotColor = isLatest && !isTerminal ? '#3b82f6' : (e.action === 'error' ? '#ef4444' : '#10b981');
+            const keyForStatus = e.action || e.status || '';
+            const isTerminal = TERMINAL.has(keyForStatus);
+            const dotColor = isLatest && !isTerminal ? '#3b82f6' : (keyForStatus === 'error' ? '#ef4444' : '#10b981');
             const statusText = isLatest && !isTerminal ? '${_lang === 'ja' ? '実行中' : 'running'}' : '${_lang === 'ja' ? '完了' : 'done'}';
             const statusBg = isLatest && !isTerminal ? '#3b82f6' : 'var(--surface-variant,#e8edf2)';
             const statusFg = isLatest && !isTerminal ? '#fff' : 'var(--on-surface-variant,#5b6675)';
             const rowClass = isLatest && !isTerminal ? 'lfs-row-bg-active' : 'lfs-row-bg';
             const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
-            const label = ACTION_LABEL[e.action] || e.action || '?';
+            const label = ACTION_LABEL[keyForStatus] || e.step || keyForStatus || '?';
             return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:.72rem">' +
               '<span style="width:18px;height:18px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.62rem">' + (i+1) + '</span>' +
               '<span class="lfs-text" style="flex:1">' + label + '</span>' +
@@ -8453,11 +8511,29 @@ ${renderStyles()}
               el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
               return;
             }
+            // v2.0.89: 旧 (~v0.88) は inline onclick / onerror に escape された
+            //   シングルクォートを書いていたが、TS template literal を経由する
+            //   タイミングで \\\\' → \\' → ' になり、HTML 属性内の ' と衝突して
+            //   "Unexpected string" を投げる。inline script 全体が中断していた。
+            //   addEventListener / dataset 経由に変えて根本回避。
             el.innerHTML = shots.map(s => {
-              return '<div style="flex-shrink:0;width:140px;cursor:pointer" onclick="window.open(\'' + s.url + '\',\'_blank\')">' +
-                '<img src="' + s.url + '?t=' + Date.now() + '" style="width:140px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #2a3441;background:#0a0d12" onerror="this.style.opacity=\'0.2\';this.title=\'(not captured yet)\'">' +
+              const safeUrl = String(s.url || '').replace(/"/g, '&quot;');
+              return '<div class="lf-shot-thumb" data-url="' + safeUrl + '" style="flex-shrink:0;width:140px;cursor:pointer">' +
+                '<img data-shot-img="1" src="' + safeUrl + '?t=' + Date.now() + '" style="width:140px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #2a3441;background:#0a0d12">' +
                 '<div style="font-size:.62rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
             }).join('');
+            el.querySelectorAll('.lf-shot-thumb').forEach(div => {
+              div.addEventListener('click', () => {
+                const u = div.getAttribute('data-url');
+                if (u) window.open(u, '_blank');
+              });
+            });
+            el.querySelectorAll('img[data-shot-img]').forEach(img => {
+              img.addEventListener('error', () => {
+                img.style.opacity = '0.2';
+                img.title = '(not captured yet)';
+              });
+            });
           } catch (e) {}
         }
 
@@ -8500,6 +8576,19 @@ ${renderStyles()}
         if (refreshBtn) refreshBtn.addEventListener('click', refreshLiveFormSessions);
         // バックグラウンド polling (badge 用)
         setInterval(refreshLiveFormSessions, 5000);
+        // v2.0.89: 初期 load 時に live-form タブが既に active なら即 2 秒 polling 起動
+        //   (旧: タブ click 時のみ起動 → load 直後は最大 5 秒待ち)
+        function _bootLiveFormIfActive() {
+          const active = document.querySelector('.tab-content.active')?.id;
+          if (active === 'tab-live-form') startLiveFormPolling();
+          // 最初の refresh は即実行 (badge / バー反映を遅らせない)
+          refreshLiveFormSessions();
+        }
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          _bootLiveFormIfActive();
+        } else {
+          document.addEventListener('DOMContentLoaded', _bootLiveFormIfActive, { once: true });
+        }
       })();
     </script>
   </div>

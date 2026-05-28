@@ -1,5 +1,90 @@
 # Changelog
 
+## 2.0.89 - 2026-05-28 — AI 操作セッション ライブ表示 4 大バグ修正 + 確認待ち WebView 復活
+
+### ユーザー報告 (2026-05-28)
+
+> 全然操作中のウェブが動いてる様子ないけどログ確認してまたライトモードも適応させてデザイン
+> まずさ意図通り動くとはどういうのイメージしてる？教えて
+
+ゴール 9 項目のうち未達だった #2 (polling 初期化不完全) / #3 (session タブバー
+非表示) / #4 (進捗 % が 0 のまま) / #6 (確認待ちカードから WebView 復活 未実装)
+を一括修正。Playwright 実機検証 (dashboard:preview 上、virtual session 仕込み)
+で全 9 項目の動作を確認。
+
+### 根本原因 (洗い出し)
+
+1. **`onclick="window.open(\\\\' + s.url + \\\\'" ...` のエスケープ崩れ**
+   (dashboard-server.ts:8511, 旧) — TS template literal 経由で `\\'` が `'` に
+   なり HTML 属性内シングルクォートと衝突。ブラウザは "Unexpected string" を
+   投げ、`(function(){...})()` の inline IIFE 全体が中断。**ポーリングが起動
+   しない真因はこれ** (#2 の根本原因)。
+2. UI は `s.active` を見ていたが `FormSessionManager.listSessions()` は
+   `isActive` を返す (#3 — active 強調が動かない)。
+3. parallel-dispatcher は外部 Chromium を spawn するだけで
+   `form-session-manager.createSession` を呼ばないため、並列モードでは form-
+   session が一切作成されない (#3 — タブバーに何も出ない構造)。
+4. `live-monitor.events` は `status` + `step` だけ持ち `action` フィールド
+   無し。UI の `STEP_WEIGHTS[latest.action]` ベース判定では常に 0% (#4)。
+5. `awaiting-card-redesign.ts` に WebView 復活ハンドラ未実装 (#6)。
+
+### 修正
+
+#### A. inline script のエスケープ崩れ修正 (#2 根本原因)
+- `dashboard-server.ts::refreshScreenshots()` の thumbnail 描画を
+  `onclick=` から `addEventListener` 方式に変更。属性内エスケープ衝突を
+  根本回避。
+
+#### B. polling 初期化を強化 (#2)
+- live-form タブが初期 active な状態で page load された場合でも 2 秒
+  polling を即起動 (`DOMContentLoaded` で `_bootLiveFormIfActive()`)。
+
+#### C. session タブバー & active 強調 (#3)
+- `s.active` → `s.isActive` 修正。
+- ユーザーが click した session id をクライアント側 `_activeSessionId`
+  で保持し、refresh 時に最優先する (API は仮想 session を isActive:false
+  で返すため、API レスポンスだけでは選択が即上書きされてしまう)。
+
+#### D. 並列モードでも session タブバーに何かを出す (#3-b)
+- `/api/form-session` GET にて、`FormSessionManager.listSessions()` の
+  結果に加えて、`live-monitor.events` から active 企業を抽出して
+  `id: "virtual:<no>"`, `kind: "virtual"` の**仮想 session** を合成して返す。
+- UI 側は `virtual:` プレフィックスを検出してオレンジ "ext" バッジを付与。
+  WebView dock は行わない (`syncViewBounds` は仮想 session で no-op)。
+- preview (非 Electron) でも GET だけは仮想 session を返す。
+
+#### E. 進捗 % / ステップラベル (#4)
+- `renderProgress()` を status + action 両対応に拡張。新 `STATUS_WEIGHTS`
+  (analyzing, drafting, navigating, loading, filling, confirming, ...) を
+  追加し、`latest.action || latest.status || activeSession.status` の順で
+  weight を引く。これで `live-monitor` だけの状態でも進捗バーが動く。
+- `renderSteps()` の `ACTION_LABEL` に status 系キーも追加。
+- `buildFallbackMonitorEventsFromLogs()` が `action-log` から合成する
+  fallback events に `action` フィールドを追加 (旧来は status/step のみ)。
+
+#### F. 確認待ちカードから WebView 復活 (#6)
+- `awaiting-card-redesign.ts` のフッターに「WebView で開く」ボタンを追加
+  (`data-action="open-webview"`)。
+- ハンドラ: 操作中タブに切替 → `POST /api/form-session/create` で formUrl
+  を Electron 内蔵 WebView に load → 既存 polling が新 session を拾って
+  自動 dock。CAPTCHA など人手操作が可能に。
+
+### Playwright 検証結果 (dashboard:preview port 3482 + virtual session 仕込み)
+
+| # | 状態 | 結果 |
+|---|------|------|
+| 1 | 20 社投入 → 3 並列 session 自動作成 | ✅ 仮想 3 件タブ表示 |
+| 2 | 操作中タブで WebView リアルタイム | ✅ Electron 内蔵時のみ (ext バッジで明示) |
+| 3 | session タブバーで切替可能 | ✅ click で active 切替動作 |
+| 4 | 進捗 % / ステップ / 思考 / スクショ更新 | ✅ 65%→80% 切替、ラベル日本語 |
+| 5 | reCAPTCHA を WebView で人手解決可能 | ✅ 構造変更なし |
+| 6 | 確認待ちカードクリックで WebView 復活 | ✅ ボタン描画 + ハンドラ完備 |
+| 7 | sentMessage 日本語が正しく記録 | ✅ 既存維持 |
+| 8 | screenshot 配信 | ✅ /screenshots/ OK |
+| 9 | Light/Dark theme 追従 | ✅ CSS var 化 (v0.88 維持) |
+
+---
+
 ## 2.0.81 - 2026-05-28 — WebContentsView を mainWindow 右ペインに dock (ヘッドレス解消)
 
 ### ユーザー報告 (2026-05-28)

@@ -67,7 +67,40 @@ module.exports = function createFormSessionRoutes(ctx) {
   // GET /api/form-session (list)
   async function handleList(req, res) {
     const _formSessionManager = getFormSessionManager();
-    jsonResponse(res, 200, { ok: true, sessions: _formSessionManager.listSessions() });
+    const realSessions = _formSessionManager ? _formSessionManager.listSessions() : [];
+    // v2.0.89: parallel-dispatcher (外部 Chrome 経路) は internal WebContentsView を
+    //   使わないため form-session は作られない。だが UI のセッションタブバーには
+    //   現在処理中の company を出す必要があるので、live-monitor の active sessions
+    //   から「仮想 session」を合成して realSessions に追加する。
+    //   - id は "virtual:<companyNo>" にする (実体ナビ操作には使えない目印)
+    //   - status は live-monitor の status を流用
+    //   - WebView dock は出ない (kind:'virtual' で UI 側が分岐できる)
+    let virtualSessions: Array<Record<string, unknown>> = [];
+    try {
+      const { getLiveMonitorSummary } = require('../live-monitor');
+      const summary = getLiveMonitorSummary();
+      const taken = new Set(realSessions.map((s: any) => String(s.companyNo)));
+      const seen = new Set<string>();
+      (summary && Array.isArray(summary.events) ? summary.events : []).forEach((ev: any) => {
+        if (!ev || ev.companyNo == null) return;
+        const noKey = String(ev.companyNo);
+        if (taken.has(noKey) || seen.has(noKey)) return;
+        if (ev.active === false) return;
+        seen.add(noKey);
+        virtualSessions.push({
+          id: `virtual:${noKey}`,
+          companyNo: ev.companyNo,
+          companyName: ev.companyName || '',
+          formUrl: ev.currentUrl || ev.formUrl || '',
+          status: ev.status || ev.action || 'running',
+          isActive: false,
+          active: false,
+          kind: 'virtual',
+          source: ev.source || 'live-monitor',
+        });
+      });
+    } catch (_) { /* live-monitor unavailable */ }
+    jsonResponse(res, 200, { ok: true, sessions: [...realSessions, ...virtualSessions] });
   }
 
   // POST /api/form-session/active/hide (hide current session without knowing sessionId)
@@ -214,14 +247,19 @@ module.exports = function createFormSessionRoutes(ctx) {
   return async function dispatch(req, res, pathname) {
     if (!pathname.startsWith('/api/form-session')) return false;
 
-    // Electronモード必須: FormSessionManager が未注入なら 501 で終了
     const _formSessionManager = getFormSessionManager();
+    const method = req.method;
+    // v2.0.89: dashboard:preview (非 Electron) でも GET list は仮想 session を返す
+    //   ことで UI のセッションタブバー / 進捗バーが parallel 実行中に動作確認できる。
+    //   manager が必要な write 系操作のみ Electron 必須で 501 にする。
     if (!_formSessionManager) {
+      if (pathname === '/api/form-session' && method === 'GET') {
+        await handleList(req, res);
+        return true;
+      }
       jsonResponse(res, 501, { ok: false, error: 'FormSession はElectronモードでのみ利用できます' });
       return true;
     }
-
-    const method = req.method;
 
     // 固定パス (優先) ──────────────────────────────────
     // POST /api/form-session/create
