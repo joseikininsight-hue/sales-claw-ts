@@ -534,82 +534,130 @@ class FormSessionManager {
     const session = this._sessions.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-    // v2.1.0 Bug 7 fix: 旧コードは template literal 内に TypeScript 型注釈
-    //   ("const fields: unknown[]" / "el: any" / "o: any") を入れていたが、
-    //   TS コンパイラは template literal 中身を変換しないため browser に
-    //   SyntaxError として届く (real Electron E2E で発覚)。
-    //   この文字列全体は browser 内で実行される pure JavaScript として扱う必要がある。
+    // v2.0.98: Playwright (playwright-core/injected) のフォーム理解アルゴリズムを移植。
+    //   - アクセシブル名: aria-labelledby → aria-label → element.labels (for= と
+    //     ラッピング <label> の両方を native にカバー) → title → placeholder の順。
+    //   - 暗黙 role 推定 / Playwright 流の可視判定 (checkVisibility + bbox)。
+    //   - open shadow DOM + 同一オリジン iframe を貫通して全フィールドを収集。
+    //   - id/name 無しフィールドも data-sc-fid マーカーで取りこぼさない (fillForm 側の
+    //     貫通リゾルバが解決する)。
+    //   ※ この文字列全体は browser 内で実行される pure JavaScript。TS 型注釈・backtick
+    //     ・${ } は使用不可。正規表現のバックスラッシュは template literal が \\ → \ に
+    //     畳むため、source では二重 (例: /\\s+/g) で書くと runtime で /\s+/g になる。
     const raw: any = await session.view.webContents.executeJavaScript(`
       (function () {
+        var FID = 0;
+        function gcs(el){ try { var w = el.ownerDocument && el.ownerDocument.defaultView; return w ? w.getComputedStyle(el) : null; } catch(e){ return null; } }
+        function isVisible(el){
+          var s = gcs(el); if(!s) return true;
+          if(s.display === 'contents'){ for(var c=el.firstElementChild;c;c=c.nextElementSibling){ if(isVisible(c)) return true; } return false; }
+          if(typeof el.checkVisibility === 'function'){ try { if(!el.checkVisibility()) return false; } catch(e){} }
+          if(s.visibility !== 'visible') return false;
+          var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+        }
+        function rootOrDoc(el){ var n=el; while(n.parentNode) n=n.parentNode; return (n.nodeType===11 || n.nodeType===9) ? n : null; }
+        function idRefs(el, attr){
+          var ref = el.getAttribute(attr); if(!ref) return [];
+          var root = rootOrDoc(el); if(!root) return [];
+          var ids = ref.split(' '); var out = [];
+          for(var i=0;i<ids.length;i++){ if(!ids[i]) continue; try { var f = root.querySelector('#' + CSS.escape(ids[i])); if(f && out.indexOf(f) < 0) out.push(f); } catch(e){} }
+          return out;
+        }
+        function txt(el){ return (el.textContent || '').replace(/\\s+/g, ' ').trim(); }
+        function accName(el){
+          var llb = idRefs(el, 'aria-labelledby');
+          if(llb.length){ var p=[]; for(var i=0;i<llb.length;i++) p.push(txt(llb[i])); var t=p.join(' ').trim(); if(t) return t; }
+          var al = (el.getAttribute('aria-label') || '').trim(); if(al) return al;
+          var tag = el.tagName.toUpperCase();
+          if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT'){
+            var labels = el.labels ? Array.prototype.slice.call(el.labels) : [];
+            if(labels.length){ var lp=[]; for(var j=0;j<labels.length;j++) lp.push(txt(labels[j])); var lt=lp.join(' ').trim(); if(lt) return lt; }
+            var title = (el.getAttribute('title') || '').trim(); if(title) return title;
+            var it = (el.getAttribute('type') || '').toLowerCase();
+            var textLike = (tag==='TEXTAREA') || (tag==='INPUT' && (it===''||it==='text'||it==='password'||it==='search'||it==='tel'||it==='email'||it==='url'));
+            if(textLike){ var ph = (el.getAttribute('placeholder') || '').trim(); if(ph) return ph; }
+          }
+          var tfb = (el.getAttribute('title') || '').trim(); if(tfb) return tfb;
+          return '';
+        }
+        function roleOf(el){
+          var tag = el.tagName.toUpperCase();
+          if(tag==='TEXTAREA') return 'textbox';
+          if(tag==='SELECT') return (el.multiple || el.size > 1) ? 'listbox' : 'combobox';
+          if(tag==='INPUT'){ var t=(el.type||'').toLowerCase();
+            if(t==='hidden') return '';
+            if(t==='checkbox') return 'checkbox'; if(t==='radio') return 'radio';
+            if(t==='number') return 'spinbutton'; if(t==='range') return 'slider';
+            if(t==='button'||t==='submit'||t==='reset'||t==='image'||t==='file') return 'button';
+            if(t==='search') return el.hasAttribute('list') ? 'combobox' : 'searchbox';
+            return 'textbox';
+          }
+          return '';
+        }
+        var GUID = /[0-9a-f]{8}-[0-9a-f]{4}/i;
         var fields = [];
-        var inputs = document.querySelectorAll('input, textarea, select');
-
-        inputs.forEach(function (el) {
-          if (['hidden', 'submit', 'button', 'reset', 'image'].indexOf(el.type) >= 0) return;
-          if (el.offsetParent === null && el.type !== 'radio' && el.type !== 'checkbox') return;
-
-          var label = '';
-          if (el.id) {
-            var lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
-            if (lbl) label = lbl.textContent.trim();
-          }
-          if (!label) {
-            var parent = el.closest('.form-group, .form-field, .field, .input-wrap, li, p, div');
-            if (parent) {
-              var lbl2 = parent.querySelector('label, .label, .form-label');
-              if (lbl2 && lbl2 !== el) label = lbl2.textContent.trim();
-            }
-          }
-
-          var selector = el.id
-            ? '#' + CSS.escape(el.id)
-            : el.name
-              ? '[name="' + el.name + '"]'
-              : null;
-          if (!selector) return;
-
-          var field = {
-            selector: selector,
-            id: el.id || null,
-            name: el.name || null,
-            type: el.tagName === 'SELECT' ? 'select' : el.tagName === 'TEXTAREA' ? 'textarea' : (el.type || 'text'),
-            label: label || el.placeholder || el.name || el.id || '',
-            placeholder: el.placeholder || '',
-            required: el.required,
-          };
-
-          if (el.tagName === 'SELECT') {
-            field.options = Array.prototype.slice.call(el.options).map(function (o) {
-              return { value: o.value, text: o.text.trim() };
-            });
-          }
-
-          fields.push(field);
-        });
-
-        // CAPTCHA検出
-        const captchaNodes = document.querySelectorAll(
-          '.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"]'
-        );
-        const hasCaptcha = captchaNodes.length > 0;
-
-        // iframe検出 + cross-origin判定
-        const iframes = document.querySelectorAll('iframe');
-        const hasIframeForm = iframes.length > 0;
-        let iframeIsCrossOrigin = false;
-        try {
-          const origin = window.location.origin;
-          for (const f of iframes) {
-            const src = f.getAttribute('src') || '';
-            if (!src) continue;
+        function scan(ctx, loc){
+          // 前回 snapshot の data-sc-fid を消してから採番し直す (再 snapshot 時に
+          // 古いマーカーが残って fillForm が誤った要素に解決するのを防ぐ)。
+          try { var stale = ctx.querySelectorAll('[data-sc-fid]'); for(var z=0;z<stale.length;z++) stale[z].removeAttribute('data-sc-fid'); } catch(e){}
+          var ctrls; try { ctrls = ctx.querySelectorAll('input, textarea, select'); } catch(e){ return; }
+          Array.prototype.forEach.call(ctrls, function(el){
             try {
-              const u = new URL(src, window.location.href);
-              if (u.origin && u.origin !== origin) { iframeIsCrossOrigin = true; break; }
-            } catch (_) {}
-          }
-        } catch (_) {}
+              var t = (el.type || '').toLowerCase();
+              if(['hidden','submit','button','reset','image','file'].indexOf(t) >= 0) return;
+              var vis = isVisible(el);
+              if(!vis && t !== 'radio' && t !== 'checkbox') return;
+              var fid = ++FID;
+              try { el.setAttribute('data-sc-fid', String(fid)); } catch(e){}
+              // light DOM かつ clean な id があれば #id、それ以外は data-sc-fid マーカー
+              var sel;
+              if(loc === 'light' && el.id && !GUID.test(el.id)){ try { sel = '#' + CSS.escape(el.id); } catch(e){ sel = '[data-sc-fid="' + fid + '"]'; } }
+              else { sel = '[data-sc-fid="' + fid + '"]'; }
+              var field = {
+                scFid: fid,
+                selector: sel,
+                id: el.id || null,
+                name: el.getAttribute('name') || null,
+                type: el.tagName === 'SELECT' ? 'select' : (el.tagName === 'TEXTAREA' ? 'textarea' : (el.type || 'text')),
+                role: roleOf(el),
+                label: accName(el) || el.getAttribute('name') || el.id || '',
+                placeholder: el.getAttribute('placeholder') || '',
+                required: !!el.required,
+                visible: vis,
+                location: loc
+              };
+              if(el.tagName === 'SELECT'){
+                field.options = Array.prototype.slice.call(el.options).map(function(o){ return { value: o.value, text: (o.text || '').trim() }; });
+              }
+              fields.push(field);
+            } catch(e){}
+          });
+          // open shadow roots
+          var hosts; try { hosts = ctx.querySelectorAll('*'); } catch(e){ hosts = []; }
+          for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ scan(hosts[i].shadowRoot, loc === 'light' ? 'shadow' : loc); } }
+        }
+        scan(document, 'light');
 
-        return { fields, hasCaptcha, hasIframeForm, iframeIsCrossOrigin };
+        // 同一オリジン iframe 内も収集 (cross-origin は不可)
+        var iframes = document.querySelectorAll('iframe');
+        var iframeIsCrossOrigin = false;
+        for(var k=0;k<iframes.length;k++){
+          var src = iframes[k].getAttribute('src') || '';
+          var fd = null;
+          try { fd = iframes[k].contentDocument; } catch(e){ iframeIsCrossOrigin = true; }
+          if(fd){ scan(fd, 'iframe'); }
+          else if(src){ try { var u = new URL(src, window.location.href); if(u.origin && u.origin !== window.location.origin) iframeIsCrossOrigin = true; } catch(e){} }
+        }
+
+        var captchaNodes = document.querySelectorAll('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"]');
+        return {
+          fields: fields,
+          hasCaptcha: captchaNodes.length > 0,
+          hasIframeForm: iframes.length > 0,
+          iframeIsCrossOrigin: iframeIsCrossOrigin,
+          shadowFieldCount: fields.filter(function(f){ return f.location === 'shadow'; }).length,
+          iframeFieldCount: fields.filter(function(f){ return f.location === 'iframe'; }).length
+        };
       })()
     `);
 
@@ -621,6 +669,8 @@ class FormSessionManager {
       hasCaptcha: !!(raw && raw.hasCaptcha),
       hasIframeForm: !!(raw && raw.hasIframeForm),
       iframeIsCrossOrigin: !!(raw && raw.iframeIsCrossOrigin),
+      shadowFieldCount: (raw && raw.shadowFieldCount) || 0,
+      iframeFieldCount: (raw && raw.iframeFieldCount) || 0,
       hasMessageField: fields.some((f: any) => f.purpose === 'message'),
     };
 
@@ -655,24 +705,46 @@ class FormSessionManager {
       return [];
     }
 
+    // v2.0.98: light DOM → open shadow DOM → 同一オリジン iframe を貫通して要素解決する。
+    //   light DOM は従来通り document.querySelector を最初に試すため後方互換 (挙動不変)。
+    //   getFormStructure が付与した [data-sc-fid] マーカーで shadow/iframe 内も入力可能。
+    //   native value setter は要素自身の realm (iframe なら iframe window) を使う。
     const script = `(function(){
-      const items=${JSON.stringify(items)};
-      const out=[];
-      for(const it of items){
+      var items=${JSON.stringify(items)};
+      function resolve(sel){
+        var el=null; try{ el=document.querySelector(sel); }catch(e){}
+        if(el) return el;
+        function search(ctx, depth){
+          if(depth > 8) return null; // 異常に深い shadow/iframe ネストでの stack overflow 防止
+          var e=null; try{ e=ctx.querySelector(sel); }catch(_){}
+          if(e) return e;
+          var hosts; try{ hosts=ctx.querySelectorAll('*'); }catch(_){ hosts=[]; }
+          for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ var r=search(hosts[i].shadowRoot, depth+1); if(r) return r; } }
+          var fr; try{ fr=ctx.querySelectorAll('iframe'); }catch(_){ fr=[]; }
+          for(var k=0;k<fr.length;k++){ try{ var fd=fr[k].contentDocument; if(fd){ var r2=search(fd, depth+1); if(r2) return r2; } }catch(_){} }
+          return null;
+        }
+        return search(document, 0);
+      }
+      var out=[];
+      for(var idx=0; idx<items.length; idx++){
+        var it=items[idx];
         try{
-          const el=document.querySelector(it.selector);
+          var el=resolve(it.selector);
           if(!el){out.push({selector:it.selector,ok:false,reason:'not_found'});continue;}
+          var view=(el.ownerDocument&&el.ownerDocument.defaultView)||window;
           if(it.isSelect){
             el.value=it.value;
-            el.dispatchEvent(new Event('change',{bubbles:true}));
+            el.dispatchEvent(new view.Event('change',{bubbles:true}));
           }else{
-            const proto=el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
-            const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+            var proto=el.tagName==='TEXTAREA'?view.HTMLTextAreaElement.prototype:view.HTMLInputElement.prototype;
+            var desc=Object.getOwnPropertyDescriptor(proto,'value');
+            var setter=desc&&desc.set;
             if(setter)setter.call(el,it.value);else el.value=it.value;
-            el.dispatchEvent(new Event('focus',{bubbles:true}));
-            el.dispatchEvent(new Event('input',{bubbles:true}));
-            el.dispatchEvent(new Event('change',{bubbles:true}));
-            el.dispatchEvent(new Event('blur',{bubbles:true}));
+            el.dispatchEvent(new view.Event('focus',{bubbles:true}));
+            el.dispatchEvent(new view.Event('input',{bubbles:true}));
+            el.dispatchEvent(new view.Event('change',{bubbles:true}));
+            el.dispatchEvent(new view.Event('blur',{bubbles:true}));
           }
           out.push({selector:it.selector,ok:true});
         }catch(e){out.push({selector:it.selector,ok:false,reason:String((e&&e.message)||e)});}
