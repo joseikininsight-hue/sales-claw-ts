@@ -46,6 +46,12 @@ const translations = {
     'filter.error': 'Error',
     'filter.excluded': 'Excluded',
   'filter.search': 'Search by company, type, progress, or error...',
+    // v2.1.0: Action-log filter tabs
+    'logfilter.all': 'All',
+    'logfilter.sent': 'Sent',
+    'logfilter.attention': 'Needs review',
+    'logfilter.error': 'Errors',
+    'logfilter.progress': 'In progress',
 
     // Table headers
     'th.no': 'No.',
@@ -1000,6 +1006,12 @@ const translations = {
     'filter.error': 'エラー',
     'filter.excluded': '除外',
   'filter.search': '企業名・種別・進捗・エラー内容で検索...',
+    // v2.1.0: 操作ログのフィルタタブ
+    'logfilter.all': 'すべて',
+    'logfilter.sent': '送信完了',
+    'logfilter.attention': '確認待ち・要対応',
+    'logfilter.error': 'エラー',
+    'logfilter.progress': '進行中',
 
     // Table headers
     'th.no': 'No.',

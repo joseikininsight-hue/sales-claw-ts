@@ -15,6 +15,7 @@ interface BuildBatchRulesOpts {
   autoSendSafe: boolean;
   parallelTabs: number;
   formPreferences?: FormPreferences;
+  formFillMode?: string; // v2.1.0: 'internal' (in-app WebContentsView) vs 'playwright' (external Chrome)
 }
 
 // v2.0.59: default form preference (partnership outreach).
@@ -39,12 +40,14 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   const tabs = Number.isFinite(opts && opts.parallelTabs) ? Number(opts.parallelTabs) : 1;
   const autoSendSafe = !!(opts && opts.autoSendSafe);
   const formPref = opts && opts.formPreferences;
+  const isInternal = !opts || opts.formFillMode !== 'playwright'; // default is internal (in-app browser)
 
   const lines: string[] = [
     '- Phase A is already done by the backend. Do NOT re-analyze the target site unless the form URL is unresolved.',
     '- ★ urlMissing=true companies: run WebSearch **exactly once** (single query "<company name> official site"), pick the official domain from the top 3 results, navigate directly. No retries. No per-candidate navigate-and-check loops. No wikipedia detours. If not decided within 30 seconds OR no official found, **mark as error immediately**.',
     '- ★ For companies with urlMissing=false but with empty siteExcerpt or failed site fetch, do NOT contact. Stop and mark as error. NEVER guess content and proceed to awaiting_approval / submitted.',
     '- ★ awaiting_approval / submitted is only accepted by the API when Phase A site_analysis collected sufficient site text AND form_fill → confirm_reached have already been logged.',
+    '- ★ How to reach the confirmation screen: the submit/confirm button is NOT in the browser_snapshot fields list (it is not a form field). Locate it by visible text ("Submit", "Confirm", "Send", "Next", "送信", "確認") and browser_click it. After clicking, use browser_wait_for until the confirmation text/URL change appears, then log confirm_reached. If you stop at form_fill without logging confirm_reached, that company cannot proceed to the send decision and stays incomplete.',
     '- When messagePrompt is provided, use it to finalize the body for this specific company before filling the form.',
     '- messageDraft is the Phase A draft, messagePrompt is the generation context. Prefer messagePrompt; fall back to messageDraft only.',
     '- Even when rewriting the body, do NOT add facts not present in messagePrompt / analysisHints / siteExcerpt. Never invent figures (employee count, founding year, capital, etc.) that are not in sender_json.',
@@ -61,9 +64,14 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   if (tabs <= 1) {
     lines.push('- Process companies one at a time and keep status reports concise.');
   } else {
+    // v2.1.0: tab-open instructions differ by mode. In internal mode window.open does
+    //   not follow the in-app tab manager, so open each company tab via browser_tabs new.
+    const openRuleEn = isInternal
+      ? `- Parallel sequence: first thinking decides "open ${tabs} tabs simultaneously" → immediately emit ${tabs} browser_tabs({action:"new", url:<company URL>, companyNo:<No>}) as parallel tool_use (one dedicated tab per company). Do NOT use window.open (it is not tracked by the in-app browser).`
+      : `- Parallel sequence: first thinking decides "open ${tabs} tabs simultaneously" → immediately emit first company as browser_navigate, the remaining ${tabs - 1} as browser_evaluate(window.open) + browser_tabs(select) as parallel tool_use.`;
     lines.push(
-      `- ★★ MUST use parallel tool_use. Claude can emit multiple tool_use blocks in a single thinking. On the first response, fire ${tabs} browser_navigate calls **in parallel within the same assistant message**. Sequential "company 1 → wait → company 2" is forbidden.`,
-      `- Parallel sequence: first thinking decides "open ${tabs} tabs simultaneously" → immediately emit ${tabs} browser_navigate (or first one as browser_navigate, the remaining ${tabs - 1} as browser_evaluate(window.open) + browser_tabs(select)) as parallel tool_use.`,
+      `- ★★ MUST use parallel tool_use. Claude can emit multiple tool_use blocks in a single thinking. On the first response, fire ${tabs} tab-open calls **in parallel within the same assistant message**. Sequential "company 1 → wait → company 2" is forbidden.`,
+      openRuleEn,
       `- Wait until all ${tabs} navigations settle → then issue ${tabs} parallel browser_snapshot calls → then ${tabs} parallel browser_fill_form calls (Claude API supports parallel calls of the same tool kind).`,
       `- Screenshots / curl are per-company but emit ${tabs} parallel calls when possible. Never exceed ${tabs + 1} concurrent tabs (resource contention).`,
       `- Parallel emission applies only to tools with the same precondition / same decision axis. CAPTCHA analysis, body finalization, send-decision must be per-company sequential.`,

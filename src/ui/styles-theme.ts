@@ -128,6 +128,9 @@ const THEME_CSS = `
 .fb.active{background:linear-gradient(135deg,#3b82f6,#6366f1);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(59,130,246,.35),inset 0 1px 0 rgba(255,255,255,.18)}
 .fb.active:hover{box-shadow:0 6px 18px rgba(59,130,246,.45),inset 0 1px 0 rgba(255,255,255,.22);transform:translateY(-1px)}
 [data-theme="dark"] .fb.active{background:linear-gradient(135deg,#3b82f6,#818cf8);box-shadow:0 4px 18px rgba(59,130,246,.5),inset 0 1px 0 rgba(255,255,255,.15)}
+/* v2.1.0: 操作ログのフィルタピル内に出す件数バッジ */
+.lf-badge{display:inline-block;min-width:16px;margin-left:4px;padding:0 5px;font-size:.6rem;font-weight:700;line-height:1.5;border-radius:var(--radius-pill);background:rgba(100,116,139,.18);color:inherit;opacity:.85}
+.fb.active .lf-badge{background:rgba(255,255,255,.28);color:#fff;opacity:1}
 .fb-sent.active{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 14px rgba(16,185,129,.35)}
 
 .bulk-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}

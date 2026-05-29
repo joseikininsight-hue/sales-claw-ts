@@ -4,8 +4,8 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import { getRequestTarget } from './dashboard-runtime';
-import { ensureDataDir, resolveDataPath } from './data-paths';
-import { acquireFileLock as _acquireFileLock, releaseFileLock } from './file-lock';
+import { resolveDataPath } from './data-paths';
+import { acquireFileLock as _acquireFileLock, releaseFileLock, atomicWriteJson } from './file-lock';
 import type { ActionLogEntry, ActionType, ActionDetails } from './types/action-log';
 
 interface SettingsManagerShape {
@@ -59,16 +59,29 @@ function scheduleDebouncedFlush(): void {
   if (typeof _flushTimer.unref === 'function') _flushTimer.unref();
 }
 
-function flushNow(): void {
+function flushNow(exitFlush = false): void {
   if (_flushTimer) {
     clearTimeout(_flushTimer);
     _flushTimer = null;
   }
   _pendingFlush = false;
-  // v2.0.19: 単一 disk write は lock 必須 (rename atomic だが Windows で他プロセス
-  // の同時アクセスを安全に直列化するため)
+  // 根本原因 2 の対策: ロック取得失敗時はロック無し書き込みを禁止。
+  // 通常は maxWaitMs 短め (1500ms)、終了時は長め (5000ms) で best-effort。
   const filePath = getLogFile();
-  const lockFile = acquireFileLock(filePath);
+  const maxWaitMs = exitFlush ? 5000 : 1500;
+  let lockFile: string | null = null;
+  try {
+    lockFile = _acquireFileLock(filePath, { label: 'action-logger', maxWaitMs });
+  } catch (e: unknown) {
+    // ロック取得失敗: ロック無し書き込みは torn write を招くため禁止。
+    // dirty フラグを立てたまま次の debounce 周期に委ねる。
+    _pendingFlush = true;
+    console.warn('[action-logger] flushNow: lock timeout, will retry:', e instanceof Error ? e.message : String(e));
+    // terminal action 等で flushNow が直接呼ばれた場合、タイマーが張られていないと
+    // 次の logAction まで永続化が遅延する。非終了時はデバウンスを張り直す。
+    if (!exitFlush) scheduleDebouncedFlush();
+    return;
+  }
   try {
     saveLog(logCache.data);
   } catch (e: unknown) {
@@ -84,7 +97,8 @@ let _exitHooksInstalled = false;
 function installExitHooks(): void {
   if (_exitHooksInstalled) return;
   _exitHooksInstalled = true;
-  const onExit = () => { try { flushNow(); } catch (_) { /* swallow */ } };
+  // 終了時は exitFlush=true で長めタイムアウト (5000ms) を使う
+  const onExit = () => { try { flushNow(true); } catch (_) { /* swallow */ } };
   process.once('beforeExit', onExit);
   process.once('SIGINT', () => { onExit(); process.exit(130); });
   process.once('SIGTERM', () => { onExit(); process.exit(143); });
@@ -137,15 +151,30 @@ function readJsonCached(filePath: string, fallbackValue: ActionLogEntry[]): Acti
     return sanitized;
   } catch (parseErr: unknown) {
     // 1.2.92: JSON 破損検知 → corrupt として隔離 + 警告ログ
+    const corruptPath = filePath + '.corrupt.' + Date.now();
     try {
-      const backup = filePath + '.corrupt.' + Date.now();
-      fs.copyFileSync(filePath, backup);
+      fs.copyFileSync(filePath, corruptPath);
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      console.warn(`[action-logger] JSON parse failed: ${filePath} - backed up to ${backup}, continuing with empty fallback. Error: ${msg}`);
+      console.warn(`[action-logger] JSON parse failed: ${filePath} - backed up to ${corruptPath}, continuing with empty fallback. Error: ${msg}`);
     } catch (backupErr: unknown) {
       const pmsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       const bmsg = backupErr instanceof Error ? backupErr.message : String(backupErr);
       console.warn(`[action-logger] JSON parse failed AND backup failed: ${filePath}. parse: ${pmsg}, backup: ${bmsg}`);
+    }
+    // 根本原因 5 の対策: .bak が存在すれば復元を試みる
+    const bakPath = filePath + '.bak';
+    try {
+      const bakParsed = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+      const bakData: ActionLogEntry[] = Array.isArray(bakParsed) ? (bakParsed as ActionLogEntry[]) : [];
+      // .bak から本体へ復元
+      fs.copyFileSync(bakPath, filePath);
+      console.warn(`[action-logger] restored from ${bakPath}: ${bakData.length} entries`);
+      logCache.filePath = filePath;
+      logCache.signature = getFileSignature(filePath);
+      logCache.data = bakData;
+      return bakData;
+    } catch {
+      // .bak も読めない場合は空フォールバック（最後の手段）
     }
     logCache.filePath = filePath;
     logCache.signature = signature;
@@ -155,21 +184,13 @@ function readJsonCached(filePath: string, fallbackValue: ActionLogEntry[]): Acti
 }
 
 function writeJsonCached(filePath: string, data: ActionLogEntry[]): void {
-  ensureDataDir();
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e: unknown) {
-    const code = (e && typeof e === 'object' && 'code' in e) ? (e as { code?: string }).code : undefined;
-    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-      throw e;
-    }
+  // 根本原因 5 の対策: 書き込み直前に現在の正常値を .bak として保存
+  if (fs.existsSync(filePath)) {
+    try { fs.copyFileSync(filePath, filePath + '.bak'); } catch { /* backup 失敗は致命的でない */ }
   }
+  // 根本原因 1・2 の対策: copyFileSync フォールバックを撤廃し、fsync 付き
+  // atomicWriteJson に一本化。EPERM/EBUSY は atomicWriteJson 内でリトライする。
+  atomicWriteJson(filePath, JSON.stringify(data, null, 2));
   logCache.filePath = filePath;
   logCache.signature = getFileSignature(filePath);
   logCache.data = data;
@@ -189,8 +210,10 @@ function loadLog(): ActionLogEntry[] {
 }
 
 function saveLog(entries: ActionLogEntry[]): void {
+  // 根本原因 4 の対策: maxLogEntries の既定値を 10000 → 2000 に縮小し、
+  // フル書き直し時の JSON サイズ・ロック保持時間を抑制する。
   const prefs = settings.getSection('preferences');
-  const maxEntries = Math.max(100, Number(prefs?.maxLogEntries) || 10000);
+  const maxEntries = Math.max(100, Number(prefs?.maxLogEntries) || 2000);
   const trimmed = entries.slice(-maxEntries);
   writeJsonCached(getLogFile(), trimmed);
 }

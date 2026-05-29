@@ -16,11 +16,17 @@ import { getDataDir, PROJECT_ROOT } from './data-paths';
 /** デフォルトの「古い」閾値: 24 時間 */
 export const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** 根本原因 5 の対策: .corrupt ファイルの掃除閾値: 7 日 */
+export const CORRUPT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** `foo.json.tmp.12345` のような一時書き込みファイル */
 const TMP_PATTERN = /\.tmp\.\d+$/;
 
 /** `foo.lock` のようなロックファイル */
 const LOCK_PATTERN = /\.lock$/;
+
+/** 根本原因 5 の対策: `foo.json.corrupt.1234567890` のような破損退避ファイル */
+const CORRUPT_PATTERN = /\.corrupt\.\d+$/;
 
 /**
  * 誤爆防止: これらの名前は古くても削除しない。
@@ -40,6 +46,8 @@ const MAX_SUBDIR_DEPTH = 2;
 export interface CleanupOptions {
   dataDir?: string;
   maxAgeMs?: number;
+  /** .corrupt ファイルの掃除閾値 (ms)。未指定時は CORRUPT_MAX_AGE_MS (7日) */
+  corruptMaxAgeMs?: number;
   now?: number;
   allowedRoots?: string[];
 }
@@ -47,7 +55,7 @@ export interface CleanupOptions {
 export interface CleanupRemoved {
   path: string;
   ageMs: number;
-  kind: 'tmp' | 'lock';
+  kind: 'tmp' | 'lock' | 'corrupt';
 }
 
 export interface CleanupError {
@@ -70,6 +78,7 @@ function isPathInsideRoot(target: string, root: string | null | undefined): bool
 export function cleanupStaleFiles(options: CleanupOptions = {}): CleanupResult {
   const dir = options.dataDir ?? getDataDir();
   const maxAgeMs = Number(options.maxAgeMs) > 0 ? Number(options.maxAgeMs) : DEFAULT_MAX_AGE_MS;
+  const corruptMaxAgeMs = Number(options.corruptMaxAgeMs) > 0 ? Number(options.corruptMaxAgeMs) : CORRUPT_MAX_AGE_MS;
   const now = options.now ?? Date.now();
   const allowedRoots = Array.isArray(options.allowedRoots) && options.allowedRoots.length > 0
     ? options.allowedRoots
@@ -89,11 +98,11 @@ export function cleanupStaleFiles(options: CleanupOptions = {}): CleanupResult {
     return result;
   }
 
-  walk(resolvedDir, 0, maxAgeMs, now, result);
+  walk(resolvedDir, 0, maxAgeMs, corruptMaxAgeMs, now, result);
   return result;
 }
 
-function walk(dir: string, depth: number, maxAgeMs: number, now: number, result: CleanupResult): void {
+function walk(dir: string, depth: number, maxAgeMs: number, corruptMaxAgeMs: number, now: number, result: CleanupResult): void {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -106,24 +115,28 @@ function walk(dir: string, depth: number, maxAgeMs: number, now: number, result:
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (depth + 1 <= MAX_SUBDIR_DEPTH) walk(full, depth + 1, maxAgeMs, now, result);
+      if (depth + 1 <= MAX_SUBDIR_DEPTH) walk(full, depth + 1, maxAgeMs, corruptMaxAgeMs, now, result);
       continue;
     }
     if (!entry.isFile()) continue;
 
     const isTmp = TMP_PATTERN.test(entry.name);
     const isLock = LOCK_PATTERN.test(entry.name);
-    if (!isTmp && !isLock) continue;
+    // 根本原因 5 の対策: .corrupt ファイルを掃除対象に追加
+    const isCorrupt = CORRUPT_PATTERN.test(entry.name);
+    if (!isTmp && !isLock && !isCorrupt) continue;
     if (PROTECTED_NAMES.has(entry.name)) continue;
 
     result.scanned += 1;
+    // .corrupt は専用の閾値 (7日) を使う
+    const ageThreshold = isCorrupt ? corruptMaxAgeMs : maxAgeMs;
     try {
       const stat = fs.statSync(full);
       if (!stat.isFile()) continue;
       const age = now - stat.mtimeMs;
-      if (age < maxAgeMs) continue;
+      if (age < ageThreshold) continue;
       fs.unlinkSync(full);
-      result.removed.push({ path: full, ageMs: age, kind: isLock ? 'lock' : 'tmp' });
+      result.removed.push({ path: full, ageMs: age, kind: isCorrupt ? 'corrupt' : isLock ? 'lock' : 'tmp' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       result.errors.push({ path: full, error: msg });
@@ -131,4 +144,4 @@ function walk(dir: string, depth: number, maxAgeMs: number, now: number, result:
   }
 }
 
-module.exports = { cleanupStaleFiles, DEFAULT_MAX_AGE_MS };
+module.exports = { cleanupStaleFiles, DEFAULT_MAX_AGE_MS, CORRUPT_MAX_AGE_MS };

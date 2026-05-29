@@ -13,6 +13,9 @@ const PANEL_LEFT_RATIO = 0.45; // dashboard left panel takes 45%
 const MAX_SESSIONS = 30;
 const ALLOWED_SCREENSHOT_SUFFIXES = new Set(['input', 'confirm', 'sent', 'error']);
 const DNS_LOOKUP_TIMEOUT_MS = 5000;
+// v2.1.0: getFormStructure / fillForm の注入JS が遷移中フレームや重いページで返らない
+//   ときの保険。CDP 系コマンド (cdp-bridge) の 15s ガードに揃える。
+const FORM_INJECT_TIMEOUT_MS = 15000;
 
 function isBlockedIpv4(address) {
   const parts = String(address).split('.').map((part: any) => Number(part));
@@ -546,9 +549,14 @@ class FormSessionManager {
     //   ※ この文字列全体は browser 内で実行される pure JavaScript。TS 型注釈・backtick
     //     ・${ } は使用不可。正規表現のバックスラッシュは template literal が \\ → \ に
     //     畳むため、source では二重 (例: /\\s+/g) で書くと runtime で /\s+/g になる。
-    const raw: any = await session.view.webContents.executeJavaScript(`
+    // v2.1.0: 注入JS が遷移中フレームや重い shadow ページで返らないと、executeJavaScript の
+    //   Promise が settle せず MCP ツールが無期限沈黙 → AI が次へ進めず watchdog が 20 分後に
+    //   error 化していた。15s で打ち切り「構造取得失敗」として AI に判断材料を返す。
+    let raw: any = null;
+    try {
+      raw = await withTimeout(
+        session.view.webContents.executeJavaScript(`
       (function () {
-        var FID = 0;
         function gcs(el){ try { var w = el.ownerDocument && el.ownerDocument.defaultView; return w ? w.getComputedStyle(el) : null; } catch(e){ return null; } }
         function isVisible(el){
           var s = gcs(el); if(!s) return true;
@@ -598,10 +606,16 @@ class FormSessionManager {
         }
         var GUID = /[0-9a-f]{8}-[0-9a-f]{4}/i;
         var fields = [];
-        function scan(ctx, loc){
-          // 前回 snapshot の data-sc-fid を消してから採番し直す (再 snapshot 時に
-          // 古いマーカーが残って fillForm が誤った要素に解決するのを防ぐ)。
-          try { var stale = ctx.querySelectorAll('[data-sc-fid]'); for(var z=0;z<stale.length;z++) stale[z].removeAttribute('data-sc-fid'); } catch(e){}
+        // v2.1.0 回帰修正: data-sc-fid は 1 セッション中ずっと安定させる。
+        //   既存マーカーは温存して再利用し、未採番の要素にだけ window スコープの単調
+        //   カウンタ (__scFidSeq) で新規付与する。
+        //   旧 v2.0.98 は毎 snapshot で全マーカーを消去し FID=0 から採番し直していたため、
+        //   AI が snapshot→入力→(確認/送信ボタン探しで)再 snapshot→click と往復する間に
+        //   セレクタが揮発し、fillForm / click が not_found になって確認画面へ進めず
+        //   form_fill のまま 20 分 watchdog で error 化する送信不能バグの主因だった。
+        try { if(typeof window.__scFidSeq !== 'number') window.__scFidSeq = 0; } catch(e){}
+        function scan(ctx, loc, depth){
+          if(depth > 8) return; // fillForm search() と対称な再帰深さ防御 (stack overflow / 重いページでの暴走防止)
           var ctrls; try { ctrls = ctx.querySelectorAll('input, textarea, select'); } catch(e){ return; }
           Array.prototype.forEach.call(ctrls, function(el){
             try {
@@ -609,15 +623,22 @@ class FormSessionManager {
               if(['hidden','submit','button','reset','image','file'].indexOf(t) >= 0) return;
               var vis = isVisible(el);
               if(!vis && t !== 'radio' && t !== 'checkbox') return;
-              var fid = ++FID;
-              try { el.setAttribute('data-sc-fid', String(fid)); } catch(e){}
-              // light DOM かつ clean な id があれば #id、それ以外は data-sc-fid マーカー
-              var sel;
-              if(loc === 'light' && el.id && !GUID.test(el.id)){ try { sel = '#' + CSS.escape(el.id); } catch(e){ sel = '[data-sc-fid="' + fid + '"]'; } }
-              else { sel = '[data-sc-fid="' + fid + '"]'; }
+              // 既存マーカーを再利用 (再 snapshot でも同じ値) → 無ければ単調採番で新規付与
+              var fid = el.getAttribute('data-sc-fid');
+              if(!fid){ try { fid = String(++window.__scFidSeq); el.setAttribute('data-sc-fid', fid); } catch(e){ fid = String(++window.__scFidSeq); } }
+              // light DOM かつ clean な id があれば #id (最も安定)、それ以外は安定 data-sc-fid マーカー
+              var fidSel = '[data-sc-fid="' + fid + '"]';
+              var idSel = null;
+              try { if(el.id && !GUID.test(el.id)) idSel = '#' + CSS.escape(el.id); } catch(e){ idSel = null; }
+              var nameSel = null;
+              try { var nm = el.getAttribute('name'); if(nm) nameSel = '[name="' + (window.CSS && CSS.escape ? CSS.escape(nm) : nm) + '"]'; } catch(e){ nameSel = null; }
+              var sel = (loc === 'light' && idSel) ? idSel : fidSel;
               var field = {
                 scFid: fid,
                 selector: sel,
+                fidSel: fidSel,           // 多層フォールバック用 (fillForm が sel→fidSel→idSel→nameSel で解決)
+                idSel: idSel,
+                nameSel: nameSel,
                 id: el.id || null,
                 name: el.getAttribute('name') || null,
                 type: el.tagName === 'SELECT' ? 'select' : (el.tagName === 'TEXTAREA' ? 'textarea' : (el.type || 'text')),
@@ -636,9 +657,9 @@ class FormSessionManager {
           });
           // open shadow roots
           var hosts; try { hosts = ctx.querySelectorAll('*'); } catch(e){ hosts = []; }
-          for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ scan(hosts[i].shadowRoot, loc === 'light' ? 'shadow' : loc); } }
+          for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ scan(hosts[i].shadowRoot, loc === 'light' ? 'shadow' : loc, depth + 1); } }
         }
-        scan(document, 'light');
+        scan(document, 'light', 0);
 
         // 同一オリジン iframe 内も収集 (cross-origin は不可)
         var iframes = document.querySelectorAll('iframe');
@@ -647,7 +668,7 @@ class FormSessionManager {
           var src = iframes[k].getAttribute('src') || '';
           var fd = null;
           try { fd = iframes[k].contentDocument; } catch(e){ iframeIsCrossOrigin = true; }
-          if(fd){ scan(fd, 'iframe'); }
+          if(fd){ scan(fd, 'iframe', 0); }
           else if(src){ try { var u = new URL(src, window.location.href); if(u.origin && u.origin !== window.location.origin) iframeIsCrossOrigin = true; } catch(e){} }
         }
 
@@ -667,10 +688,13 @@ class FormSessionManager {
           var interactive = false;
           if(grec){ var size=(grec.getAttribute('data-size')||'').toLowerCase(); if(size!=='invisible') interactive = true; }
           if(hcap) interactive = true;           // hCaptcha は基本チャレンジ型 (要人手)
-          // v3 / v2-invisible / Turnstile(managed) / バッジのみ は interactive=false のまま。
-          // ただし [data-sitekey] 等の汎用検出だけで型が不明な場合は、安全側に倒して
-          // interactive=true にする (人手が要るのに送信してしまう誤りを避ける)。
-          if(!interactive && generic && !grec && !v3script && !badge && !turnstile) interactive = true;
+          // v2.1.0 回帰修正: 汎用検出 ([data-sitekey] / iframe[src*=recaptcha]) だけが当たる
+          //   ケースは reCAPTCHA v3 / invisible が大半。旧 v2.0.98 はこれを安全側で
+          //   interactive=true (要対応) に倒していたが、その結果 v3 フォームまで
+          //   awaiting_approval に落ち autoSendSafe=ON でも自動送信されなくなっていた。
+          //   → 汎用のみは invisible 既定 (そのまま送信) に戻す。明示的な v2 チェックボックス
+          //   (可視 .g-recaptcha で data-size!=='invisible') の痕跡があるときだけ interactive。
+          //   ※ CAPTCHA を解く/回避するコードは一切持たない。あくまで「人手が要るか」の分類のみ。
           return { present:true, interactive:interactive, kind: interactive ? 'interactive' : 'invisible' };
         }
         var cap = classifyCaptcha();
@@ -685,7 +709,31 @@ class FormSessionManager {
           iframeFieldCount: fields.filter(function(f){ return f.location === 'iframe'; }).length
         };
       })()
-    `);
+    `),
+        FORM_INJECT_TIMEOUT_MS,
+        'getFormStructure injected JS timed out',
+      );
+    } catch (e: any) {
+      // 構造取得が固まった/失敗した → 空フィールド + error 推奨で AI に返す
+      //   (無期限ハングで社単位 20 分喪失するより、即「取得失敗」を返す方が安全)
+      return {
+        fields: [],
+        meta: {
+          fieldCount: 0,
+          hasCaptcha: false,
+          captchaInteractive: false,
+          captchaKind: 'none',
+          hasIframeForm: false,
+          iframeIsCrossOrigin: false,
+          shadowFieldCount: 0,
+          iframeFieldCount: 0,
+          hasMessageField: false,
+          structureError: String((e && e.message) || e),
+          recommendedStatus: 'error',
+          recommendedReason: 'フォーム構造の取得に失敗しました（ページ応答なし/タイムアウト）。手動確認が必要です。',
+        },
+      };
+    }
 
     const rawFields = Array.isArray(raw && raw.fields) ? raw.fields : [];
     // サーバー側で用途ヒントを推定して付与する（CLIマッピング判断を支援）
@@ -726,7 +774,14 @@ class FormSessionManager {
     // 旧実装はフィールド毎に IPC 往復していた (N フィールド = N 往復)。
     const items = (Array.isArray(mappings) ? mappings : [])
       .filter((m) => m && m.selector && m.value != null)
-      .map((m) => ({ selector: String(m.selector), value: String(m.value), isSelect: m.type === 'select' }));
+      .map((m) => ({
+        selector: String(m.selector),
+        // v2.1.0: data-sc-fid マーカーが SPA 再描画等で失効しても #id/[name] へ
+        //   フォールバック解決できるよう、判っている代替セレクタも一緒に渡す。
+        altSelectors: [m.fidSel, m.idSel, m.nameSel].filter((s) => typeof s === 'string' && s),
+        value: String(m.value),
+        isSelect: m.type === 'select',
+      }));
 
     if (items.length === 0) {
       session.status = 'filled';
@@ -754,11 +809,18 @@ class FormSessionManager {
         }
         return search(document, 0);
       }
+      function resolveAny(it){
+        var el=resolve(it.selector);
+        if(el) return el;
+        var alts=it.altSelectors||[];
+        for(var a=0;a<alts.length;a++){ var r=resolve(alts[a]); if(r) return r; }
+        return null;
+      }
       var out=[];
       for(var idx=0; idx<items.length; idx++){
         var it=items[idx];
         try{
-          var el=resolve(it.selector);
+          var el=resolveAny(it);
           if(!el){out.push({selector:it.selector,ok:false,reason:'not_found'});continue;}
           var view=(el.ownerDocument&&el.ownerDocument.defaultView)||window;
           if(it.isSelect){
@@ -782,9 +844,13 @@ class FormSessionManager {
 
     let results: unknown[];
     try {
-      results = await session.view.webContents.executeJavaScript(script);
-    } catch (e) {
-      results = items.map((it) => ({ selector: it.selector, ok: false, reason: e.message }));
+      results = await withTimeout(
+        session.view.webContents.executeJavaScript(script),
+        FORM_INJECT_TIMEOUT_MS,
+        'fillForm injected JS timed out',
+      );
+    } catch (e: any) {
+      results = items.map((it) => ({ selector: it.selector, ok: false, reason: String((e && e.message) || e) }));
     }
 
     session.status = 'filled';

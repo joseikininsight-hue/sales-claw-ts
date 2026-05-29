@@ -30,7 +30,8 @@ const FINAL_STATUSES = new Set([
   'user_required',
 ]);
 const STALE_SESSION_TTL_MS = 5 * 60 * 1000;
-const MAX_MONITOR_EVENTS_STORED = 1000;
+// 根本原因 4 の対策: 保存イベント上限を 1000 → 300 に縮小してフル書き直しサイズを抑制
+const MAX_MONITOR_EVENTS_STORED = 300;
 const MAX_MONITOR_EVENTS_SUMMARY = 200;
 const monitorCache: { filePath: string | null; signature: string | null; data: any } = {
   filePath: null,
@@ -59,7 +60,7 @@ function scheduleLiveMonitorFlush(): void {
   if (typeof _liveMonitorFlushTimer.unref === 'function') _liveMonitorFlushTimer.unref();
 }
 
-function flushLiveMonitorNow(): void {
+function flushLiveMonitorNow(exitFlush = false): void {
   if (_liveMonitorFlushTimer) {
     clearTimeout(_liveMonitorFlushTimer);
     _liveMonitorFlushTimer = null;
@@ -67,7 +68,22 @@ function flushLiveMonitorNow(): void {
   _liveMonitorDirty = false;
   if (!monitorCache.data) return;
   const filePath = getLiveMonitorFile();
-  const lockFile = acquireFileLock(filePath);
+  // 根本原因 2 の対策: ロック取得失敗時はロック無し書き込みを禁止。
+  // 終了時 (exitFlush=true) は maxWaitMs 長め (5000ms)、通常は 1500ms。
+  const maxWaitMs = exitFlush ? 5000 : 1500;
+  let lockFile = null;
+  try {
+    lockFile = _acquireFileLock(filePath, { label: 'live-monitor', maxWaitMs });
+  } catch (e: any) {
+    // ロック取得失敗: ロック無し書き込みは torn write を招くため禁止。
+    // dirty フラグを立てたまま次の debounce 周期に委ねる。
+    _liveMonitorDirty = true;
+    console.warn('[live-monitor] flushLiveMonitorNow: lock timeout, will retry:', e && e.message || e);
+    // 直接呼び出し (final ステータス即 flush 等) でタイマー未設定だと次の update まで
+    // 永続化されない。非終了時はデバウンスを張り直す。
+    if (!exitFlush) scheduleLiveMonitorFlush();
+    return;
+  }
   try {
     writeState(monitorCache.data);
   } catch (e: any) {
@@ -81,7 +97,8 @@ let _liveMonitorExitHooksInstalled = false;
 function installLiveMonitorExitHooks(): void {
   if (_liveMonitorExitHooksInstalled) return;
   _liveMonitorExitHooksInstalled = true;
-  const onExit = () => { try { flushLiveMonitorNow(); } catch (_) { /* swallow */ } };
+  // 終了時は exitFlush=true で長めタイムアウト (5000ms) を使う
+  const onExit = () => { try { flushLiveMonitorNow(true); } catch (_) { /* swallow */ } };
   process.once('beforeExit', onExit);
   process.once('SIGINT', () => { onExit(); process.exit(130); });
   process.once('SIGTERM', () => { onExit(); process.exit(143); });
@@ -162,11 +179,32 @@ function readState() {
   } catch (parseErr) {
     // 1.2.92: corruption も backup
     if (parseErr && parseErr.name === 'SyntaxError') {
+      const corruptPath = filePath + '.corrupt.' + Date.now();
       try {
-        const backup = filePath + '.corrupt.' + Date.now();
-        fs.copyFileSync(filePath, backup);
-        console.warn(`[live-monitor] live-monitor.json parse failed: ${filePath} → backup ${backup}, error: ${parseErr.message}`);
+        fs.copyFileSync(filePath, corruptPath);
+        console.warn(`[live-monitor] live-monitor.json parse failed: ${filePath} → backup ${corruptPath}, error: ${parseErr.message}`);
       } catch (_) {}
+      // 根本原因 5 の対策: .bak が存在すれば復元を試みる
+      const bakPath = filePath + '.bak';
+      try {
+        const rawBak = JSON.parse(fs.readFileSync(bakPath, 'utf8'));
+        const bakState = {
+          updatedAt: rawBak && rawBak.updatedAt ? rawBak.updatedAt : null,
+          sessions: rawBak && rawBak.sessions && typeof rawBak.sessions === 'object' ? rawBak.sessions : {},
+          lastEvent: rawBak && rawBak.lastEvent ? rawBak.lastEvent : null,
+          events: Array.isArray(rawBak && rawBak.events) ? rawBak.events : [],
+        };
+        // .bak から本体へ復元
+        fs.copyFileSync(bakPath, filePath);
+        console.warn(`[live-monitor] restored from ${bakPath}`);
+        monitorCache.filePath = filePath;
+        monitorCache.signature = getFileSignature(filePath);
+        monitorCache.data = bakState;
+        pruneState(bakState);
+        return bakState;
+      } catch (_) {
+        // .bak も読めない場合は空フォールバック（最後の手段）
+      }
     }
     const state = defaultState();
     monitorCache.filePath = filePath;
@@ -176,34 +214,24 @@ function readState() {
   }
 }
 
-// 共通実装は src/file-lock.cjs。詳細はそちらのコメント参照。
-const { acquireFileLock: _acquireFileLock, releaseFileLock } = require('./file-lock');
+// 共通実装は src/file-lock.ts。詳細はそちらのコメント参照。
+const { acquireFileLock: _acquireFileLock, releaseFileLock, atomicWriteJson } = require('./file-lock');
 
+// 根本原因 1 の対策: ロック取得失敗時に null を返してロック無し書き込みを続行する
+// 旧実装を廃止。取得失敗は呼び出し元に throw する。
+// (write を伴う操作はロックを必須とし、読み取り専用の呼び出しは別経路にする)
 function acquireFileLock(filePath) {
-  try {
-    return _acquireFileLock(filePath, { label: 'live-monitor', maxWaitMs: 3000 });
-  } catch (e) {
-    console.warn('[live-monitor]', e.message);
-    return null;
-  }
+  return _acquireFileLock(filePath, { label: 'live-monitor', maxWaitMs: 3000 });
 }
 
 function writeState(state) {
-  ensureDataDir();
+  // 根本原因 5 の対策: 書き込み直前に現在の正常値を .bak として保存
   const filePath = getLiveMonitorFile();
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e) {
-    if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-      throw e;
-    }
+  if (fs.existsSync(filePath)) {
+    try { fs.copyFileSync(filePath, filePath + '.bak'); } catch (_) { /* backup 失敗は致命的でない */ }
   }
+  // 根本原因 1・2 の対策: copyFileSync フォールバックを撤廃し atomicWriteJson に統一
+  atomicWriteJson(filePath, JSON.stringify(state, null, 2));
   monitorCache.filePath = filePath;
   monitorCache.signature = getFileSignature(filePath);
   monitorCache.data = state;
@@ -285,7 +313,9 @@ function updateLiveMonitor(companyNo, patch: Record<string, unknown> = {}) {
   // 最終ステータス (final status) の場合だけ即 flush して永続化。
   if (!monitorCache.data) {
     const filePath = getLiveMonitorFile();
-    const lockFile = acquireFileLock(filePath);
+    // 初期化時の readState はロック任意 (読み取りのみ)。失敗してもフォールバック可。
+    let lockFile: string | null = null;
+    try { lockFile = _acquireFileLock(filePath, { label: 'live-monitor-init', maxWaitMs: 1500 }); } catch (_) { /* ignore */ }
     try { monitorCache.data = readState(); }
     finally { releaseFileLock(lockFile); }
   }

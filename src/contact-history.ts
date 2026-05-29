@@ -2,8 +2,8 @@
 // 何回目の連絡で何を送ったかを記録し、2回目以降のメッセージ作成に活用する
 
 import * as fs from 'fs';
-import { ensureDataDir, resolveDataPath } from './data-paths';
-import { acquireFileLock as _acquireFileLock, releaseFileLock } from './file-lock';
+import { resolveDataPath } from './data-paths';
+import { acquireFileLock as _acquireFileLock, releaseFileLock, atomicWriteJson } from './file-lock';
 
 export interface ContactRecord {
   message: string;
@@ -109,7 +109,31 @@ function readJsonCached(filePath: string, fallbackValue: HistoryData): HistoryDa
     historyCache.signature = signature;
     historyCache.data = sanitized;
     return sanitized;
-  } catch {
+  } catch (parseErr: unknown) {
+    // 1.2.92 / 根本原因 5: JSON 破損検知 → .corrupt 隔離 + .bak から復元を試みる
+    const corruptPath = filePath + '.corrupt.' + Date.now();
+    try {
+      fs.copyFileSync(filePath, corruptPath);
+      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      console.warn(`[contact-history] JSON parse failed: ${filePath} → backup ${corruptPath}, error: ${msg}`);
+    } catch { /* backup 失敗は致命的でない */ }
+    // 根本原因 5 の対策: .bak が存在すれば復元を試みる
+    const bakPath = filePath + '.bak';
+    try {
+      const bakParsed = JSON.parse(fs.readFileSync(bakPath, 'utf-8')) as HistoryData;
+      const bakData = (!bakParsed || typeof bakParsed !== 'object' || Array.isArray(bakParsed))
+        ? ({} as HistoryData)
+        : bakParsed;
+      // .bak から本体へ復元
+      fs.copyFileSync(bakPath, filePath);
+      console.warn(`[contact-history] restored from ${bakPath}`);
+      historyCache.filePath = filePath;
+      historyCache.signature = getFileSignature(filePath);
+      historyCache.data = bakData;
+      return bakData;
+    } catch {
+      // .bak も読めない場合は空フォールバック（最後の手段）
+    }
     historyCache.filePath = filePath;
     historyCache.signature = signature;
     historyCache.data = fallbackValue;
@@ -127,21 +151,13 @@ function acquireFileLock(filePath: string): string | null {
 }
 
 function writeJsonCached(filePath: string, data: HistoryData): void {
-  ensureDataDir();
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e: unknown) {
-    const code = (e && typeof e === 'object' && 'code' in e) ? (e as { code?: string }).code : undefined;
-    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-      throw e;
-    }
+  // 根本原因 5 の対策: 書き込み直前に現在の正常値を .bak として保存
+  if (fs.existsSync(filePath)) {
+    try { fs.copyFileSync(filePath, filePath + '.bak'); } catch { /* backup 失敗は致命的でない */ }
   }
+  // 根本原因 1・2 の対策: copyFileSync フォールバックを撤廃し、fsync 付き
+  // atomicWriteJson に一本化。EPERM/EBUSY は atomicWriteJson 内でリトライする。
+  atomicWriteJson(filePath, JSON.stringify(data, null, 2));
   historyCache.filePath = filePath;
   historyCache.signature = getFileSignature(filePath);
   historyCache.data = data;
@@ -159,6 +175,12 @@ function saveHistory(data: HistoryData): void {
 export function recordContact(companyNo: number | string, companyName: string, record: ContactRecord): number {
   const filePath = getHistoryFile();
   const lockFile = acquireFileLock(filePath);
+  // 根本原因 2 の対策: ロック取得失敗時はロック無し書き込みを禁止 (lost-update 防止)。
+  // 0 (= 未記録) を返してスキップする。submit-sync 等は次回ロード時に再試行される。
+  if (!lockFile) {
+    console.warn('[contact-history] recordContact: lock timeout, skipping write (retried on next sync)');
+    return 0;
+  }
   try {
     historyCache.signature = null;
     const history = loadHistory();
@@ -246,6 +268,11 @@ export function getAllHistorySummary(): HistorySummaryEntry[] {
 export function recordResponse(companyNo: number | string, contactNo: number, response: string, notes?: string): boolean {
   const filePath = getHistoryFile();
   const lockFile = acquireFileLock(filePath);
+  // 根本原因 2 の対策: ロック取得失敗時はロック無し書き込みを禁止 → false (= 未更新) を返す。
+  if (!lockFile) {
+    console.warn('[contact-history] recordResponse: lock timeout, skipping write');
+    return false;
+  }
   try {
     historyCache.signature = null;
     const history = loadHistory();
@@ -270,6 +297,11 @@ export function recordResponse(companyNo: number | string, contactNo: number, re
 export function removeHistory(companyNo: number | string): boolean {
   const filePath = getHistoryFile();
   const lockFile = acquireFileLock(filePath);
+  // 根本原因 2 の対策: ロック取得失敗時はロック無し書き込みを禁止 → false (= 未削除) を返す。
+  if (!lockFile) {
+    console.warn('[contact-history] removeHistory: lock timeout, skipping delete');
+    return false;
+  }
   try {
     historyCache.signature = null;
     const history = loadHistory();

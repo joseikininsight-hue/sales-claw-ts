@@ -299,12 +299,24 @@ function readSettingsFile(filePath) {
     // 旧: silent null fallback で破損ファイルが残り続け、save 時に上書き → 設定全消失
     // 新: corrupt ファイルを .corrupt.{timestamp} にバックアップして残す
     if (err && err.name === 'SyntaxError') {
+      const corruptPath = filePath + '.corrupt.' + Date.now();
       try {
-        const backup = filePath + '.corrupt.' + Date.now();
-        fs.copyFileSync(filePath, backup);
-        console.warn(`[settings-manager] settings.json parse failed: ${filePath} - backed up to ${backup}. Falling back to defaults. Error: ${err.message}`);
+        fs.copyFileSync(filePath, corruptPath);
+        console.warn(`[settings-manager] settings.json parse failed: ${filePath} - backed up to ${corruptPath}. Falling back to defaults. Error: ${err.message}`);
       } catch (backupErr) {
-        console.warn(`[settings-manager] settings.json parse failed AND backup failed: ${filePath}. parse: ${err.message}, backup: ${backupErr.message}`);
+        console.warn(`[settings-manager] settings.json parse failed AND backup failed: ${filePath}. parse: ${err.message}, backup: ${backupErr && backupErr.message}`);
+      }
+      // 根本原因 5 の対策: .backup (既存ポリシー) から復元を試みる
+      // settings は既存の .backup を流用 (.bak ではなく .backup)
+      const bakPath = filePath + '.backup';
+      try {
+        const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+        // .backup から本体へ復元
+        fs.copyFileSync(bakPath, filePath);
+        console.warn(`[settings-manager] restored from ${bakPath}`);
+        return bakData;
+      } catch (_) {
+        // .backup も読めない場合は null フォールバック
       }
     }
     return null;
@@ -514,18 +526,60 @@ function save(settings) {
 }
 
 function atomicWriteFileSync(filePath, content) {
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, content, 'utf-8');
+  // 根本原因 1・2 の対策: file-lock.ts の atomicWriteJson に委譲して
+  // copyFileSync フォールバックを撤廃。EPERM/EBUSY は atomicWriteJson 内でリトライ。
+  const { atomicWriteJson } = require('./file-lock');
+  atomicWriteJson(filePath, content);
+}
+
+/**
+ * ロックを保持したままファイルへ書き込む内部専用関数。
+ * ロック取得は呼び出し元 (mutateLocked / save) の責任。
+ * 再入防止: set/updateSection/replaceSection はこちら経由とし、
+ * save() を呼ばない (ロック二重取得を避ける)。
+ */
+function _saveUnlocked(normalized, configuredFile) {
+  ensureDataDir(DEFAULT_SETTINGS_DIR);
+  const configuredDir = path.dirname(configuredFile);
+  ensureDataDir(configuredDir);
+  const payload = JSON.stringify(normalized, null, 2);
+  // .backup を既存の .backup 保持ポリシーに従い保存
+  if (fs.existsSync(configuredFile)) {
+    try { fs.copyFileSync(configuredFile, configuredFile + '.backup'); } catch (_) { /* ignore */ }
+  }
+  atomicWriteFileSync(configuredFile, payload);
+  if (path.resolve(configuredFile) !== path.resolve(SETTINGS_FILE)) {
+    atomicWriteFileSync(SETTINGS_FILE, payload);
+  }
+  deepFreeze(normalized);
+  settingsCache.filePath = configuredFile;
+  settingsCache.signature = getFileSignature(configuredFile);
+  settingsCache.data = normalized;
+}
+
+/**
+ * 根本原因 3 の対策: read-modify-write をロック内で一括実行するヘルパ。
+ * set / updateSection / replaceSection はこれを経由することで lost-update を防ぐ。
+ * @param fn - 最新の設定オブジェクトを受け取り、変更後の設定を返すコールバック
+ */
+function mutateLocked(fn: (settings: Record<string, unknown>) => Record<string, unknown>): void {
+  const { acquireFileLock: _acq, releaseFileLock: _rel } = require('./file-lock');
+  // configuredFile は最新の bootstrap から決定する
+  const bootstrap = getBootstrapSettings();
+  const configuredDir = resolveConfiguredDataDir(bootstrap && bootstrap.preferences && bootstrap.preferences.dataDir);
+  const configuredFile = path.join(configuredDir, 'settings.json');
+  ensureDataDir(DEFAULT_SETTINGS_DIR);
+  ensureDataDir(configuredDir);
+  const lockFile = _acq(configuredFile, { maxWaitMs: 5000, label: 'settings-mutate' });
   try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e) {
-    if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-      throw e;
-    }
+    // ロック内で最新をロードしてから mutate する (キャッシュを無効化して確実に disk から読む)
+    invalidateSettingsCache();
+    const latest = structuredClone(load());
+    const mutated = fn(latest);
+    const normalized = normalizeSettings(mutated);
+    _saveUnlocked(normalized, configuredFile);
+  } finally {
+    _rel(lockFile);
   }
 }
 
@@ -555,13 +609,16 @@ function getSection(section) {
  * @returns {Object} 更新後のセクションデータ
  */
 function updateSection(section, data) {
-  const cached = load();
-  if (!(section in cached)) throw new Error(`Unknown section: ${section}`);
-  // load() は frozen を返すので、書き換える前に必ず clone する。
-  const settings = structuredClone(cached);
-  settings[section] = deepMerge(settings[section], data);
-  save(settings);
-  return settings[section];
+  // 根本原因 3 の対策: mutateLocked 内で最新をロードしてから mutate する
+  if (!(section in DEFAULT_SETTINGS)) throw new Error(`Unknown section: ${section}`);
+  let result: unknown;
+  mutateLocked((settings) => {
+    if (!(section in settings)) throw new Error(`Unknown section: ${section}`);
+    settings[section] = deepMerge(settings[section], data);
+    result = settings[section];
+    return settings;
+  });
+  return result;
 }
 
 /**
@@ -571,12 +628,16 @@ function updateSection(section, data) {
  * @returns {*} 置換後のセクションデータ
  */
 function replaceSection(section, data) {
-  const cached = load();
-  if (!(section in cached)) throw new Error(`Unknown section: ${section}`);
-  const settings = structuredClone(cached);
-  settings[section] = data;
-  save(settings);
-  return settings[section];
+  // 根本原因 3 の対策: mutateLocked 内で最新をロードしてから mutate する
+  if (!(section in DEFAULT_SETTINGS)) throw new Error(`Unknown section: ${section}`);
+  let result: unknown;
+  mutateLocked((settings) => {
+    if (!(section in settings)) throw new Error(`Unknown section: ${section}`);
+    settings[section] = data;
+    result = settings[section];
+    return settings;
+  });
+  return result;
 }
 
 /**
@@ -598,12 +659,16 @@ function get(section, key) {
  * @returns {*} 書き込み後の値
  */
 function set(section, key, value) {
-  const cached = load();
-  if (!(section in cached)) throw new Error(`Unknown section: ${section}`);
-  const settings = structuredClone(cached);
-  settings[section][key] = value;
-  save(settings);
-  return settings[section][key];
+  // 根本原因 3 の対策: mutateLocked 内で最新をロードしてから mutate する
+  if (!(section in DEFAULT_SETTINGS)) throw new Error(`Unknown section: ${section}`);
+  let result: unknown;
+  mutateLocked((settings) => {
+    if (!(section in settings)) throw new Error(`Unknown section: ${section}`);
+    (settings[section] as Record<string, unknown>)[key] = value;
+    result = (settings[section] as Record<string, unknown>)[key];
+    return settings;
+  });
+  return result;
 }
 
 // --- Helpers ---

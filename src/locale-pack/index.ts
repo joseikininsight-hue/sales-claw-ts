@@ -23,7 +23,12 @@ export interface ComplianceCheckRule {
 
 /** Phase 3: CLI 自動化プロンプト用 batch_rules ビルダー */
 export interface CliPromptsModule {
-  buildBatchRules: (opts: { autoSendSafe: boolean; parallelTabs: number }) => string[];
+  buildBatchRules: (opts: {
+    autoSendSafe: boolean;
+    parallelTabs: number;
+    formPreferences?: Record<string, unknown>;
+    formFillMode?: string;
+  }) => string[];
 }
 
 /** Phase 3: LLM メッセージ生成プロンプトビルダー */

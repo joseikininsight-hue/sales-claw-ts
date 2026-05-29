@@ -18,6 +18,7 @@
 //  - 共通モジュール 1 ヶ所に集約 → ドリフト解消。
 
 import * as fs from 'fs';
+import { ensureDataDir } from './data-paths';
 
 export interface AcquireFileLockOptions {
   /** 最大待機時間 (ms)。default 3000 */
@@ -142,7 +143,57 @@ export function releaseFileLock(lockFile: string | null | undefined): void {
   }
 }
 
+/**
+ * fsync 付きアトミック書き込み。
+ *
+ * 根本原因 1・2 の対策:
+ *   - tmp ファイルに openSync → writeFileSync(fd) → fsyncSync → closeSync でデータを
+ *     確実にディスクへ flush してから renameSync する。
+ *   - Windows の EPERM/EBUSY は指数バックオフで最大 8 回リトライ。
+ *   - copyFileSync フォールバックは撤廃（torn write の元凶）。
+ *   - rename が最終的に失敗しても tmp を残したまま throw し、本体ファイルを壊さない。
+ *
+ * @param filePath  書き込み先ファイルパス
+ * @param data      シリアライズ済み JSON 文字列（呼び出し側で JSON.stringify すること）
+ */
+export function atomicWriteJson(filePath: string, data: string): void {
+  ensureDataDir();
+  const tmpFile = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  // fsync 付きで tmp に書き込み: OS バッファが flush されるまで待つ
+  const fd = fs.openSync(tmpFile, 'w');
+  try {
+    fs.writeSync(fd, data, 0, 'utf-8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  // rename を最大 8 回リトライ (EPERM/EBUSY のみ)
+  const MAX_RENAME_RETRIES = 8;
+  let lastErr: unknown;
+  for (let i = 0; i < MAX_RENAME_RETRIES; i++) {
+    try {
+      fs.renameSync(tmpFile, filePath);
+      return; // 成功
+    } catch (e: unknown) {
+      const code = (e && typeof e === 'object' && 'code' in e) ? (e as { code?: string }).code : undefined;
+      if (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY')) {
+        // Windows でロック競合: 指数バックオフで再試行 (20ms * (i+1))
+        lastErr = e;
+        _sleepSync(20 * (i + 1));
+        continue;
+      }
+      // EPERM/EBUSY 以外のエラー: tmp を残して throw (本体は壊さない)
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+      throw e;
+    }
+  }
+  // 全リトライ消尽: tmp を残したまま throw (壊れた本体を作らないため unlink しない)
+  throw lastErr;
+}
+
 module.exports = {
   acquireFileLock,
   releaseFileLock,
+  atomicWriteJson,
 };

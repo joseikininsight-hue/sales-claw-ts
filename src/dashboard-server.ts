@@ -397,6 +397,19 @@ const MANAGED_AI_RECOVERY_MAX_RETRIES = 20;
 //   cap でジワっと増やし、合計時間も短縮する (15s*20=5分 → backoff 20回 ≒ 1 時間
 //   弱だが実質 5 回程度で復旧する想定なので体感は早くなる)。
 const MANAGED_AI_RECOVERY_BACKOFF_CAP_MS = 180 * 1000;
+// v2.1.0: pty-exit recovery のサーキットブレーカ。CLI が短時間に繰り返しクラッシュ
+//   (auth fingerprint stale / 設定不備 等) する状況では「落ちる→2.5s後復旧→また落ちる」
+//   のループでコスト/待ちが嵩む。直近 RECOVERY_BREAKER_WINDOW_MS 内の pty-exit recovery が
+//   RECOVERY_BREAKER_MAX 回を超えたら自動復旧を止め、ユーザーに原因確認を促す。
+const RECOVERY_BREAKER_WINDOW_MS = 5 * 60 * 1000;
+const RECOVERY_BREAKER_MAX = 3;
+let managedAiRecentPtyExits: number[] = [];
+function recordPtyExitAndCheckBreaker(): boolean {
+  const now = Date.now();
+  managedAiRecentPtyExits = managedAiRecentPtyExits.filter((t) => now - t < RECOVERY_BREAKER_WINDOW_MS);
+  managedAiRecentPtyExits.push(now);
+  return managedAiRecentPtyExits.length > RECOVERY_BREAKER_MAX;
+}
 function getManagedAiRecoveryDelayMs(retryCount: number): number {
   const r = Math.max(0, Number(retryCount) || 0);
   // 0→15s, 1→30s, 2→60s, 3→120s, 4+→180s
@@ -1971,6 +1984,21 @@ function runPollerTickBody(activeController: any) {
     //   方針転換: 個別 auto-fail は完全停止。CLI に充分な時間を与え、本当に長期 stall
     //         した場合のみ legacy batch-watchdog (20分) が拾う。No.152 case (永久stall)
     //         は 20分待ちのほうがマシで、誤検出で社を焼くより全社失う方が損害が小さい。
+
+    // v2.1.0: 早期ソフト警告 (表示のみ・auto-fail しない)。20 分の強制 error を待たずに
+    //   「N 社が M 分応答していません」をユーザーに見せ、操作中タブの確認を促す。誤検出で
+    //   社を焼くリスクが無い (ログ通知のみ) ため閾値を短く (7 分) 取れる。
+    const SOFT_STALL_WARN_MS = 7 * 60 * 1000;
+    if (!activeController.activeBatch.softWarnNotified
+      && (Date.now() - activeController.activeBatch.lastProgressAt) > SOFT_STALL_WARN_MS) {
+      activeController.activeBatch.softWarnNotified = true;
+      const mins = Math.round((Date.now() - activeController.activeBatch.lastProgressAt) / 60000);
+      emitClaudeAutomationLog(
+        `[応答待ち] ${snapshot.totalCount}社の処理が約${mins}分更新されていません。多くは確認画面の操作待ちです。操作中タブで状況を確認できます（このまま自動継続します）。\n`,
+        'info',
+        activeController.providerId,
+      );
+    }
 
     // v2.0.23: バッチ stall の早期判定 (バッチ全体の safety-net)。
     // per-company が拾えなかった場合の保険として残す。
@@ -3696,9 +3724,19 @@ function buildManagedAiSessionContract(providerId = getManagedAiProvider(), opti
     `sendPolicy=${autoSendSafe ? 'safe-auto-send' : 'approval-stop'}`,
     'rules:',
     ...buildTabManagementContractLines(),
-    '- direct Playwright worker / JS automation は使わない',
-    '- MCP は Playwright のみ使用。別の Web 取得 MCP は使わない',
-    '- 1社目のみ browser_navigate 可。2社目以降は browser_evaluate(window.open) + browser_tabs',
+    '- direct worker / 独自 JS automation は使わない',
+    // v2.1.0: internal モード (内蔵 WebContentsView + sales-claw-form MCP) では
+    //   Playwright を名指しせず、各社タブは browser_tabs new で開く。window.open は
+    //   内蔵タブマネージャに追従しないため 2 社目以降が沈黙する原因になっていた。
+    ...(getFormFillMode() === 'playwright'
+      ? [
+          '- MCP は Playwright のみ使用。別の Web 取得 MCP は使わない',
+          '- 1社目のみ browser_navigate 可。2社目以降は browser_evaluate(window.open) + browser_tabs',
+        ]
+      : [
+          '- ブラウザ操作は内蔵ブラウザ MCP (browser_* ツール) のみ使用。別の Web 取得 MCP は使わない',
+          '- 各社のタブは browser_tabs({action:"new", url, companyNo}) で開く。window.open は使わない (内蔵ブラウザでは追従しない)',
+        ]),
     '- 既存タブを navigate で上書きしない',
     '- CAPTCHA / reCAPTCHA / hCaptcha / Turnstile / ロボチェッカーの画像チャレンジは解かない',
     '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',
@@ -4325,10 +4363,12 @@ async function startHeadlessAiAutomationRun(companies, providerId = getSelectedA
   const promptText = buildClaudeFormFillPrompt(companies, sender, normalizedProviderId);
   const promptFile = writeWorkspaceClaudeFormFillPromptFile(companies, promptText, normalizedProviderId);
   const model = getClaudeAutomationModel(normalizedProviderId);
+  // v2.1.0: ブラウザ自動化 MCP はモードで異なる (internal=内蔵 / playwright=外部)。
+  //   tool 名 (browser_*) は両モードでミラーされるため特定 MCP を名指ししない。
   const kickoffPrompt = [
     `次の指示ファイルを読んで、その内容を実行してください: ${promptFile}`,
-    `必ず ${provider.cliLabel} と MCP Playwright を使って進めてください。`,
-    'リポジトリ内の direct Playwright worker / JS automation は使わないでください。',
+    `必ず ${provider.cliLabel} と利用可能なブラウザ自動化 MCP (browser_* ツール) を使って進めてください。`,
+    'リポジトリ内の direct worker / 独自 JS automation は使わないでください。',
     '送信は行わず、確認待ちまでで止め、フォームタブは閉じないでください。',
   ].join('\n');
   const invocationPrompt = normalizedProviderId === 'gemini'
@@ -6008,6 +6048,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
         autoSendSafe,
         parallelTabs: effectiveParallelTabs,
         formPreferences,
+        formFillMode: getFormFillMode(),
       });
     }
   } catch (_) { /* Locale Pack 不在時は ja パックを再試行する */ }
@@ -6021,6 +6062,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
           autoSendSafe,
           parallelTabs: effectiveParallelTabs,
           formPreferences,
+          formFillMode: getFormFillMode(),
         });
       }
     } catch (_) { /* 最終 fallback は空配列 */ }
@@ -6628,7 +6670,24 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
       invalidateAiStatusCache(normalizedProviderId);
     }
     clearManagedAiRecoveryTimer();
-    if (!suppressRecovery && recoverySnapshot && recoverySnapshot.providerId === normalizedProviderId) {
+    // v2.1.0: サーキットブレーカ。短時間に繰り返しクラッシュしているなら自動復旧を止める。
+    const breakerTripped = !suppressRecovery && recoverySnapshot && recordPtyExitAndCheckBreaker();
+    if (breakerTripped) {
+      appendDiagnosticEvent('managed_ai_recovery_circuit_open', {
+        provider: normalizedProviderId,
+        exitCode,
+        exitsInWindow: managedAiRecentPtyExits.length,
+        windowMs: RECOVERY_BREAKER_WINDOW_MS,
+      });
+      emitClaudeAutomationLog(
+        `[自動復旧を停止] ${getProviderDisplayName(normalizedProviderId)} が短時間に ${managedAiRecentPtyExits.length} 回終了しました。自動復旧を一旦停止します。認証 (CLI のログイン状態) と設定を確認し、問題が解消したら手動で再度「AI を起動」してください。\n`,
+        'warn',
+        normalizedProviderId,
+      );
+      resetManagedAiBatchController();
+      managedAiRecoveryState = null;
+      managedAiRecentPtyExits = []; // ブレーカ作動後はリセット (次の手動起動からカウントし直す)
+    } else if (!suppressRecovery && recoverySnapshot && recoverySnapshot.providerId === normalizedProviderId) {
       managedAiRecoveryState = {
         ...recoverySnapshot,
         retries: 0,
@@ -9547,12 +9606,20 @@ ${renderStyles()}
     </div>
     <!-- Activity log table -->
     <div style="background:#fff;border:1px solid var(--outline-variant)">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant);flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.actionLog']}</span>
           <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliLastEvent">—</span>
         </div>
         <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="logCount">0 items</span>
+      </div>
+      <!-- v2.1.0: 操作ログのタブ(フィルタ)。件数バッジ付き。クライアント側で絞り込む。 -->
+      <div class="filter-pills" id="logFilterPills" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--outline-variant)">
+        <button class="fb active" data-lf="all">${_t['logfilter.all'] || 'すべて'} <b class="lf-badge" id="logBadge-all">0</b></button>
+        <button class="fb" data-lf="submitted">${_t['logfilter.sent'] || '送信完了'} <b class="lf-badge" id="logBadge-submitted">0</b></button>
+        <button class="fb" data-lf="attention">${_t['logfilter.attention'] || '確認待ち・要対応'} <b class="lf-badge" id="logBadge-attention">0</b></button>
+        <button class="fb" data-lf="error">${_t['logfilter.error'] || 'エラー'} <b class="lf-badge" id="logBadge-error">0</b></button>
+        <button class="fb" data-lf="progress">${_t['logfilter.progress'] || '進行中'} <b class="lf-badge" id="logBadge-progress">0</b></button>
       </div>
       <table class="main-table">
         <thead><tr><th>${_t['cli.datetime']}</th><th>${_t['th.no']}</th><th>${_t['cli.companyName']}</th><th>${_t['cli.actionType']}</th><th>${_t['cli.details']}</th></tr></thead>

@@ -285,14 +285,27 @@ function resetHistFile() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 17. JSON corruption fallback returns {}
+// 17. JSON corruption: .bak から復元、無ければ {} フォールバック (#3 根本原因5)
 // ─────────────────────────────────────────────────────────────
 {
+  // 17a: 正常書き込みで .bak が育っている状態で破損 → .bak から自動復元する
   resetHistFile();
+  history.recordContact(7, 'BakSrc', { message: 'pre-corrupt' });
+  history.recordContact(7, 'BakSrc', { message: 'second' }); // 直前の正常値が .bak に退避
+  fs.writeFileSync(histFile, '<<broken json>>', 'utf-8');     // 本体を破損
+  const restored = history.getAllHistorySummary();
+  assertEq(
+    'corrupt JSON restored from .bak (company present)',
+    restored.some((e) => String(e.companyNo) === '7'),
+    true,
+  );
+
+  // 17b: .bak が無ければ破損時は {} フォールバック (.corrupt へ退避してから空)
+  resetHistFile();
+  try { fs.unlinkSync(histFile + '.bak'); } catch (_) {}
   fs.writeFileSync(histFile, '<<broken json>>', 'utf-8');
-  // contact-history doesn't backup; it silently falls back to {}
   const summary = history.getAllHistorySummary();
-  assertDeep('corrupt JSON yields empty summary', summary, []);
+  assertDeep('corrupt JSON without .bak yields empty summary', summary, []);
   // recording should still work (append on empty {})
   const n = history.recordContact(5, 'PostCorrupt', { message: 'after corrupt' });
   assertEq('recordContact works after corruption returns 1', n, 1);

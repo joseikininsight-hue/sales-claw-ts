@@ -192,8 +192,12 @@ async function _runSlot(companies, slotIdx, ctx, options) {
   //  (c) buildHeadlessArgs(promptViaStdin) との二重渡しで競合
   // を引き起こす。並列ヘッドレスでは arg に本文を載せず、実行指示は
   // stdin だけで流す。promptFile は監査用の控えとして残す。
+  // v2.1.0: ブラウザ自動化 MCP は formFill.mode により sales-claw-form (内蔵) か
+  //   playwright (外部) のいずれか。tool 名 (browser_*) は両モードでミラーされるため、
+  //   特定の MCP 名を固定で指示せず「利用可能なブラウザ自動化ツール (browser_*) を使う」
+  //   とモード非依存に伝える (internal モードで Playwright を名指しして誤誘導しない)。
   const kickoff = `以下の stdin 指示だけを実行してください。監査用 prompt file: ${promptFile}\n`
-    + 'MCP Playwright を必ず使ってください。フォームタブは閉じず、確認待ちまでで止めてください。\n';
+    + '利用可能なブラウザ自動化 MCP (browser_* ツール) を必ず使ってください。フォームタブは閉じず、確認待ちまでで止めてください。\n';
 
   const headlessSpec = ctx.buildHeadlessArgs(providerId, options.mode, {
     cwd: ctx.projectRoot,

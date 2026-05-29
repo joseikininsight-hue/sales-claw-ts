@@ -15,6 +15,28 @@ import fs from 'fs';
 import * as cdp from './cdp-bridge';
 import type { IpcRequest, IpcServer, IpcHandler } from './ipc-server';
 
+// v2.1.0 回帰修正: fillForm だけが light DOM → open shadow DOM → 同一オリジン iframe を
+//   貫通して要素解決していたが、click / type / select_option は素の document.querySelector
+//   のままだった。その結果 shadow/iframe 内フォーム (v2.0.98 で入力対応した形態) では
+//   「入力はできたが送信/確認ボタンが押せない」非対称が生じ、confirm_reached に到達できず
+//   form_fill のまま stall していた。下記を全ハンドラに注入して貫通解決を統一する。
+//   ※ browser 内で実行される pure JS。light DOM を最初に試すため後方互換 (挙動不変)。
+const PIERCE_RESOLVE_SRC = `function(sel){
+  var el=null; try{ el=document.querySelector(sel); }catch(e){}
+  if(el) return el;
+  function search(ctx, depth){
+    if(depth > 8) return null;
+    var e=null; try{ e=ctx.querySelector(sel); }catch(_){}
+    if(e) return e;
+    var hosts; try{ hosts=ctx.querySelectorAll('*'); }catch(_){ hosts=[]; }
+    for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ var r=search(hosts[i].shadowRoot, depth+1); if(r) return r; } }
+    var fr; try{ fr=ctx.querySelectorAll('iframe'); }catch(_){ fr=[]; }
+    for(var k=0;k<fr.length;k++){ try{ var fd=fr[k].contentDocument; if(fd){ var r2=search(fd, depth+1); if(r2) return r2; } }catch(_){} }
+    return null;
+  }
+  return search(document, 0);
+}`;
+
 interface FormSessionManagerLike {
   createSession(formUrl: string, companyNo: number | string): Promise<string>;
   _waitForLoad(sessionId: string, timeout?: number): Promise<void>;
@@ -124,12 +146,15 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     //   (1) UI が「要対応」バナー/バッジを出せる、(2) 完了セッション自動破棄や
     //   MAX_SESSIONS 退避から温存される (人間がライブブラウザで解くため)。
     try {
-      const meta = (structure as { meta?: { hasCaptcha?: boolean; captchaInteractive?: boolean } })?.meta;
+      const meta = (structure as { meta?: { hasCaptcha?: boolean; captchaInteractive?: boolean; captchaKind?: string } })?.meta;
       const sess = ctx.formSessionManager._sessions.get(p.sessionId);
       if (sess && meta) {
         // v2.0.98: 「要対応」フラグは interactive CAPTCHA のみ。不可視型 (v3 等) は
         //   人手不要なので立てない (操作中タブで誤って要対応バナーを出さない)。
         (sess as Record<string, unknown>).captchaDetected = !!meta.captchaInteractive;
+        // v2.1.0: どの CAPTCHA 型をどう扱ったか (interactive/invisible/none) を保持し、
+        //   UI チップ/監査ログで「v3=自動送信した」等を追跡できるようにする (可視性向上)。
+        (sess as Record<string, unknown>).captchaKind = meta.captchaKind || 'none';
       }
     } catch { /* best-effort */ }
     // Phase 2: getFormStructure の出力 (fields + meta) を返す。
@@ -195,11 +220,29 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     //   Bug fallback: 要素が viewport 外 / hidden の場合は scrollIntoView する
     //   ために Runtime.evaluate で座標取得 + scrollIntoView 1 回試行。
     const coordsResult = await session.view.webContents.executeJavaScript(`(function(){
-      var el=document.querySelector(${JSON.stringify(p.selector)});
+      var resolve=${PIERCE_RESOLVE_SRC};
+      var el=resolve(${JSON.stringify(p.selector)});
       if(!el)return null;
       el.scrollIntoView({block:'center',inline:'center'});
       var r=el.getBoundingClientRect();
-      return { x: r.left + r.width/2, y: r.top + r.height/2, w: r.width, h: r.height };
+      var x=r.left + r.width/2, y=r.top + r.height/2;
+      // v2.1.0 回帰修正: pierce リゾルバが同一オリジン iframe 内の要素を解決した場合、
+      //   getBoundingClientRect() は iframe ローカル座標を返す。CDP Input.dispatchMouseEvent
+      //   はトップレベル viewport 座標で発火するため、親方向へ各 iframe のオフセット
+      //   (位置 + border 幅) を累積加算してグローバル座標に補正する。これを怠ると iframe
+      //   内の送信/確認ボタンを誤った位置でクリックしてしまう。
+      //   (クロスオリジン iframe は resolve 時点で contentDocument に到達できず対象外)
+      try {
+        var win=(el.ownerDocument&&el.ownerDocument.defaultView)||null;
+        while(win&&win!==win.top&&win.frameElement){
+          var fe=win.frameElement;
+          var fr=fe.getBoundingClientRect();
+          x+=fr.left+(fe.clientLeft||0);
+          y+=fr.top+(fe.clientTop||0);
+          win=win.parent;
+        }
+      }catch(_){}
+      return { x: x, y: y, w: r.width, h: r.height };
     })()`);
     if (!coordsResult) return { ok: false, reason: 'not_found' };
     if (coordsResult.w === 0 || coordsResult.h === 0) {
@@ -227,17 +270,20 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     // Phase 2 簡易実装: focus + value setter (fillForm と同じ系統)。
     // Phase 3 で Input.dispatchKeyEvent 1 文字ずつに置換。
     const script = `(function(){
-      const el=document.querySelector(${JSON.stringify(p.selector)});
+      var resolve=${PIERCE_RESOLVE_SRC};
+      var el=resolve(${JSON.stringify(p.selector)});
       if(!el)return{ok:false,reason:'not_found'};
+      var view=(el.ownerDocument&&el.ownerDocument.defaultView)||window;
       el.focus();
-      const tag=el.tagName;
-      const proto=tag==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
-      const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-      const text=${JSON.stringify(p.text)};
+      var tag=el.tagName;
+      var proto=tag==='TEXTAREA'?view.HTMLTextAreaElement.prototype:view.HTMLInputElement.prototype;
+      var desc=Object.getOwnPropertyDescriptor(proto,'value');
+      var setter=desc&&desc.set;
+      var text=${JSON.stringify(p.text)};
       if(setter)setter.call(el,(el.value||'')+text);
       else el.value=(el.value||'')+text;
-      el.dispatchEvent(new Event('input',{bubbles:true}));
-      el.dispatchEvent(new Event('change',{bubbles:true}));
+      el.dispatchEvent(new view.Event('input',{bubbles:true}));
+      el.dispatchEvent(new view.Event('change',{bubbles:true}));
       return{ok:true};
     })()`;
     const result = await session.view.webContents.executeJavaScript(script);
@@ -248,17 +294,20 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     const p = req.params as unknown as SelectOptionParams;
     const session = getSession(ctx, p.sessionId);
     const script = `(function(){
-      const el=document.querySelector(${JSON.stringify(p.selector)});
+      var resolve=${PIERCE_RESOLVE_SRC};
+      var el=resolve(${JSON.stringify(p.selector)});
       if(!el)return{ok:false,reason:'not_found'};
-      const values=${JSON.stringify(p.values)};
-      const selected=[];
-      for(const opt of el.options){
-        const match=values.includes(opt.value)||values.includes(opt.label);
+      var view=(el.ownerDocument&&el.ownerDocument.defaultView)||window;
+      var values=${JSON.stringify(p.values)};
+      var selected=[];
+      for(var oi=0;oi<el.options.length;oi++){
+        var opt=el.options[oi];
+        var match=values.indexOf(opt.value)>=0||values.indexOf(opt.label)>=0;
         opt.selected=match;
         if(match)selected.push(opt.value);
       }
-      el.dispatchEvent(new Event('change',{bubbles:true}));
-      return{ok:true,selected};
+      el.dispatchEvent(new view.Event('change',{bubbles:true}));
+      return{ok:true,selected:selected};
     })()`;
     const result = await session.view.webContents.executeJavaScript(script);
     return result;

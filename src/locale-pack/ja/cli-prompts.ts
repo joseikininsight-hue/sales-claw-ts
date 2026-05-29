@@ -15,6 +15,9 @@ interface BuildBatchRulesOpts {
   autoSendSafe: boolean;
   parallelTabs: number;
   formPreferences?: FormPreferences;
+  // v2.1.0: 'internal' = Electron 内蔵 WebContentsView (sales-claw-form MCP)。
+  //   'playwright' = 外部 Chrome (旧)。並列タブ展開手順がモードで異なるため出し分ける。
+  formFillMode?: string;
 }
 
 // v2.0.59: デフォルトのフォーム優先順位 (パートナー営業向け)。
@@ -47,12 +50,14 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   const tabs = Number.isFinite(opts && opts.parallelTabs) ? Number(opts.parallelTabs) : 1;
   const autoSendSafe = !!(opts && opts.autoSendSafe);
   const formPref = opts && opts.formPreferences;
+  const isInternal = !opts || opts.formFillMode !== 'playwright'; // 既定は internal (内蔵ブラウザ)
 
   const lines: string[] = [
     '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
     '- ★ urlMissing=true の会社: WebSearch を **1 回だけ** (「会社名 公式サイト」のクエリ 1 本) 実行 → 上位 3 件から公式ドメインを判定 → 確定したら即 navigate (再検索禁止)。30 秒以内に決まらない or 公式が見つからない → **即 error**。WebSearch のリトライ・候補を 1 件ずつ navigate 試行・wikipedia 経由検索は全て禁止。',
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
     '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
+    '- ★ 確認画面への進み方: 送信/確認ボタンは browser_snapshot の fields 一覧には出ない (フォーム項目ではない)。可視テキスト (「送信」「確認」「確認画面へ」「次へ」「送信する」「Submit」「Confirm」) でボタンを特定して browser_click する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待ち、到達したら confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。',
     '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',
     '- messageDraft は Phase A の草案、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
     '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
@@ -69,9 +74,15 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
   if (tabs <= 1) {
     lines.push('- 1社ずつ処理し、結果報告は簡潔にする');
   } else {
+    // v2.1.0: タブ生成手順をモード別に出し分ける。internal (内蔵ブラウザ) では
+    //   window.open は内蔵タブマネージャに追従しないため、各社タブは必ず
+    //   browser_tabs({action:'new', url, companyNo}) で開く。
+    const openRule = isInternal
+      ? `- 並列発行手順: 最初の thinking ブロックで「${tabs} 社分を同時に開く」と決定 → 直後に ${tabs} 社分を browser_tabs({action:"new", url:<会社のURL>, companyNo:<No>}) で **同じ tool_use ブロック群として並列発行** (各社=専用タブ)。window.open は使わない (内蔵ブラウザでは追従しない)。`
+      : `- 並列発行手順: 最初の thinking ブロックで「${tabs} 社分を同時に開く」と決定 → 直後に最初の 1 社を browser_navigate、残り ${tabs - 1} 社は browser_evaluate(window.open) + browser_tabs(select) を **同じ tool_use ブロック群として並列発行**。`;
     lines.push(
-      `- ★★ 並列ツール呼び出し (parallel tool_use) を必ず使用すること。Claude は 1 つの thinking で複数の tool_use ブロックを同時発行できる。最初の応答で ${tabs} 社分の browser_navigate を **同一 assistant message の中に並列に発行**する。逐次に「1 社目→完了待ち→2 社目」と進めるのは禁止。`,
-      `- 並列発行手順: 最初の thinking ブロックで「3 社分を同時に開く」と決定 → 直後に ${tabs} 個の browser_navigate (または最初の 1 社だけ browser_navigate、残り ${tabs - 1} 社は browser_evaluate(window.open) + browser_tabs(select)) を **同じ tool_use ブロック群として並列発行**。`,
+      `- ★★ 並列ツール呼び出し (parallel tool_use) を必ず使用すること。Claude は 1 つの thinking で複数の tool_use ブロックを同時発行できる。最初の応答で ${tabs} 社分のタブ生成を **同一 assistant message の中に並列に発行**する。逐次に「1 社目→完了待ち→2 社目」と進めるのは禁止。`,
+      openRule,
       `- ${tabs} 社の navigate が全て完了するまで待機 → その後 browser_snapshot を ${tabs} 社並列発行 → browser_fill_form を ${tabs} 社並列発行 (Claude API は同種ツールを並列に呼べる)。`,
       `- screenshot / curl は社ごとに発行するが、可能なら ${tabs} 社分まとめて並列発行。同時タブは ${tabs + 1} 個まで (それ以上はリソース競合)。`,
       `- 並列発行が効くのは「同じ前提条件・同じ判断軸で進むツール」のみ。CAPTCHA 解析・本文最終化・送信可否判断など「社ごとに違う思考が必要な工程」は 1 社ずつ集中する。`,
