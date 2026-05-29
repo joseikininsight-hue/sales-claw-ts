@@ -8200,6 +8200,12 @@ ${renderStyles()}
       flex-direction: column;
       gap: clamp(6px, 1vw, 12px);
       padding: clamp(6px, 1vw, 14px);
+      /* v2.1.2: WebContentsView は Electron 仕様上 HTML より必ず前面に描画され、z-index で
+         背面に送れない。そこで slot を画面下部から離し、固定表示の通知類
+         (AIコスト目安=左下 bottom:14 / 監視FABボタン=右下 bottom:24 / 監視トースト=右下 bottom:80)
+         が WebView に隠れてクリックできなくなる問題を防ぐ。dock は slot の
+         getBoundingClientRect に追従するため、この下部余白だけで WebView の占有下端が押し上がる。 */
+      padding-bottom: 116px;
       width: 100%;
       /* v2.1.1: 親タブ高さ一杯に伸ばし、子(WebView slot)を flex:1 で埋める。
          これでページ自体はスクロールせず、スクロールは WebView 内部に閉じる
@@ -8403,7 +8409,13 @@ ${renderStyles()}
           const clippedBottom = Math.min(winH, rect.bottom);
           const clippedHeight = clippedBottom - clippedTop;
           const clippedLeft = Math.max(0, rect.left);
-          const clippedRight = Math.min(winW, rect.right);
+          // v2.1.2: 監視パネル(右下 liveMonitorCard, 開くと縦長)が開いている時は
+          //   WebView の右端をパネル幅(420)+余白 ぶん退避させ、パネルが WebView の
+          //   裏に隠れて操作できなくなるのを防ぐ。閉じている時は退避しない。
+          const _monPanel = document.getElementById('liveMonitorCard');
+          const _monOpen = !!(_monPanel && _monPanel.style.display && _monPanel.style.display !== 'none');
+          const _rightReserve = _monOpen ? 452 : 0;
+          const clippedRight = Math.min(winW - _rightReserve, rect.right);
           const clippedWidth = clippedRight - clippedLeft;
           const bounds = {
             x: Math.round(clippedLeft),
@@ -8459,7 +8471,13 @@ ${renderStyles()}
           const clippedBottom = Math.min(winH, rect.bottom);
           const clippedHeight = clippedBottom - clippedTop;
           const clippedLeft = Math.max(0, rect.left);
-          const clippedRight = Math.min(winW, rect.right);
+          // v2.1.2: 監視パネル(右下 liveMonitorCard, 開くと縦長)が開いている時は
+          //   WebView の右端をパネル幅(420)+余白 ぶん退避させ、パネルが WebView の
+          //   裏に隠れて操作できなくなるのを防ぐ。閉じている時は退避しない。
+          const _monPanel = document.getElementById('liveMonitorCard');
+          const _monOpen = !!(_monPanel && _monPanel.style.display && _monPanel.style.display !== 'none');
+          const _rightReserve = _monOpen ? 452 : 0;
+          const clippedRight = Math.min(winW - _rightReserve, rect.right);
           const clippedWidth = clippedRight - clippedLeft;
           const n = realSessions.length;
           // v2.0.96: 4 セッション以上を 2x2 に詰めると 5 個目以降が 50px に潰れて
