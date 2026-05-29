@@ -307,19 +307,21 @@ function inferFieldPurpose(field) {
  * @returns {{recommendedStatus: ('proceed'|'proceed_then_await'|'skipped'|'error'), recommendedReason: string}} 推奨ステータスと理由
  */
 function recommendFormSessionStatus(meta: Record<string, any> = {}) {
-  if (meta.hasCaptcha) {
-    // 1.2.88+: CAPTCHA があってもフォーム入力自体は可能なので、入力 → スクショ →
-    // awaiting_approval にする (人間が CAPTCHA 解いて送信)。フォーム項目が
-    // 一つも取れていない場合だけ error フォールバック。
+  // v2.0.98: interactive な CAPTCHA (v2 チェックボックス/画像・hCaptcha) のみ人手が要る。
+  //   不可視型 (reCAPTCHA v3 / v2-invisible / Turnstile managed) はページJSが送信時に
+  //   トークンを自動付与するため、通常フローでそのまま送信できる → 要対応にしない。
+  if (meta.hasCaptcha && meta.captchaInteractive) {
+    // フォーム入力自体は可能なので、入力 → スクショ → awaiting_approval にする
+    // (人間が CAPTCHA を解いて送信)。フォーム項目が 0 の場合だけ error フォールバック。
     if (meta.fieldCount > 0) {
       return {
         recommendedStatus: 'proceed_then_await',
-        recommendedReason: 'CAPTCHA検出: 入力までは実施し、ss-{No}-input.png を残して awaiting_approval にしてください (人間が CAPTCHA 解いて送信)',
+        recommendedReason: 'interactive CAPTCHA検出: 入力までは実施し、ss-{No}-input.png を残して awaiting_approval にしてください (人間が CAPTCHA 解いて送信)',
       };
     }
     return {
       recommendedStatus: 'error',
-      recommendedReason: 'CAPTCHA検出 + フォーム項目 0: 入力不可なため error',
+      recommendedReason: 'interactive CAPTCHA検出 + フォーム項目 0: 入力不可なため error',
     };
   }
   if (meta.hasIframeForm && meta.iframeIsCrossOrigin && meta.fieldCount === 0) {
@@ -649,10 +651,34 @@ class FormSessionManager {
           else if(src){ try { var u = new URL(src, window.location.href); if(u.origin && u.origin !== window.location.origin) iframeIsCrossOrigin = true; } catch(e){} }
         }
 
-        var captchaNodes = document.querySelectorAll('.g-recaptcha, [data-sitekey], iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"]');
+        // CAPTCHA 分類: 人間操作が必要 (interactive) か、ページJSが自動でトークンを
+        //   付与する不可視型 (invisible: reCAPTCHA v3 / v2-invisible / Turnstile managed) か。
+        //   不可視型はそのまま送信できるため「要対応」にしない (過剰検知の防止)。
+        //   ※ CAPTCHA を解く/回避するコードは持たない。あくまで「人手が要るか」の分類のみ。
+        function classifyCaptcha(){
+          var grec = document.querySelector('.g-recaptcha');
+          var hcap = document.querySelector('.h-captcha, iframe[src*="hcaptcha"]');
+          var turnstile = document.querySelector('.cf-turnstile, iframe[src*="turnstile"]');
+          var v3script = document.querySelector('script[src*="recaptcha/api.js?render="]');
+          var badge = document.querySelector('.grecaptcha-badge');
+          var generic = document.querySelector('[data-sitekey], iframe[src*="recaptcha"]');
+          var present = !!(grec || hcap || turnstile || v3script || badge || generic);
+          if(!present) return { present:false, interactive:false, kind:'none' };
+          var interactive = false;
+          if(grec){ var size=(grec.getAttribute('data-size')||'').toLowerCase(); if(size!=='invisible') interactive = true; }
+          if(hcap) interactive = true;           // hCaptcha は基本チャレンジ型 (要人手)
+          // v3 / v2-invisible / Turnstile(managed) / バッジのみ は interactive=false のまま。
+          // ただし [data-sitekey] 等の汎用検出だけで型が不明な場合は、安全側に倒して
+          // interactive=true にする (人手が要るのに送信してしまう誤りを避ける)。
+          if(!interactive && generic && !grec && !v3script && !badge && !turnstile) interactive = true;
+          return { present:true, interactive:interactive, kind: interactive ? 'interactive' : 'invisible' };
+        }
+        var cap = classifyCaptcha();
         return {
           fields: fields,
-          hasCaptcha: captchaNodes.length > 0,
+          hasCaptcha: cap.present,
+          captchaInteractive: cap.interactive,
+          captchaKind: cap.kind,
           hasIframeForm: iframes.length > 0,
           iframeIsCrossOrigin: iframeIsCrossOrigin,
           shadowFieldCount: fields.filter(function(f){ return f.location === 'shadow'; }).length,
@@ -667,6 +693,8 @@ class FormSessionManager {
     const meta: any = {
       fieldCount: fields.length,
       hasCaptcha: !!(raw && raw.hasCaptcha),
+      captchaInteractive: !!(raw && raw.captchaInteractive),
+      captchaKind: (raw && raw.captchaKind) || 'none',
       hasIframeForm: !!(raw && raw.hasIframeForm),
       iframeIsCrossOrigin: !!(raw && raw.iframeIsCrossOrigin),
       shadowFieldCount: (raw && raw.shadowFieldCount) || 0,

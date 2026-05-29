@@ -774,6 +774,18 @@ function getExcludeStatuses() {
   return getSection('exclusionRules').excludeStatuses || [];
 }
 
+// v2.0.98: フォーム入力の並列度 (settings の formFill.parallelism)。
+//   これが Phase B の「1 バッチあたりの社数 = pipelineFlushSize」と
+//   「同時に開く WebView タブ数 (min(値, 3))」の両方を駆動する単一ノブ。
+//   旧来 UI に出ていたが pipeline が読んでいなかった (DEAD 設定) のを配線する。
+function getFormFillParallelism() {
+  let raw: any = null;
+  try { const ff = getSection('formFill') || {}; raw = ff.parallelism; } catch (_) { /* swallow */ }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 3; // 既定 3
+  return Math.max(1, Math.min(5, Math.floor(n)));
+}
+
 /**
  * フォーム自動送信ポリシーを取得する。
  * @returns {{ enabled: boolean, requireApproval: boolean, skipIfCaptcha: boolean }} 自動送信ポリシー
@@ -1148,7 +1160,7 @@ module.exports = {
   load, save, getAll, getSection, updateSection, replaceSection, get, set,
   // Convenience
   getSender, getStrengths, getSuccessPatterns, getIndustryProfiles, getIdealCustomer,
-  getExcludeStatuses, getTargetListPath, getPort, getScreenshotDir, getProtectedGroups, getCompetitors,
+  getExcludeStatuses, getFormFillParallelism, getTargetListPath, getPort, getScreenshotDir, getProtectedGroups, getCompetitors,
   getHost, getRuntimeRoot,
   isConfigured, getSignature, getMessageStyle, getLetterTemplate,
   getApprovalBeforeSend, getAutoSendEligibleForms, getAutoSubmitPolicy, getFormFillTimeout, getActiveSettingsFile,

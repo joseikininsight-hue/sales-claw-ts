@@ -124,10 +124,12 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
     //   (1) UI が「要対応」バナー/バッジを出せる、(2) 完了セッション自動破棄や
     //   MAX_SESSIONS 退避から温存される (人間がライブブラウザで解くため)。
     try {
-      const meta = (structure as { meta?: { hasCaptcha?: boolean } })?.meta;
+      const meta = (structure as { meta?: { hasCaptcha?: boolean; captchaInteractive?: boolean } })?.meta;
       const sess = ctx.formSessionManager._sessions.get(p.sessionId);
-      if (sess && meta && meta.hasCaptcha) {
-        (sess as Record<string, unknown>).captchaDetected = true;
+      if (sess && meta) {
+        // v2.0.98: 「要対応」フラグは interactive CAPTCHA のみ。不可視型 (v3 等) は
+        //   人手不要なので立てない (操作中タブで誤って要対応バナーを出さない)。
+        (sess as Record<string, unknown>).captchaDetected = !!meta.captchaInteractive;
       }
     } catch { /* best-effort */ }
     // Phase 2: getFormStructure の出力 (fields + meta) を返す。

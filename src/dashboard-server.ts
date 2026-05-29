@@ -7854,7 +7854,7 @@ ${renderStyles()}
     <span class="material-symbols-outlined tab-icon">smart_toy</span>
     ${_lang === 'ja' ? '操作中' : 'AI Live'}
     <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
-    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? 'ロボット認証など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;background:#ef4444;color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">🤖 0</span>
+    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? '本人確認など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;align-items:center;gap:3px;background:#f59e0b;color:#3a2a00;font-size:.55rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
   </button>
   <!-- v2.0.93: セッションを終了 — 操作中タブで active session が居る時だけ表示 -->
   <button id="liveSessionEndInline" type="button" class="tab-end-btn" style="display:none" title="${_lang === 'ja' ? '稼働中の AI 操作セッションを終了' : 'End active AI operation session'}">
@@ -8519,15 +8519,20 @@ ${renderStyles()}
                   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const noLabel = 'No.' + (activeSession.companyNo || '?') + (nm ? ' ' + nm : '');
                 if (needsHuman) {
-                  toolbarEl.style.background = 'color-mix(in srgb, #ef4444 18%, transparent)';
-                  toolbarEl.style.borderColor = '#ef4444';
-                  if (dotEl) dotEl.style.background = '#ef4444';
-                  if (labelEl) labelEl.textContent = '🤖 ${_lang === 'ja' ? '要対応 — 下のブラウザでロボット認証を解いて送信してください' : 'Action needed — solve the robot check in the browser below and submit'} (' + noLabel + ')';
+                  // 要対応: アンバー(警告)アクセント + アイコン。絵文字は使わず端正に。
+                  toolbarEl.style.background = 'color-mix(in srgb, #f59e0b 13%, transparent)';
+                  toolbarEl.style.borderColor = 'color-mix(in srgb, #f59e0b 55%, transparent)';
+                  if (dotEl) dotEl.style.display = 'none';
+                  if (labelEl) labelEl.innerHTML =
+                    '<span class="material-symbols-outlined" style="font-size:15px;color:#d97706;vertical-align:-3px;margin-right:5px">verified_user</span>' +
+                    '<b style="color:#b45309">${_lang === 'ja' ? '本人確認が必要です' : 'Verification needed'}</b>' +
+                    '<span style="opacity:.72;margin-left:7px">${_lang === 'ja' ? '下のブラウザで認証を完了し、右の「送信済みにする」を押してください' : 'complete the check below, then press “Mark sent”'}</span>' +
+                    '<span style="opacity:.5;margin-left:7px;font-family:var(--font-mono);font-size:.92em">' + noLabel + '</span>';
                   if (markBtn) markBtn.style.display = 'inline-flex';
                 } else {
                   toolbarEl.style.background = 'color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)';
                   toolbarEl.style.borderColor = 'var(--outline-variant,#d8dee5)';
-                  if (dotEl) dotEl.style.background = '#10b981';
+                  if (dotEl) { dotEl.style.display = 'inline-block'; dotEl.style.background = '#10b981'; }
                   if (labelEl) labelEl.textContent = noLabel + ' · ' + (activeSession.status || '');
                   if (markBtn) markBtn.style.display = 'none';
                 }
@@ -8542,7 +8547,7 @@ ${renderStyles()}
             const needsHumanCount = list.filter(s => s.captchaDetected || s.needsHuman).length;
             const nhBadge = document.getElementById('liveFormNeedsHumanBadge');
             if (nhBadge) {
-              if (needsHumanCount > 0) { nhBadge.style.display = 'inline-block'; nhBadge.textContent = '🤖 ' + needsHumanCount; }
+              if (needsHumanCount > 0) { nhBadge.style.display = 'inline-flex'; nhBadge.textContent = '${_lang === 'ja' ? '要対応' : 'action'} ' + needsHumanCount; }
               else nhBadge.style.display = 'none';
             }
 
@@ -8561,7 +8566,7 @@ ${renderStyles()}
               const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
               const isVirtual = String(s.id||'').startsWith('virtual:');
               const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
-              const captchaBadge = s.captchaDetected ? '<span title="CAPTCHA / ロボチェッカ検出 — 人手対応が必要" style="background:#ef4444;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:700">🤖</span>' : '';
+              const captchaBadge = s.captchaDetected ? '<span title="${_lang === 'ja' ? '本人確認が必要 — 人手対応' : 'Verification required'}" style="display:inline-flex;align-items:center;background:#f59e0b;color:#3a2a00;font-size:.55rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:800">${_lang === 'ja' ? '要対応' : 'action'}</span>' : '';
               const nameStr = (s.companyName || '').toString().slice(0, 14);
               const escName = nameStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const fullName = (s.companyName || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -11625,6 +11630,8 @@ function getAiFormFillApiDispatch() {
       },
       // v2.0.16: pipeline 用に batch size を expose
       getManagedAiFormBatchSize,
+      // v2.0.98: flush サイズ (= 並列度) の単一ノブ。formFill.parallelism を読む。
+      getFormFillParallelism: () => settings.getFormFillParallelism(),
       // v2.0.10: PTY 死亡時に pending も自動ドレインできるよう exposure
       clearManagedAiBatchPending: () => {
         if (!managedAiBatchController) return 0;

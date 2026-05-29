@@ -70,6 +70,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
     setManagedAiBatchActive,
     clearManagedAiBatchPending,
     getManagedAiRecoveryTimer,
+    getFormFillParallelism,
   } = ctx;
 
   /**
@@ -224,20 +225,19 @@ module.exports = function createAiFormFillRoutes(ctx) {
       }
 
       // v2.0.16 パイプライン: Phase A が 1 件 success するたびに即 Phase B に enqueue。
-      // バッファ管理: pipelineFlushSize 件溜まるか Phase A 完走したら flush (既定 1)。
-      // 旧: Phase A 全件完了を待ってから queueAiFormFill → 200 社で 5-10 分の待ち時間。
-      // 新: 最初の 1 社が分析完了した瞬間に Phase B が動き出す。
       const pipelineEnabled = process.env.SALES_CLAW_PIPELINE !== 'off';
-      // v2.0.95: flush は 1 社ずつ即時を既定にする。旧実装は managedAiFormBatchSize(=3)
-      //   件溜まるまで flush しなかったため、3 社実行では実質「Phase A 全社完了待ち」
-      //   となり、1 社のフォーム探索が遅いと他社の Phase B 着手まで遅れていた
-      //   (ユーザー報告: 1 社見つからないと他 2 社が進まない)。Phase A 完了ごとに
-      //   即 Phase B へ流し、各社が分析完了の瞬間に独立して動き出すようにする。
-      //   バッチ纏めに戻したい場合は env SALES_CLAW_PIPELINE_FLUSH_SIZE で上げる。
+      // v2.0.98: flush サイズ = formFill.parallelism (既定 3)。
+      //   v2.0.95 で 1 に固定したが、それだと各社が「1 社だけのバッチ」になり
+      //   (1) CLI が並列タブ命令に到達せず逐次化 (2) 指示ヘッダーを社数分 再送 (コスト浪費)
+      //   (3) バッチ数増で PTY 再起動リスク増 → 「1 社で終了」しやすい、という弊害があった。
+      //   parallelism 件溜めてからバッチ投入する事で CLI が並列タブで同時処理でき、
+      //   ヘッダー再送も 1/parallelism に削減。Phase A 完走時は端数も flush するため
+      //   「1 社の Phase A 遅延で全社停止」も起きない。env で明示上書き可。
+      const pipelineFlushParallelism = (typeof getFormFillParallelism === 'function' ? getFormFillParallelism() : 3);
       const pipelineFlushSizeRaw = Number(process.env.SALES_CLAW_PIPELINE_FLUSH_SIZE);
       const pipelineFlushSize = Number.isFinite(pipelineFlushSizeRaw) && pipelineFlushSizeRaw > 0
         ? Math.floor(pipelineFlushSizeRaw)
-        : 1;
+        : Math.max(1, pipelineFlushParallelism);
       const pipelineBuffer: any[] = [];
       const pipelinePhaseAByCompany = new Map<string, any>();
       let pipelineQueuedCount = 0;
