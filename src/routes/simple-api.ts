@@ -95,6 +95,7 @@ module.exports = function createSimpleApiRoutes(ctx) {
     AUTO_UPDATE_ENABLED,
     APP_BUILD_SOURCE,
     APP_VERSION,
+    getFormSessionManager,
   } = ctx;
 
   function broadcastSse(payload) {
@@ -648,6 +649,18 @@ module.exports = function createSimpleApiRoutes(ctx) {
           }
         }
         logAction(no, name, action, details);
+        // v2.0.96: 端末アクションを記録した社の WebContentsView を破棄。
+        //   メモリ蓄積 (20 社で 1-3GB) と MAX_SESSIONS の FIFO 退避衝突を防ぐ。
+        //   送信は formUrl から再生成するため破棄して問題ない。best-effort。
+        try {
+          const TERMINAL_SESSION_ACTIONS = ['awaiting_approval', 'submitted', 'skipped', 'error'];
+          if (TERMINAL_SESSION_ACTIONS.indexOf(action) >= 0 && typeof getFormSessionManager === 'function') {
+            const fsm = getFormSessionManager();
+            if (fsm && typeof fsm.destroySessionsByCompanyNo === 'function') {
+              fsm.destroySessionsByCompanyNo(no);
+            }
+          }
+        } catch (_) { /* session cleanup は best-effort */ }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, no, action }));
       } catch (e) {

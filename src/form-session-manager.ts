@@ -457,6 +457,24 @@ class FormSessionManager {
     if (this._activeSessionId === sessionId) this._activeSessionId = null;
   }
 
+  // v2.0.96: 指定 companyNo に紐づくセッションを全破棄する。
+  //   端末アクション (awaiting_approval / submitted / skipped / error) を記録した時点で
+  //   その社の WebContentsView は不要になるため呼ぶ。20 社キュー時でも常に処理中の
+  //   1 ブラウザのみ生存させ、メモリ蓄積と MAX_SESSIONS の FIFO 退避衝突を防ぐ。
+  //   送信 (submit) は formUrl から新規セッションを再生成するため破棄して問題ない。
+  destroySessionsByCompanyNo(companyNo) {
+    const target = String(companyNo);
+    const ids: string[] = [];
+    for (const [id, session] of this._sessions) {
+      if (session && String(session.companyNo) === target) ids.push(id);
+    }
+    let destroyed = 0;
+    for (const id of ids) {
+      try { this.destroySession(id); destroyed += 1; } catch (_) {}
+    }
+    return { ok: true, destroyed };
+  }
+
   // app quit / window-all-closed 時に呼ばれる包括的 cleanup。
   // mainWindow.close で WebContentsView が detach されず memory leak する経路を塞ぐ。
   destroyAllSessions() {

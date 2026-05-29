@@ -6399,6 +6399,26 @@ async function startManagedAiSession(mode = 'default', providerId = getSelectedA
   }
 }
 
+// v2.0.96: 確認待ち→AI送信 など「後から prompt を投げたい」経路用。
+//   managed PTY が idle watchdog で reap されていても、ログイン済みなら自動で
+//   セッションを再起動してから queue できるようにする (ユーザーに再度「AI起動」を
+//   押させない)。未ログイン/未インストール時は ensureClaudeAutomationReady の
+//   actionable エラーをそのまま返す。
+async function ensureManagedAiReadyForPrompt(providerId = getSelectedAiProvider()) {
+  const normalizedProviderId = normalizeProviderId(providerId);
+  if (claudePty && getManagedAiProvider() === normalizedProviderId) {
+    return { ok: true, alreadyRunning: true };
+  }
+  const ready: any = await ensureClaudeAutomationReady(normalizedProviderId);
+  if (!ready.ok) return ready;
+  try {
+    await startManagedAiSession('default', normalizedProviderId, { allowReuse: true });
+    return { ok: true, relaunched: true };
+  } catch (e: any) {
+    return { ok: false, statusCode: 500, error: 'managed AI セッションの再起動に失敗しました: ' + (e && e.message || e) };
+  }
+}
+
 async function _startManagedAiSessionImpl(mode = 'default', providerId = getSelectedAiProvider(), options: Record<string, any> = {}) {
   const normalizedProviderId = normalizeProviderId(providerId);
   const provider = getProvider(normalizedProviderId);
@@ -8248,6 +8268,17 @@ ${renderStyles()}
            docking ロジックが #liveFormSessions を参照するため要素は残し非表示。 -->
       <div id="liveFormSessions" class="lfs-card-bd" style="display:none;gap:4px;overflow-x:auto;padding:6px 2px;min-height:34px"></div>
 
+      <!-- v2.0.96: スリムなブラウザツールバー (セッション稼働時のみ表示)。
+           WebContentsView は slot 上に native 描画されるため、閉じるボタンは slot の
+           外 (上) に置く必要がある。アクティブな社名 + 閉じるボタンのみの最小構成。 -->
+      <div id="liveFormToolbar" style="display:none;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
+        <span style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
+        <span id="liveFormToolbarLabel" style="font-size:.72rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
+        <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.66rem;padding:3px 9px;border-radius:6px;cursor:pointer">
+          <span class="material-symbols-outlined" style="font-size:13px">close</span>${_lang === 'ja' ? '閉じる' : 'Close'}
+        </button>
+      </div>
+
       <!-- 全幅 WebView slot -->
       <div id="liveFormViewSlot" class="lfs-view-slot">
         <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
@@ -8359,11 +8390,23 @@ ${renderStyles()}
           const clippedRight = Math.min(winW, rect.right);
           const clippedWidth = clippedRight - clippedLeft;
           const n = realSessions.length;
-          // 1 → 1x1, 2 → 1x2 horizontal, 3 → 1x3 horizontal, 4 → 2x2
+          // v2.0.96: 4 セッション以上を 2x2 に詰めると 5 個目以降が 50px に潰れて
+          //   操作不能になる。完了セッションは自動破棄されるため通常 1-3 個だが、
+          //   念のため 4 個以上は「アクティブのみ全幅表示・他は画面外 park」に倒す。
+          if (n > 3) {
+            const activeId = _activeSessionId || (realSessions[realSessions.length - 1] || {}).id;
+            for (const s of realSessions) {
+              if (s.id === activeId) { await syncViewBounds(s.id); }
+              else {
+                try { await fetch('/api/form-session/' + s.id + '/set-bounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x: -10000, y: -10000, width: 1, height: 1 }) }); } catch (e) {}
+              }
+            }
+            return;
+          }
+          // 1 → 1x1, 2 → 1x2 horizontal, 3 → 1x3 horizontal
           let cols = 1, rows = 1;
           if (n === 2) cols = 2;
           else if (n === 3) cols = 3;
-          else if (n >= 4) { cols = 2; rows = 2; }
           const gap = 4;
           const tileW = Math.floor((clippedWidth - gap * (cols - 1)) / cols);
           const tileH = Math.floor((clippedHeight - gap * (rows - 1)) / rows);
@@ -8424,6 +8467,10 @@ ${renderStyles()}
               if (liveStatusEl) { liveStatusEl.textContent = 'IDLE'; liveStatusEl.style.background = '#5b6675'; }
               const endBtnInline = document.getElementById('liveSessionEndInline');
               if (endBtnInline) endBtnInline.style.display = 'none';
+              const tb = document.getElementById('liveFormToolbar');
+              if (tb) tb.style.display = 'none';
+              const slotEl = document.getElementById('liveFormViewSlot');
+              if (slotEl) slotEl.style.borderRadius = '10px';
               _activeSessionId = null;
               renderProgress(null, events);
               renderCurrent(null, events);
@@ -8451,6 +8498,25 @@ ${renderStyles()}
             const activeSession = list.find(s => s.id === activeSid) || list[list.length - 1];
             if (sessionIdEl && activeSession) {
               sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
+            }
+            // v2.0.96: ブラウザツールバー (実セッション稼働時のみ) — 社名表示 + 閉じる
+            const toolbarEl = document.getElementById('liveFormToolbar');
+            const slotEl2 = document.getElementById('liveFormViewSlot');
+            if (toolbarEl) {
+              if (hasRealSession && activeSession && !String(activeSession.id||'').startsWith('virtual:')) {
+                toolbarEl.style.display = 'flex';
+                if (slotEl2) slotEl2.style.borderRadius = '0 0 10px 10px';
+                const labelEl = document.getElementById('liveFormToolbarLabel');
+                if (labelEl) {
+                  const nm = (activeSession.companyName || '').toString().slice(0, 40)
+                    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                  labelEl.textContent = 'No.' + (activeSession.companyNo || '?') + (nm ? ' ' + nm : '') + ' · ' + (activeSession.status || '');
+                }
+                toolbarEl.dataset.activeSid = activeSession.id || '';
+              } else {
+                toolbarEl.style.display = 'none';
+                if (slotEl2) slotEl2.style.borderRadius = '10px';
+              }
             }
 
             // v2.0.93: chip 再描画メモ化 — 同じ list なら innerHTML 置換をスキップして
@@ -8531,6 +8597,21 @@ ${renderStyles()}
                 });
               }
             }
+
+            // v2.0.96: ツールバーの "閉じる" — 表示中のアクティブセッションのみ破棄
+            const closeBtn = document.getElementById('liveFormCloseBtn');
+            if (closeBtn && !closeBtn.dataset.bound) {
+              closeBtn.dataset.bound = '1';
+              closeBtn.addEventListener('click', async () => {
+                const tb = document.getElementById('liveFormToolbar');
+                const sid = (tb && tb.dataset.activeSid) || _activeSessionId;
+                if (!sid || String(sid).startsWith('virtual:')) return;
+                try { await fetch('/api/form-session/' + encodeURIComponent(sid), { method: 'DELETE' }); } catch (e) {}
+                if (_activeSessionId === sid) _activeSessionId = null;
+                refreshLiveFormSessions();
+              });
+            }
+
             const currentTab = document.querySelector('.tab-content.active')?.id;
             if (currentTab === 'tab-live-form') {
               _activeSessionId = activeSid;
@@ -11381,6 +11462,7 @@ function getSimpleApiDispatch() {
       AUTO_UPDATE_ENABLED,
       APP_BUILD_SOURCE,
       APP_VERSION,
+      getFormSessionManager: () => _formSessionManager,
     });
   }
   return _simpleApiDispatch;
@@ -11549,7 +11631,8 @@ function getAiSubmitFinalApiDispatch() {
       queueManagedAiPrompt,
       getSelectedAiProvider,
       appendDiagnosticEvent,
-      settingsManager: settings,
+      getKnownFormUrl,
+      ensureManagedAiReadyForPrompt,
     });
   }
   return _aiSubmitFinalApiDispatch;
