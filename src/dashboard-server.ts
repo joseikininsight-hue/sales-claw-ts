@@ -7854,6 +7854,7 @@ ${renderStyles()}
     <span class="material-symbols-outlined tab-icon">smart_toy</span>
     ${_lang === 'ja' ? '操作中' : 'AI Live'}
     <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
+    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? 'ロボット認証など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;background:#ef4444;color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">🤖 0</span>
   </button>
   <!-- v2.0.93: セッションを終了 — 操作中タブで active session が居る時だけ表示 -->
   <button id="liveSessionEndInline" type="button" class="tab-end-btn" style="display:none" title="${_lang === 'ja' ? '稼働中の AI 操作セッションを終了' : 'End active AI operation session'}">
@@ -8272,8 +8273,11 @@ ${renderStyles()}
            WebContentsView は slot 上に native 描画されるため、閉じるボタンは slot の
            外 (上) に置く必要がある。アクティブな社名 + 閉じるボタンのみの最小構成。 -->
       <div id="liveFormToolbar" style="display:none;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
-        <span style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
+        <span id="liveFormToolbarDot" style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
         <span id="liveFormToolbarLabel" style="font-size:.72rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
+        <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
+          <span class="material-symbols-outlined" style="font-size:13px">check</span>${_lang === 'ja' ? '送信済みにする' : 'Mark sent'}
+        </button>
         <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.66rem;padding:3px 9px;border-radius:6px;cursor:pointer">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>${_lang === 'ja' ? '閉じる' : 'Close'}
         </button>
@@ -8499,24 +8503,47 @@ ${renderStyles()}
             if (sessionIdEl && activeSession) {
               sessionIdEl.textContent = 'No.' + (activeSession.companyNo || '?') + ' / ' + (activeSession.id || '').slice(0, 12);
             }
-            // v2.0.96: ブラウザツールバー (実セッション稼働時のみ) — 社名表示 + 閉じる
+            // v2.0.96/97: ブラウザツールバー (実セッション稼働時のみ)。
+            //   CAPTCHA/要対応セッションがアクティブなら赤い「要対応」バナー + 送信済みボタン。
             const toolbarEl = document.getElementById('liveFormToolbar');
             const slotEl2 = document.getElementById('liveFormViewSlot');
+            const needsHuman = !!(activeSession && (activeSession.captchaDetected || activeSession.needsHuman));
             if (toolbarEl) {
               if (hasRealSession && activeSession && !String(activeSession.id||'').startsWith('virtual:')) {
                 toolbarEl.style.display = 'flex';
                 if (slotEl2) slotEl2.style.borderRadius = '0 0 10px 10px';
                 const labelEl = document.getElementById('liveFormToolbarLabel');
-                if (labelEl) {
-                  const nm = (activeSession.companyName || '').toString().slice(0, 40)
-                    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                  labelEl.textContent = 'No.' + (activeSession.companyNo || '?') + (nm ? ' ' + nm : '') + ' · ' + (activeSession.status || '');
+                const dotEl = document.getElementById('liveFormToolbarDot');
+                const markBtn = document.getElementById('liveFormMarkSentBtn');
+                const nm = (activeSession.companyName || '').toString().slice(0, 40)
+                  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const noLabel = 'No.' + (activeSession.companyNo || '?') + (nm ? ' ' + nm : '');
+                if (needsHuman) {
+                  toolbarEl.style.background = 'color-mix(in srgb, #ef4444 18%, transparent)';
+                  toolbarEl.style.borderColor = '#ef4444';
+                  if (dotEl) dotEl.style.background = '#ef4444';
+                  if (labelEl) labelEl.textContent = '🤖 ${_lang === 'ja' ? '要対応 — 下のブラウザでロボット認証を解いて送信してください' : 'Action needed — solve the robot check in the browser below and submit'} (' + noLabel + ')';
+                  if (markBtn) markBtn.style.display = 'inline-flex';
+                } else {
+                  toolbarEl.style.background = 'color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)';
+                  toolbarEl.style.borderColor = 'var(--outline-variant,#d8dee5)';
+                  if (dotEl) dotEl.style.background = '#10b981';
+                  if (labelEl) labelEl.textContent = noLabel + ' · ' + (activeSession.status || '');
+                  if (markBtn) markBtn.style.display = 'none';
                 }
                 toolbarEl.dataset.activeSid = activeSession.id || '';
+                toolbarEl.dataset.activeNo = String(activeSession.companyNo || '');
               } else {
                 toolbarEl.style.display = 'none';
                 if (slotEl2) slotEl2.style.borderRadius = '10px';
               }
+            }
+            // v2.0.97: 操作中タブの「要対応」件数バッジ (CAPTCHA セッション数, real+virtual)
+            const needsHumanCount = list.filter(s => s.captchaDetected || s.needsHuman).length;
+            const nhBadge = document.getElementById('liveFormNeedsHumanBadge');
+            if (nhBadge) {
+              if (needsHumanCount > 0) { nhBadge.style.display = 'inline-block'; nhBadge.textContent = '🤖 ' + needsHumanCount; }
+              else nhBadge.style.display = 'none';
             }
 
             // v2.0.93: chip 再描画メモ化 — 同じ list なら innerHTML 置換をスキップして
@@ -8608,6 +8635,25 @@ ${renderStyles()}
                 if (!sid || String(sid).startsWith('virtual:')) return;
                 try { await fetch('/api/form-session/' + encodeURIComponent(sid), { method: 'DELETE' }); } catch (e) {}
                 if (_activeSessionId === sid) _activeSessionId = null;
+                refreshLiveFormSessions();
+              });
+            }
+
+            // v2.0.97: ツールバーの "送信済みにする" — 手動でCAPTCHA解決+送信した後に確定
+            const markSentBtn = document.getElementById('liveFormMarkSentBtn');
+            if (markSentBtn && !markSentBtn.dataset.bound) {
+              markSentBtn.dataset.bound = '1';
+              markSentBtn.addEventListener('click', async () => {
+                const tb = document.getElementById('liveFormToolbar');
+                const no = (tb && tb.dataset.activeNo) || '';
+                if (!no) return;
+                if (!confirm('${_lang === 'ja' ? 'このフォームを手動送信済みとして記録しますか?完了画面のスクリーンショットを撮影します。' : 'Mark this form as manually submitted? A screenshot of the completion page will be captured.'}')) return;
+                markSentBtn.disabled = true;
+                try {
+                  await fetch('/api/form-session/mark-sent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyNo: no }) });
+                } catch (e) {}
+                markSentBtn.disabled = false;
+                _activeSessionId = null;
                 refreshLiveFormSessions();
               });
             }
@@ -11521,6 +11567,7 @@ function getFormSessionApiDispatch() {
       parseJsonBody,
       getFormSessionManager: () => _formSessionManager,
       settings,
+      getCompanyLogContext,
     });
   }
   return _formSessionApiDispatch;

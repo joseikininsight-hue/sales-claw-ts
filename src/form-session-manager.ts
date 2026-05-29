@@ -370,10 +370,18 @@ class FormSessionManager {
       throw new Error('WebContentsView はElectronモードでのみ利用できます');
     }
 
-    // セッション上限: 古いものから自動破棄
+    // セッション上限: 古いものから自動破棄。ただし CAPTCHA 等で人間対応待ちの
+    //   セッション / 現在アクティブなセッションは温存し、それ以外の最古を優先的に
+    //   退避する。退避候補が無い (全て要対応/active) 場合のみ最古を破棄する。
     if (this._sessions.size >= MAX_SESSIONS) {
-      const oldest = this._sessions.keys().next().value;
-      this.destroySession(oldest);
+      let victim: string | null = null;
+      for (const [sid, s] of this._sessions) {
+        if ((s as any).captchaDetected) continue;
+        if (this._activeSessionId === sid) continue;
+        victim = sid;
+        break;
+      }
+      this.destroySession(victim || this._sessions.keys().next().value);
     }
 
     const id = crypto.randomUUID();
@@ -871,11 +879,16 @@ class FormSessionManager {
     return Array.from(this._sessions.values()).map((s: any) => ({
       id: s.id,
       companyNo: s.companyNo,
+      companyName: s.companyName || '',
       formUrl: s.formUrl,
       status: s.status,
       blockedUrl: s.blockedUrl,
       blockedReason: s.blockedReason,
       isActive: this._activeSessionId === s.id,
+      // v2.0.97: CAPTCHA/要対応フラグ。snapshot で hasCaptcha を検出すると立つ。
+      //   UI が「要対応」バナー/バッジを出し、退避時に温存するために使う。
+      captchaDetected: !!s.captchaDetected,
+      needsHuman: !!s.captchaDetected,
     }));
   }
 

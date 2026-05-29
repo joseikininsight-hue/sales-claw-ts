@@ -120,6 +120,16 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
   register('snapshot', async (req: IpcRequest) => {
     const p = req.params as unknown as SnapshotParams;
     const structure = await ctx.formSessionManager.getFormStructure(p.sessionId);
+    // v2.0.97: CAPTCHA を検出したらセッションに記録する。これにより
+    //   (1) UI が「要対応」バナー/バッジを出せる、(2) 完了セッション自動破棄や
+    //   MAX_SESSIONS 退避から温存される (人間がライブブラウザで解くため)。
+    try {
+      const meta = (structure as { meta?: { hasCaptcha?: boolean } })?.meta;
+      const sess = ctx.formSessionManager._sessions.get(p.sessionId);
+      if (sess && meta && meta.hasCaptcha) {
+        (sess as Record<string, unknown>).captchaDetected = true;
+      }
+    } catch { /* best-effort */ }
     // Phase 2: getFormStructure の出力 (fields + meta) を返す。
     // Phase 3 で Accessibility.getFullAXTree も追加して a11y mode を実装。
     return {

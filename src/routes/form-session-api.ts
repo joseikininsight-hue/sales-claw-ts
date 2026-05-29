@@ -26,6 +26,8 @@
  */
 
 const path = require('path');
+const fs = require('fs');
+const { logAction } = require('../action-logger');
 
 /**
  * Form Session API ルーターを生成する factory。
@@ -44,6 +46,7 @@ module.exports = function createFormSessionRoutes(ctx) {
     parseJsonBody,
     getFormSessionManager,
     settings,
+    getCompanyLogContext,
   } = ctx;
 
   // ---------- 各ハンドラ関数 ----------
@@ -251,6 +254,82 @@ module.exports = function createFormSessionRoutes(ctx) {
     }
   }
 
+  // v2.0.97: POST /api/form-session/mark-sent  { companyNo }
+  //   reCAPTCHA 等を人間がライブブラウザで手動解決+送信した後に「送信済み」へ確定する。
+  //   ライブセッションから ss-{No}-sent.png を撮影 → awaiting ログの sentMessage で
+  //   submitted を記録 → セッション破棄。
+  async function handleMarkSent(req, res) {
+    const _formSessionManager = getFormSessionManager();
+    try {
+      const body: any = await parseJsonBody(req).catch(() => ({}));
+      // companyNo は正の整数に限定する。NaN/不正値が action-log に書かれて監査記録が
+      // 壊れるのを防ぐ (simple-api の log-action ガードと同等)。数値化でパスも安全になる。
+      const companyNoNum = Number(body && body.companyNo);
+      if (!Number.isFinite(companyNoNum) || companyNoNum <= 0) {
+        jsonResponse(res, 400, { ok: false, error: 'companyNo は正の整数が必要です' }); return;
+      }
+      const companyNo = String(companyNoNum);
+      const safeNo = companyNo; // 正の整数なのでファイル名に安全
+
+      const sessions = typeof _formSessionManager.listSessions === 'function' ? _formSessionManager.listSessions() : [];
+      const sess = sessions.find((s: any) => String(s.companyNo) === companyNo && !String(s.id || '').startsWith('virtual:'));
+
+      // awaiting ログから sentMessage / 社名を取得
+      let sentMessage = '';
+      let name = (sess && sess.companyName) || ('#' + companyNo);
+      if (typeof getCompanyLogContext === 'function') {
+        const ctxLog: any = getCompanyLogContext(companyNoNum);
+        const aw = ctxLog && ctxLog.awaitingLog;
+        if (aw) {
+          const d = aw.details;
+          if (typeof d === 'string') {
+            try { const o = JSON.parse(d); sentMessage = (o && (o.sentMessage || o.body || o.message)) || d; } catch { sentMessage = d; }
+          } else if (d && typeof d === 'object') {
+            sentMessage = d.sentMessage || d.body || d.message || '';
+          }
+        }
+        if (ctxLog && ctxLog.lastLog && ctxLog.lastLog.companyName) name = ctxLog.lastLog.companyName;
+      }
+
+      // 完了スクショ: live session があれば撮影、無ければ input を sent としてコピー
+      const screenshotName = 'ss-' + safeNo + '-sent.png';
+      const screenshotDir = settings.getScreenshotDir();
+      const savePath = path.join(screenshotDir, screenshotName);
+      let captured = false;
+      if (sess) {
+        try { await _formSessionManager.captureScreenshot(sess.id, savePath); captured = true; } catch (_) {}
+      }
+      if (!captured) {
+        try {
+          const inputPath = path.join(screenshotDir, 'ss-' + safeNo + '-input.png');
+          if (fs.existsSync(inputPath)) { fs.copyFileSync(inputPath, savePath); captured = true; }
+        } catch (_) {}
+      }
+
+      // submitted 記録 (server-side 直叩き — 人間の手動確認を表す信頼経路)
+      logAction(companyNoNum, name, 'submitted', {
+        sentMessage: sentMessage && sentMessage.trim().length >= 10 ? sentMessage : '(手動送信: 本文ログ無し)',
+        screenshot: captured ? screenshotName : '',
+        source: 'manual-captcha-submit',
+        verified: true,
+      });
+
+      // セッション破棄
+      if (typeof _formSessionManager.destroySessionsByCompanyNo === 'function') {
+        _formSessionManager.destroySessionsByCompanyNo(companyNo);
+      }
+      // スクショが撮れなかった場合は warning を返して UI 側で注意喚起できるようにする
+      jsonResponse(res, 200, {
+        ok: true,
+        companyNo: companyNoNum,
+        screenshot: captured ? screenshotName : null,
+        warning: captured ? undefined : 'completion screenshot could not be captured (logged without ss-sent)',
+      });
+    } catch (e) {
+      jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   // ---------- dispatch ----------
 
   /**
@@ -344,6 +423,13 @@ module.exports = function createFormSessionRoutes(ctx) {
       } catch (e) {
         jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
       }
+      return true;
+    }
+
+    // v2.0.97: POST /api/form-session/mark-sent (手動送信→送信済み確定)
+    //   動的 :id matcher より前に置く ("mark-sent" を sessionId と誤認させない)。
+    if (pathname === '/api/form-session/mark-sent' && method === 'POST') {
+      await handleMarkSent(req, res);
       return true;
     }
 

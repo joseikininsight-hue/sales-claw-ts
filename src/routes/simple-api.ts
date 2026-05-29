@@ -649,11 +649,12 @@ module.exports = function createSimpleApiRoutes(ctx) {
           }
         }
         logAction(no, name, action, details);
-        // v2.0.96: 端末アクションを記録した社の WebContentsView を破棄。
-        //   メモリ蓄積 (20 社で 1-3GB) と MAX_SESSIONS の FIFO 退避衝突を防ぐ。
-        //   送信は formUrl から再生成するため破棄して問題ない。best-effort。
+        // v2.0.97: 完了系セッションのみ破棄する。
+        //   awaiting_approval は **破棄しない** — reCAPTCHA 等で人間がライブブラウザで
+        //   解く必要があり、確認待ち移行時にセッションを消すと「誰も解けない」状態に
+        //   なるため (v2.0.96 の回帰を修正)。送信/スキップ/エラーは確定終了なので破棄。
         try {
-          const TERMINAL_SESSION_ACTIONS = ['awaiting_approval', 'submitted', 'skipped', 'error'];
+          const TERMINAL_SESSION_ACTIONS = ['submitted', 'skipped', 'error'];
           if (TERMINAL_SESSION_ACTIONS.indexOf(action) >= 0 && typeof getFormSessionManager === 'function') {
             const fsm = getFormSessionManager();
             if (fsm && typeof fsm.destroySessionsByCompanyNo === 'function') {
