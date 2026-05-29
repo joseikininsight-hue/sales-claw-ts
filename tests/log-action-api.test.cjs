@@ -122,4 +122,68 @@ describe('handleLogAction sanitize', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────
+// v2.1.1: sentMessage 焼き込み (確認待ち本文未反映バグの回帰防止)
+// src/routes/simple-api.ts の logAction 直前の注入ブロックを忠実にミラー。
+// ─────────────────────────────────────────────────────────────
+function injectSentMessage(details, sentMsg, action) {
+  if ((action === 'submitted' || action === 'awaiting_approval') && sentMsg) {
+    const bodyForLog = sentMsg.slice(0, MAX_DETAILS_LEN).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ' ');
+    let detailsObj;
+    try {
+      const parsed = (typeof details === 'string' && details) ? JSON.parse(details) : null;
+      detailsObj = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+    } catch (_) { detailsObj = {}; }
+    detailsObj.sentMessage = bodyForLog;
+    return JSON.stringify(detailsObj);
+  }
+  return details;
+}
+
+describe('sentMessage injection (v2.1.1)', () => {
+  it('sentMessageFile 経路: detailsRaw に sentMessage が無くても details に焼き込まれる', () => {
+    // CLI が sentMessageFile だけ渡し、sentMessage フィールドは無いケース
+    const proc = processLogActionPayload({
+      no: 5, name: 'テスト社', action: 'awaiting_approval',
+      details: { sentMessageFile: '/tmp/body-5.txt', screenshot: 'ss-5-input.png', tabKept: true },
+    });
+    assert.equal(proc.ok, true);
+    const beforeParsed = JSON.parse(proc.details);
+    assert.equal(beforeParsed.sentMessage, undefined, '注入前は sentMessage が無い (バグ再現)');
+    // サーバがファイルから読み取った本文 (sentMsg) を注入
+    const resolvedBody = 'お世話になります。テスト株式会社の担当と申します。貴社の事業を拝見しご連絡しました。';
+    const finalDetails = injectSentMessage(proc.details, resolvedBody, 'awaiting_approval');
+    const parsed = JSON.parse(finalDetails);
+    assert.equal(parsed.sentMessage, resolvedBody, '注入後は本文が details に入る');
+    assert.equal(parsed.screenshot, 'ss-5-input.png', '既存フィールドは保持される');
+    assert.equal(parsed.tabKept, true);
+  });
+
+  it('改行とタブを本文として保持する (一行化されない)', () => {
+    const body = 'お世話になります。\n株式会社LYZONの中澤です。\n\n貴社の取り組みを拝見し...';
+    const finalDetails = injectSentMessage('{"screenshot":"ss-9-input.png"}', body, 'submitted');
+    const parsed = JSON.parse(finalDetails);
+    assert.equal(parsed.sentMessage, body, '\\n が保持される');
+    assert.ok(parsed.sentMessage.includes('\n'), '改行が残っている');
+  });
+
+  it('改行・タブ以外の制御文字は除去する', () => {
+    const body = 'A\x00B\x07C\tD\nE';
+    const finalDetails = injectSentMessage('{}', body, 'awaiting_approval');
+    const parsed = JSON.parse(finalDetails);
+    assert.equal(parsed.sentMessage, 'A B C\tD\nE', '0x00/0x07 は空白化、\\t \\n は保持');
+  });
+
+  it('非終了アクション/空 sentMsg では details を変更しない', () => {
+    assert.equal(injectSentMessage('{"a":1}', 'body', 'form_fill'), '{"a":1}');
+    assert.equal(injectSentMessage('{"a":1}', '', 'awaiting_approval'), '{"a":1}');
+  });
+
+  it('壊れた details 文字列でも空オブジェクトから再構築する', () => {
+    const finalDetails = injectSentMessage('<<not json>>', 'お問い合わせ本文です。よろしくお願いします。', 'submitted');
+    const parsed = JSON.parse(finalDetails);
+    assert.equal(parsed.sentMessage, 'お問い合わせ本文です。よろしくお願いします。');
+  });
+});
+
 console.log('\nall log-action-api tests passed.');

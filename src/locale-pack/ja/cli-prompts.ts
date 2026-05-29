@@ -54,7 +54,7 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
 
   const lines: string[] = [
     '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
-    '- ★ urlMissing=true の会社: WebSearch を **1 回だけ** (「会社名 公式サイト」のクエリ 1 本) 実行 → 上位 3 件から公式ドメインを判定 → 確定したら即 navigate (再検索禁止)。30 秒以内に決まらない or 公式が見つからない → **即 error**。WebSearch のリトライ・候補を 1 件ずつ navigate 試行・wikipedia 経由検索は全て禁止。',
+    '- ★ urlMissing=true の会社: WebSearch は **最大 2 クエリまで**。1 本目「会社名 公式サイト」→ 上位 3 件で公式ドメインが確定したら即 navigate。確定できない場合 (外資系/グループ会社等でドメインが紛らわしい時) のみ 2 本目「会社名 お問い合わせ」または英語正式社名で再検索可。それでも 30 秒以内に確定しなければ **即 error**。候補を 1 件ずつ navigate 試行・3 クエリ目以降・wikipedia 経由検索は禁止 (探索ループ防止)。',
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
     '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
     '- ★ 確認画面への進み方: 送信/確認ボタンは browser_snapshot の fields 一覧には出ない (フォーム項目ではない)。可視テキスト (「送信」「確認」「確認画面へ」「次へ」「送信する」「Submit」「Confirm」) でボタンを特定して browser_click する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待ち、到達したら confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。',

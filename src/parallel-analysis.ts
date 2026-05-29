@@ -486,12 +486,23 @@ async function analyzeCompanyLite(url, companyName, companyType) {
   let topHtml: any = await fetchTextWithBackoff(url);
   let siteText = extractText(topHtml);
 
-  // 1.2.89: HTTP fetch で取れない (Akamai/Cloudflare 等の anti-bot で 403/200 だが空)
-  // 場合は Playwright (headless chromium) で fallback。Phase A subprocess なので
-  // 重いが、ADK 等の大手企業を確実に取得できる。siteText が 200 字未満なら try。
-  if (siteText.length < 200) {
+  // 1.2.89 / v2.1.1: HTTP fetch で取れない (Akamai/Cloudflare 等の anti-bot で 403/200 だが空、
+  //   または React/Next 等 JS 描画サイトで HTML シェルしか返らない) 場合は Playwright
+  //   (headless chromium) で fallback。Phase A subprocess なので重いが、大手企業を確実に取得できる。
+  //   v2.1.1: 旧実装は 200 字未満のみ fallback していたため、SPA が部分的に 200-799 字返す
+  //   ケース (実機 No.229 Dirbato 749字) で sendability-gate の siteText_sufficient(既定 800字)
+  //   に誤って fatal 判定されていた。発火閾値をゲートの最小文字数に揃え、ゲートを下回る取得不足の
+  //   サイトは必ずブラウザ再取得を試みてから判定する (誤 fatal を根本から防ぐ)。
+  let _pwFallbackMinLen = 800;
+  try {
+    const _s = require('./settings-manager');
+    const _ic = typeof _s.getIdealCustomer === 'function' ? _s.getIdealCustomer() : null;
+    const _v = Number(_ic && _ic.minSiteTextLength);
+    if (Number.isFinite(_v) && _v > 0) _pwFallbackMinLen = _v;
+  } catch (_) { /* 取得失敗時は既定 800 */ }
+  if (siteText.length < _pwFallbackMinLen) {
     try {
-      log('[INFO] HTTP fetch returned ' + siteText.length + ' chars, trying Playwright fallback for ' + url, 'info');
+      log('[INFO] HTTP fetch returned ' + siteText.length + ' chars (< ' + _pwFallbackMinLen + ' gate), trying Playwright fallback for ' + url, 'info');
       const pwHtml: any = await fetchTextWithPlaywright(url);
       if (pwHtml && pwHtml.length > topHtml.length) {
         topHtml = pwHtml;

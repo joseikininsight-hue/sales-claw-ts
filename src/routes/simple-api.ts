@@ -621,6 +621,25 @@ module.exports = function createSimpleApiRoutes(ctx) {
             return;
           }
         }
+        // v2.1.1: 確認待ち/送信済みの details に実本文 (sentMsg) を必ず焼き込む。
+        //   背景: sentMessageFile 経由 (CP932 文字化け回避の推奨経路) だと detailsRaw に
+        //   sentMessage フィールドが無く、上の details (line 417) には本文が入らない →
+        //   ダッシュボード「確認待ち」で本文が空表示になる (実機バグ報告 2026-05-29)。
+        //   ここで検証済みの最終 sentMsg を details.sentMessage に注入する。改行 (\n,\r) と
+        //   タブは本文として保持し、他の制御文字のみ除去。これで placeholder ガードも本文を走査できる。
+        if ((action === 'submitted' || action === 'awaiting_approval') && sentMsg) {
+          const bodyForLog = sentMsg.slice(0, MAX_DETAILS_LEN).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ' ');
+          let detailsObj: Record<string, any>;
+          try {
+            const parsed = (typeof details === 'string' && details) ? JSON.parse(details) : null;
+            detailsObj = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+          } catch (_) {
+            detailsObj = {};
+          }
+          detailsObj.sentMessage = bodyForLog;
+          // 本文を含む最終 JSON は truncate しない (途中切断で JSON が壊れるのを防ぐ)。
+          details = JSON.stringify(detailsObj);
+        }
         // 1.2.98: 未確定 placeholder 本文の誤送信ガード
         // urlMissing 経路で Phase A が生成する templateDraft には
         // 「【URL 不在のため、CLI 本体が公式サイト探索後に本文を最終化します】」

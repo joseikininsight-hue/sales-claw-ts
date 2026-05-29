@@ -8198,9 +8198,14 @@ ${renderStyles()}
     .lfs-main-grid {
       display: flex;
       flex-direction: column;
-      gap: clamp(8px, 1vw, 14px);
+      gap: clamp(6px, 1vw, 12px);
       padding: clamp(6px, 1vw, 14px);
       width: 100%;
+      /* v2.1.1: 親タブ高さ一杯に伸ばし、子(WebView slot)を flex:1 で埋める。
+         これでページ自体はスクロールせず、スクロールは WebView 内部に閉じる
+         → スクロール時に native view が HTML を追えず「白い幕」が出る問題を根絶。 */
+      height: 100%;
+      min-height: 0;
       box-sizing: border-box;
     }
     .lfs-summary-row {
@@ -8226,15 +8231,18 @@ ${renderStyles()}
     .lfs-view-slot {
       position: relative;
       width: 100%;
-      min-height: clamp(460px, 80vh, 1040px);
-      height: clamp(460px, 80vh, 1040px);
+      /* v2.1.1: 固定高さ(80vh)をやめ flex:1 でタブ残余を埋める。min-height は
+         flex 計算が崩れた最悪時の可視フロア。背景はタイル間ギャップが
+         区切り線に見えるよう薄いサーフェス色に。 */
+      flex: 1 1 auto;
+      min-height: clamp(360px, 58vh, 900px);
       overflow: hidden;
       contain: layout paint;
       isolation: isolate;
       border-radius: 10px;
       border: 1px solid var(--outline-variant, #d8dee5);
       box-shadow: 0 1px 3px rgba(15,23,42,.06);
-      background: transparent;
+      background: var(--surface-variant, #e8edf2);
     }
     [data-theme="dark"] .lfs-view-slot { border-color: color-mix(in srgb, #2a3441 75%, transparent); }
 
@@ -8260,7 +8268,7 @@ ${renderStyles()}
     }
     .lf-session-close:hover { background: rgba(239,68,68,.85); color: #fff; }
   </style>
-  <div class="tab-content lfs-bg" id="tab-live-form" style="min-height:calc(100vh - 92px)">
+  <div class="tab-content lfs-bg" id="tab-live-form" style="height:calc(100vh - 92px);overflow:hidden">
     <!-- v2.0.93: ヘッダーカード撤去。状態は隠し span で保持 (script からの参照互換) -->
     <span id="liveSessionStatus" data-status="IDLE" style="display:none"></span>
     <span id="liveSessionId" style="display:none"></span>
@@ -8324,14 +8332,15 @@ ${renderStyles()}
         </div>
       </div>
 
-      <!-- v2.0.95: セッションチップ (No.xxx · filled ×) は撤去 (純粋ブラウザ表示)。
-           docking ロジックが #liveFormSessions を参照するため要素は残し非表示。 -->
-      <div id="liveFormSessions" class="lfs-card-bd" style="display:none;gap:4px;overflow-x:auto;padding:6px 2px;min-height:34px"></div>
+      <!-- v2.1.1: 各セッションを表すスリムなブラウザタブ風チップ列を復活
+           (ユーザー要望: 各 WebView タブに閉じるボタン)。社名 + ステータス + 個別 ×
+           閉じるボタン + アクティブ強調を持つ。docking 行とは独立。 -->
+      <div id="liveFormSessions" class="lfs-card-bd" style="display:flex;gap:4px;overflow-x:auto;padding:4px 2px;min-height:30px;flex-shrink:0"></div>
 
       <!-- v2.0.96: スリムなブラウザツールバー (セッション稼働時のみ表示)。
            WebContentsView は slot 上に native 描画されるため、閉じるボタンは slot の
            外 (上) に置く必要がある。アクティブな社名 + 閉じるボタンのみの最小構成。 -->
-      <div id="liveFormToolbar" style="display:none;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
+      <div id="liveFormToolbar" style="display:none;flex-shrink:0;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
         <span id="liveFormToolbarDot" style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
         <span id="liveFormToolbarLabel" style="font-size:.72rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
         <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
@@ -8470,7 +8479,9 @@ ${renderStyles()}
           let cols = 1, rows = 1;
           if (n === 2) cols = 2;
           else if (n === 3) cols = 3;
-          const gap = 4;
+          // v2.1.1: タイル間ギャップを広げ、slot 背景(薄いサーフェス色)が区切り線として
+          //   見えるようにする (どの WebView がどの社か分かりやすく)。
+          const gap = 8;
           const tileW = Math.floor((clippedWidth - gap * (cols - 1)) / cols);
           const tileH = Math.floor((clippedHeight - gap * (rows - 1)) / rows);
           if (tileW < 50 || tileH < 50) {
@@ -9023,7 +9034,7 @@ ${renderStyles()}
           _liveFormPollTimer = setInterval(() => {
             if (document.hidden) return;
             refreshLiveFormSessions();
-          }, 2000);
+          }, 1000);
         }
         function stopLiveFormPolling() {
           if (_liveFormPollTimer) { clearInterval(_liveFormPollTimer); _liveFormPollTimer = null; }
