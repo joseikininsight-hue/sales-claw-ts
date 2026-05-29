@@ -80,11 +80,19 @@ const BUILT_IN_EXCLUSION_PATTERNS = [
  * @param {{analysis?: SendabilityAnalysis, idealCustomer?: SendabilityIdealCustomer}} [params]
  * @returns {SendabilityResult}
  */
-function evaluate({ analysis, idealCustomer, protectedGroups }: { analysis?: any; idealCustomer?: any; protectedGroups?: any } = {}) {
+function evaluate({ analysis, idealCustomer, protectedGroups, approachTargets }: { analysis?: any; idealCustomer?: any; protectedGroups?: any; approachTargets?: any } = {}) {
   if (!analysis || typeof analysis !== 'object') {
     return failure('error', [{ name: 'analysis_present', severity: 'fatal', reason: 'analysis 未取得' }]);
   }
   const ic = normalizeIdealCustomer(idealCustomer);
+  // v2.0.99: アプローチ意図で緩和される除外パターン (例: 採用 をターゲットにしたら
+  //   「採用専用」を除外語から外す)。これにより狙った種別のフォームを Phase A で
+  //   弾かずに通せる。
+  let relaxedExclusions: string[] = [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    relaxedExclusions = require('./approach-intent').getRelaxedExclusions(approachTargets) || [];
+  } catch (_) { relaxedExclusions = []; }
   const normalizedProtectedGroups = normalizeProtectedGroups(protectedGroups);
   const failures: unknown[] = [];
 
@@ -149,7 +157,7 @@ function evaluate({ analysis, idealCustomer, protectedGroups }: { analysis?: any
     String(analysis.notes || ''),
   ].join('\n').toLowerCase();
   const exclusionPatterns = [
-    ...BUILT_IN_EXCLUSION_PATTERNS,
+    ...BUILT_IN_EXCLUSION_PATTERNS.filter((p) => relaxedExclusions.indexOf(p) < 0),
     ...ic.exclusionKeywords.patterns,
   ];
   const hitExclusion = exclusionPatterns.find((p: any) => haystack.includes(String(p).toLowerCase()));

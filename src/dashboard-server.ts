@@ -5990,14 +5990,14 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
   let formPreferences: any = undefined;
   try {
     const mt = messageTemplates || {};
-    if (mt.formPreferences && typeof mt.formPreferences === 'object') {
-      formPreferences = {
-        preferredKeywords: Array.isArray(mt.formPreferences.preferredKeywords) ? mt.formPreferences.preferredKeywords : undefined,
-        avoidKeywords: Array.isArray(mt.formPreferences.avoidKeywords) ? mt.formPreferences.avoidKeywords : undefined,
-        approachLabel: typeof mt.formPreferences.approachLabel === 'string' ? mt.formPreferences.approachLabel : undefined,
-      };
-    }
-  } catch (_) { /* 設定欠如時は default を使う */ }
+    // v2.0.99: アプローチ意図 (approachTargets) から formPreferences を生成。
+    //   明示的な messageTemplates.formPreferences があればそれが優先される (後方互換)。
+    //   これにより「協業/採用/広報 …」の選択がフォーム選択優先順位に反映される。
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const approachIntent = require('./approach-intent');
+    const targets = settings.getApproachTargets ? settings.getApproachTargets() : null;
+    formPreferences = approachIntent.resolveFormPreferences(targets, mt.formPreferences || null);
+  } catch (_) { /* 設定欠如時は locale-pack default を使う */ }
   let batchRuleLines: string[] = [];
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -10044,6 +10044,57 @@ ${renderStyles()}
             <textarea id="mt-approachGuardrails" placeholder="${_t['ph.approachGuardrails']}"></textarea>
             <div class="help-text">${_t['help.approachGuardrails']}</div>
           </div>
+          <!-- v2.0.99: 営業アプローチ意図 (どの種別のフォームに営業をかけたいか) -->
+          <div class="settings-group">
+            <label>${_lang === 'ja' ? '営業アプローチ意図' : 'Outreach intent'}</label>
+            <div class="help-text" style="margin-bottom:8px">${_lang === 'ja'
+              ? 'どの窓口に営業したいかを選びます。AI は対象種別のフォームを優先的に探し、無ければ一般の問い合わせフォームにフォールバックします。採用/広報/IR を選ぶと「採用専用」等の窓口も対象に含めます。'
+              : 'Pick which inquiry channels to target. The AI prefers matching forms and falls back to general contact if absent. Selecting recruit/media/IR also includes those dedicated channels.'}</div>
+            <div id="mt-approachTargets" style="display:flex;flex-wrap:wrap;gap:8px 16px">
+              ${(() => {
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  const ai = require('./approach-intent');
+                  const cur = (settings.getApproachTargets && settings.getApproachTargets()) || ai.DEFAULT_TARGETS;
+                  return ai.listIntents().map((it: any) => {
+                    const checked = cur.indexOf(it.key) >= 0 ? ' checked' : '';
+                    const safeLabel = String(it.label).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                    return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer">'
+                      + '<input type="checkbox" class="mt-approachTarget" value="' + it.key + '"' + checked + '> ' + safeLabel + '</label>';
+                  }).join('');
+                } catch (_) { return ''; }
+              })()}
+            </div>
+            <div class="save-bar" style="margin-top:10px">
+              <button class="btn-save" id="mt-approachTargetsSave" type="button">${_t['settings.save']} ${_lang === 'ja' ? 'アプローチ意図' : 'Outreach intent'}</button>
+              <span id="mt-approachTargetsStatus" style="margin-left:10px;font-size:.8rem"></span>
+            </div>
+          </div>
+          <script>
+            (function(){
+              var btn = document.getElementById('mt-approachTargetsSave');
+              if (!btn || btn.dataset.bound) return;
+              btn.dataset.bound = '1';
+              btn.addEventListener('click', async function(){
+                var status = document.getElementById('mt-approachTargetsStatus');
+                var boxes = Array.prototype.slice.call(document.querySelectorAll('.mt-approachTarget:checked'));
+                var targets = boxes.map(function(b){ return b.value; });
+                if (status){ status.textContent = ${_lang === 'ja' ? "'保存中…'" : "'Saving…'"}; status.style.color = 'var(--text-2)'; }
+                try {
+                  // 既存 messageTemplates を読み、approachTargets だけ差し替えて PUT (他項目を消さない)
+                  var cur = await (await fetch('/api/settings')).json();
+                  var mt = (cur && cur.messageTemplates) || {};
+                  mt.approachTargets = targets;
+                  var r = await fetch('/api/settings/messageTemplates', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(mt) });
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  if (status){ status.textContent = ${_lang === 'ja' ? "'✓ 保存しました'" : "'✓ Saved'"}; status.style.color = 'var(--success,#16a34a)'; }
+                } catch (e) {
+                  if (status){ status.textContent = ${_lang === 'ja' ? "'保存失敗: '" : "'Save failed: '"} + (e.message||e); status.style.color = 'var(--error,#dc2626)'; }
+                }
+                setTimeout(function(){ if(status) status.textContent=''; }, 5000);
+              });
+            })();
+          </script>
           <div class="settings-group">
             <label>${_t['field.closingLine']} ${settingsTag('required')}</label>
             <textarea id="mt-closingLine" placeholder="${_t['ph.closing']}"></textarea>

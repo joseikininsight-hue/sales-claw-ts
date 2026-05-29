@@ -920,11 +920,14 @@ async function main() {
     const settingsForGate = require('./settings-manager');
     let idealCustomer: any = null;
     let protectedGroups: any[] = [];
+    let approachTargets: any = null;
     try { idealCustomer = settingsForGate.getIdealCustomer(); } catch (_) { /* settings unavailable → safe defaults */ }
     try { protectedGroups = settingsForGate.getProtectedGroups ? settingsForGate.getProtectedGroups() : []; } catch (_) {}
+    // v2.0.99: アプローチ意図 (採用/広報/IR 等) で除外を緩和する
+    try { approachTargets = settingsForGate.getApproachTargets ? settingsForGate.getApproachTargets() : null; } catch (_) {}
     // analysis に notes を補完 (target list の備考欄を gate に渡す)
     if (company && company.notes && !analysis.notes) analysis.notes = company.notes;
-    const gateResult = sendabilityGate.evaluate({ analysis, idealCustomer, protectedGroups });
+    const gateResult = sendabilityGate.evaluate({ analysis, idealCustomer, protectedGroups, approachTargets });
     if (!gateResult.ok) {
       const urlMissingSkip = isUrlMissingGateSkip(analysis, gateResult);
 

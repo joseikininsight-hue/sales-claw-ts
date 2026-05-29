@@ -137,6 +137,9 @@ const DEFAULT_SETTINGS = {
     // 営業アプローチ方針（AI への内部指示）
     approachObjective: '',
     approachGuardrails: '',
+    // v2.0.99: 営業アプローチ意図 (どの窓口に営業したいか)。approach-intent.ts のキー配列。
+    //   フォーム選択優先順位 + Phase A の除外緩和を駆動する。
+    approachTargets: ['collaboration', 'general'],
     // 締め文
     closingLine: 'もしご興味がございましたら、30分程度の情報交換の場をいただけないでしょうか。\n貴社のお取り組みについてもお伺いできればと存じます。',
     // 挨拶文
@@ -774,6 +777,16 @@ function getExcludeStatuses() {
   return getSection('exclusionRules').excludeStatuses || [];
 }
 
+// v2.0.99: 営業アプローチ意図 (messageTemplates.approachTargets)。
+//   「どこに営業をかけたいか」(協業/業務提携/採用/広報/IR/一般) の選択。
+//   Phase B のフォーム選好生成 + Phase A の除外緩和に使う。未設定は既定意図。
+function getApproachTargets() {
+  let raw: any = null;
+  try { const mt = getSection('messageTemplates') || {}; raw = mt.approachTargets; } catch (_) { /* swallow */ }
+  if (!Array.isArray(raw)) return null; // null = 未設定 (呼び出し側で default を適用)
+  return raw.map((t: any) => String(t)).filter(Boolean);
+}
+
 // v2.0.98: フォーム入力の並列度 (settings の formFill.parallelism)。
 //   これが Phase B の「1 バッチあたりの社数 = pipelineFlushSize」と
 //   「同時に開く WebView タブ数 (min(値, 3))」の両方を駆動する単一ノブ。
@@ -1160,7 +1173,7 @@ module.exports = {
   load, save, getAll, getSection, updateSection, replaceSection, get, set,
   // Convenience
   getSender, getStrengths, getSuccessPatterns, getIndustryProfiles, getIdealCustomer,
-  getExcludeStatuses, getFormFillParallelism, getTargetListPath, getPort, getScreenshotDir, getProtectedGroups, getCompetitors,
+  getExcludeStatuses, getFormFillParallelism, getApproachTargets, getTargetListPath, getPort, getScreenshotDir, getProtectedGroups, getCompetitors,
   getHost, getRuntimeRoot,
   isConfigured, getSignature, getMessageStyle, getLetterTemplate,
   getApprovalBeforeSend, getAutoSendEligibleForms, getAutoSubmitPolicy, getFormFillTimeout, getActiveSettingsFile,
