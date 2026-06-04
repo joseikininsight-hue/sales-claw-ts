@@ -17,6 +17,24 @@ const DNS_LOOKUP_TIMEOUT_MS = 5000;
 //   ときの保険。CDP 系コマンド (cdp-bridge) の 15s ガードに揃える。
 const FORM_INJECT_TIMEOUT_MS = 15000;
 
+// v2.1.3: bot 判定 (reCAPTCHA / Turnstile 等) を抑制するためのステルス User-Agent。
+//   既定の Electron UA は "...Chrome/<v> Electron/<v> Safari/537.36" のように
+//   "Electron" / アプリ名トークンを含むため、サイト側に「自動化ブラウザ」と一発で
+//   判別される。素の Windows Chrome 相当 (Electron/アプリ名トークン無し) に差し替える。
+//   実エンジンの Chrome バージョン (process.versions.chrome) を使うので User-Agent と
+//   navigator のバージョン整合が崩れない。
+function buildStealthUserAgent(): string {
+  const chromeFull = (process.versions && process.versions.chrome) || '131.0.0.0';
+  const major = String(chromeFull).split('.')[0] || '131';
+  return (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+    'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+    `Chrome/${major}.0.0.0 Safari/537.36`
+  );
+}
+
+const STEALTH_USER_AGENT = buildStealthUserAgent();
+
 function isBlockedIpv4(address) {
   const parts = String(address).split('.').map((part: any) => Number(part));
   if (parts.length !== 4 || parts.some((part: any) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
@@ -400,6 +418,12 @@ class FormSessionManager {
     });
     this._installRequestGuards(view, id);
 
+    // v2.1.3: bot 判定抑制。loadURL より前に UA を差し替え、初回ナビゲーション
+    //   (createSession 内 loadURL) から Electron 文字列を露出させない。
+    try {
+      view.webContents.setUserAgent(STEALTH_USER_AGENT);
+    } catch (_) { /* setUserAgent 非対応環境は無視 (素の Electron UA で続行) */ }
+
     this._sessions.set(id, {
       id,
       view,
@@ -419,17 +443,60 @@ class FormSessionManager {
     //   (v0.81 実機回帰)。createSession は session 作成のみに専念させ、dock は
     //   呼び出し側 (dispatcher) の責任に分離。
 
-    view.webContents.loadURL(safeFormUrl).catch((error) => {
-      const session = this._sessions.get(id);
-      if (session && session.status === 'loading') {
-        session.status = 'load_failed';
-        session.blockedReason = error.message;
-      }
-    });
-
-    // Wait for DOM ready (with timeout)
-    await this._waitForLoad(id, 20000);
+    // v2.1.3: 一過性のネットワーク失敗 (接続リセット/一時タイムアウト/一時的な
+    //   名前解決失敗) で会社が即 error に落ちるのを防ぐため、1 回だけ再試行する。
+    //   ERR_ABORTED (リダイレクト由来) や SSRF ブロックは再試行しない。
+    await this._loadWithRetry(id, safeFormUrl);
     return id;
+  }
+
+  async _loadWithRetry(sessionId, url, maxRetries = 1) {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const session = this._sessions.get(sessionId);
+      if (!session) return;
+      session.status = 'loading';
+      session.blockedReason = null;
+
+      // 前試行で登録された dom-ready リスナーが残っていると、次試行の _waitForLoad が
+      //   旧ナビゲーションの遅延 dom-ready を拾って status を誤って 'loaded' にし得る。
+      //   各試行の loadURL 前に残留リスナーを除去してから新規待機を張る。
+      try { session.view.webContents.removeAllListeners('dom-ready'); } catch (_) { /* no-op */ }
+
+      session.view.webContents.loadURL(url).catch((error) => {
+        const s = this._sessions.get(sessionId);
+        if (s && s.status === 'loading') {
+          s.status = 'load_failed';
+          s.blockedReason = error.message;
+        }
+      });
+
+      // Wait for DOM ready (with timeout)
+      await this._waitForLoad(sessionId, 20000);
+
+      const after = this._sessions.get(sessionId);
+      if (!after) return;
+      // load_failed かつ一過性エラーのときだけ再試行。それ以外は確定として抜ける。
+      //   load_timeout は意図的に再試行しない: 20s 待った後の再試行は社あたり +20s 以上の
+      //   遅延になり、かつ部分ロードでもフォーム構造抽出は試せるため (loaded 扱いで続行)。
+      const transient = after.status === 'load_failed' && this._isTransientLoadError(after.blockedReason);
+      if (!transient || attempt === maxRetries) return;
+      await new Promise((r) => setTimeout(r, 800));
+    }
+  }
+
+  _isTransientLoadError(reason) {
+    const r = String(reason || '').toUpperCase();
+    if (r.includes('ERR_ABORTED')) return false; // リダイレクト由来。再試行しない
+    return (
+      r.includes('ERR_CONNECTION_RESET') ||
+      r.includes('ERR_CONNECTION_CLOSED') ||
+      r.includes('ERR_CONNECTION_TIMED_OUT') ||
+      r.includes('ERR_TIMED_OUT') ||
+      r.includes('ERR_NETWORK_CHANGED') ||
+      r.includes('ERR_SOCKET_NOT_CONNECTED') ||
+      r.includes('ERR_EMPTY_RESPONSE') ||
+      r.includes('ERR_NAME_NOT_RESOLVED')
+    );
   }
 
   async _waitForLoad(sessionId, timeout = 20000) {

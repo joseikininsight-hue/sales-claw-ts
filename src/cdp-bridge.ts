@@ -95,6 +95,44 @@ export async function attach(
   await sendCommandRaw(webContents, 'Page.enable', {});
   await sendCommandRaw(webContents, 'Runtime.enable', {});
   await sendCommandRaw(webContents, 'DOM.enable', {});
+
+  // v2.1.3: bot 判定抑制 (ステルス注入)。
+  //   CDP を attach すると Chromium は navigator.webdriver = true を立てるため、
+  //   reCAPTCHA / Turnstile 等で即チャレンジになりやすい。素のブラウザと同じ
+  //   navigator.webdriver = false に見せる。例外は握りつぶし、フォーム操作本体は
+  //   止めない (ステルスは best-effort)。
+  try {
+    await injectStealth(webContents);
+  } catch (_) { /* ステルス注入失敗は無視 (CAPTCHA は人間対応フローで救済) */ }
+}
+
+/**
+ * navigator.webdriver を false に見せるステルススクリプト。
+ * - 以後の全新規ドキュメントに addScriptToEvaluateOnNewDocument で注入。
+ * - 既にロード済みの現在ドキュメントにも Runtime.evaluate で即時適用。
+ */
+const STEALTH_SOURCE =
+  '(() => {' +
+  '  try {' +
+  '    Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false, configurable: true });' +
+  '  } catch (e) {}' +
+  '  try {' +
+  '    if (navigator.webdriver !== false) {' +
+  '      Object.defineProperty(navigator, "webdriver", { get: () => false, configurable: true });' +
+  '    }' +
+  '  } catch (e) {}' +
+  '})();';
+
+async function injectStealth(webContents: WebContents): Promise<void> {
+  await sendCommandRaw(webContents, 'Page.addScriptToEvaluateOnNewDocument', {
+    source: STEALTH_SOURCE,
+  });
+  // 既にロード済みのドキュメントにも即時適用 (attach がページロード後の場合に有効)。
+  await sendCommandRaw(webContents, 'Runtime.evaluate', {
+    expression: STEALTH_SOURCE,
+    includeCommandLineAPI: false,
+    returnByValue: true,
+  });
 }
 
 /**
