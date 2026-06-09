@@ -8,7 +8,7 @@
 
 const SCHEMA = {
   name: 'browser_snapshot',
-  description: 'Capture the current form page as a structured snapshot (a11y tree + form fields + captcha detection).',
+  description: 'Capture the current form page as a structured snapshot. Returns { fields, buttons, meta }: fields = form inputs with selector/label/purpose/required/maxLength (checkbox/radio also carry value+checked, select carries options+current value); buttons = submit/confirm button candidates sorted best-first (use buttons[0].selector with browser_click — no need to hunt for the button via browser_evaluate); meta = captcha/iframe/recommendedStatus hints.',
   inputSchema: {
     type: 'object',
     properties: {

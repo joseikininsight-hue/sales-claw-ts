@@ -102,15 +102,21 @@ async function itAsync(n, f) {
 
 async function main() {
   describe('recommendFormSessionStatus', () => {
-    it('recommends proceed_then_await for CAPTCHA when form has fields', () => {
-      const result = recommendFormSessionStatus({ hasCaptcha: true, fieldCount: 5 });
+    it('recommends proceed_then_await for interactive CAPTCHA when form has fields', () => {
+      // v2.0.98: 人手が要るのは interactive CAPTCHA のみ (不可視型 v3 等は proceed)
+      const result = recommendFormSessionStatus({ hasCaptcha: true, captchaInteractive: true, fieldCount: 5 });
       assert.equal(result.recommendedStatus, 'proceed_then_await');
       assert.match(result.recommendedReason, /CAPTCHA/);
       assert.match(result.recommendedReason, /awaiting_approval/);
     });
 
-    it('recommends error for CAPTCHA when no form fields detected', () => {
-      const result = recommendFormSessionStatus({ hasCaptcha: true, fieldCount: 0 });
+    it('recommends proceed for invisible CAPTCHA (v3 / turnstile managed)', () => {
+      const result = recommendFormSessionStatus({ hasCaptcha: true, captchaInteractive: false, fieldCount: 5 });
+      assert.equal(result.recommendedStatus, 'proceed');
+    });
+
+    it('recommends error for interactive CAPTCHA when no form fields detected', () => {
+      const result = recommendFormSessionStatus({ hasCaptcha: true, captchaInteractive: true, fieldCount: 0 });
       assert.equal(result.recommendedStatus, 'error');
       assert.match(result.recommendedReason, /CAPTCHA/);
     });
@@ -182,6 +188,17 @@ async function main() {
       assert.equal(inferFieldPurpose({ label: 'メアド' }), 'email');
       assert.equal(inferFieldPurpose({ label: 'E-mail' }), 'email');
       assert.equal(inferFieldPurpose({ name: 'user_email' }), 'email');
+    });
+    it('distinguishes email-confirm (re-entry) from email', () => {
+      assert.equal(inferFieldPurpose({ label: 'メールアドレス（確認）' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ label: 'メールアドレス再入力' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ label: '確認用メールアドレス' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ name: 'email_confirm' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ name: 'email2' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ label: 'Confirm Email' }), 'email-confirm');
+      // type=email でも label が確認系なら email-confirm
+      assert.equal(inferFieldPurpose({ type: 'email', name: 'mail_confirm' }), 'email-confirm');
+      assert.equal(inferFieldPurpose({ type: 'email', label: 'メールアドレス' }), 'email');
     });
     it('detects phone', () => {
       assert.equal(inferFieldPurpose({ label: '電話番号' }), 'phone');
@@ -358,13 +375,19 @@ async function main() {
       await assert.rejects(() => mgr.getFormStructure('nope'), /Session not found/);
     });
 
-    await itAsync('fillForm fills fields and reports results', async () => {
-      // Override executeJavaScript to simulate fill responses
+    await itAsync('fillForm batches all fields into one injected script and reports results', async () => {
+      // v2.1.0+: fillForm は全フィールドを 1 回の executeJavaScript で処理する
       const s = mgr._sessions.get(sessionId);
       let invocations = 0;
+      let capturedScript = '';
       s.view.webContents.executeJavaScript = (script) => {
         invocations += 1;
-        return Promise.resolve({ ok: true });
+        capturedScript = script;
+        return Promise.resolve([
+          { selector: '#name', ok: true },
+          { selector: '#email', ok: true },
+          { selector: '#country', ok: true },
+        ]);
       };
       const results = await mgr.fillForm(sessionId, [
         { selector: '#name', value: 'テスト太郎', type: 'text' },
@@ -374,8 +397,51 @@ async function main() {
         { selector: '#dummy', value: null }, // skipped: null value
       ]);
       assert.equal(results.length, 3);
-      assert.equal(invocations, 3);
+      assert.equal(invocations, 1); // 1 バッチ注入 (N 往復しない)
+      assert.match(capturedScript, /#country/); // 全 item が同一スクリプトに含まれる
       assert.equal(s.status, 'filled');
+    });
+
+    await itAsync('getValidationSummary passes through injected validation result', async () => {
+      const s = mgr._sessions.get(sessionId);
+      s.view.webContents.executeJavaScript = () => Promise.resolve({
+        ok: false,
+        problems: [{ selector: '#agree', label: '個人情報の取り扱いに同意', type: 'checkbox', reason: 'required_unchecked' }],
+        requiredTotal: 4,
+      });
+      const v = await mgr.getValidationSummary(sessionId);
+      assert.equal(v.ok, false);
+      assert.equal(v.problems.length, 1);
+      assert.equal(v.problems[0].reason, 'required_unchecked');
+      assert.equal(v.requiredTotal, 4);
+    });
+
+    await itAsync('getValidationSummary returns ok:null (unknown) when injection fails', async () => {
+      const s = mgr._sessions.get(sessionId);
+      s.view.webContents.executeJavaScript = () => Promise.reject(new Error('page gone'));
+      const v = await mgr.getValidationSummary(sessionId);
+      assert.equal(v.ok, null);
+      assert.deepEqual(v.problems, []);
+      assert.match(v.error, /page gone/);
+    });
+
+    await itAsync('getFormStructure returns sorted submit button candidates', async () => {
+      const s = mgr._sessions.get(sessionId);
+      s.view.webContents.executeJavaScript = () => Promise.resolve({
+        fields: [],
+        buttons: [
+          { selector: '[data-sc-fid="9"]', text: '確認画面へ', tag: 'a', type: null, isSubmitType: false, inForm: false },
+          { selector: '[data-sc-fid="5"]', text: '送信する', tag: 'button', type: 'submit', isSubmitType: true, inForm: true },
+        ],
+        hasCaptcha: false,
+        hasIframeForm: false,
+        iframeIsCrossOrigin: false,
+      });
+      const { buttons, meta } = await mgr.getFormStructure(sessionId);
+      assert.equal(buttons.length, 2);
+      // フォーム内 submit 型が先頭に並べ替えられる
+      assert.equal(buttons[0].text, '送信する');
+      assert.equal(meta.submitButtonCount, 2);
     });
 
     await itAsync('fillForm reports error when executeJavaScript throws', async () => {
@@ -495,7 +561,9 @@ async function main() {
       mgr.destroySession(id);
     });
 
-    await itAsync('showSession and setViewBounds keep only one WebContentsView attached', async () => {
+    await itAsync('setViewBounds keeps multiple WebContentsViews attached (Phase B parallel, v2.0.93)', async () => {
+      // v2.0.93: Phase B 並列 (最大3セッション同時表示) のため setViewBounds は
+      //   他セッションを detach しない (keep-all)。hideAllSessions で全て外れる。
       const id1 = await mgr.createSession('http://example.com/', 12);
       const id2 = await mgr.createSession('http://example.org/', 13);
       const s1 = mgr._sessions.get(id1);
@@ -503,9 +571,9 @@ async function main() {
       mgr.showSession(id1);
       assert.equal(fakeWin.contentView.children.includes(s1.view), true);
       mgr.setViewBounds(id2, { x: 30, y: 50, width: 400, height: 300 });
-      assert.equal(fakeWin.contentView.children.includes(s1.view), false);
+      assert.equal(fakeWin.contentView.children.includes(s1.view), true); // keep-all
       assert.equal(fakeWin.contentView.children.includes(s2.view), true);
-      assert.equal(fakeWin.contentView.children.length, 1);
+      assert.equal(fakeWin.contentView.children.length, 2);
       mgr.hideAllSessions();
       assert.equal(fakeWin.contentView.children.length, 0);
       assert.equal(mgr.activeSessionId, null);

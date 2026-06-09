@@ -42,6 +42,7 @@ interface FormSessionManagerLike {
   _waitForLoad(sessionId: string, timeout?: number): Promise<void>;
   getFormStructure(sessionId: string): Promise<unknown>;
   fillForm(sessionId: string, mappings: Array<{ selector: string; value: string; type?: string }>): Promise<unknown>;
+  getValidationSummary?(sessionId: string): Promise<unknown>;
   captureScreenshot(sessionId: string, savePath: string): Promise<string>;
   destroySession(sessionId: string): void;
   _sessions: Map<string, {
@@ -209,7 +210,16 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
   register('fill_form', async (req: IpcRequest) => {
     const p = req.params as unknown as FillFormParams;
     const results = await ctx.formSessionManager.fillForm(p.sessionId, p.mappings);
-    return { results };
+    // ★ v2.1.4: 入力直後にフォーム全体の必須未充足/制約違反を検証して同梱する。
+    //   AI は validation.problems が空であることを確認してから送信ボタンを押せる
+    //   (送信 → サイト側「必須項目を入力してください」→ 分析 → 再入力の往復を根絶)。
+    let validation: unknown = null;
+    try {
+      if (typeof ctx.formSessionManager.getValidationSummary === 'function') {
+        validation = await ctx.formSessionManager.getValidationSummary(p.sessionId);
+      }
+    } catch { /* 検証はベストエフォート */ }
+    return { results, validation };
   });
 
   register('click', async (req: IpcRequest) => {

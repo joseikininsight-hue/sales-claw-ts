@@ -57,7 +57,8 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     '- ★ urlMissing=true の会社: WebSearch は **最大 2 クエリまで**。1 本目「会社名 公式サイト」→ 上位 3 件で公式ドメインが確定したら即 navigate。確定できない場合 (外資系/グループ会社等でドメインが紛らわしい時) のみ 2 本目「会社名 お問い合わせ」または英語正式社名で再検索可。それでも 30 秒以内に確定しなければ **即 error**。候補を 1 件ずつ navigate 試行・3 クエリ目以降・wikipedia 経由検索は禁止 (探索ループ防止)。',
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
     '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
-    '- ★ 確認画面への進み方: 送信/確認ボタンは browser_snapshot の fields 一覧には出ない (フォーム項目ではない)。可視テキスト (「送信」「確認」「確認画面へ」「次へ」「送信する」「Submit」「Confirm」) でボタンを特定して browser_click する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待ち、到達したら confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。',
+    '- ★ 入力は一発で完結させる: browser_fill_form の戻り値 results で ok:false (value_mismatch / not_found) のフィールドだけ browser_type で再入力し、同梱の validation.problems が **空になってから** 送信ボタンを押す。problems には「必須なのに未入力/未チェック/ラジオ未選択/形式エラー」が selector + label 付きで列挙される (サイト側の「必須項目を入力してください」エラーを踏む前に直せる)。problems が空なら再 snapshot せず直ちに送信ボタンへ進む。',
+    '- ★ 確認画面への進み方: 送信/確認ボタン候補は browser_snapshot の buttons 配列に selector + text 付きで入っている (最有力が先頭)。buttons から「確認」「送信」系を選んで browser_click(selector) する (browser_evaluate でのボタン探索は不要)。buttons が空の場合のみ可視テキスト (「送信」「確認」「次へ」「Submit」) で探索する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待ち、到達したら confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。',
     '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',
     '- messageDraft は Phase A の草案、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
     '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
@@ -92,10 +93,10 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
 
   lines.push(
     autoSendSafe
-      ? '- CAPTCHA / 手動必須項目 / 営業NG / 不確実ケースを除き、確認画面が取れたら最終送信まで進めて submitted にする'
+      ? '- ★ 安全フォームは自動送信: 全項目入力成功 + 必須の同意チェック投入 + 確認画面到達 まで来たら、ためらわず送信ボタンを browser_click して submitted にする。止めてよいのは (1)操作要 CAPTCHA (2)設定に無い必須項目 (3)営業NG=skipped (4)送信しても次画面に進めない の4つだけ。「念のため」で確認待ちにしない'
       : '- 送信は行わず awaiting_approval で止める',
   );
-  lines.push('- 送信完了時は sent スクリーンショットを残し、送信済みタブは閉じる');
+  lines.push('- submitted 完了時は ss-{No}-sent.png を残し、その会社のタブ (セッション) を閉じる');
   lines.push(
     '- 入力済みだが最終送信しない場合だけタブを残して awaiting_approval。未入力 (CAPTCHA 以外の理由) / フォーム無しは error / skipped',
   );

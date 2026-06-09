@@ -186,7 +186,14 @@ module.exports = function createFormSessionRoutes(ctx) {
         .filter(m => m.value !== '');
 
       const results: any = await _formSessionManager.fillForm(sessionId, validMappings);
-      jsonResponse(res, 200, { ok: true, results });
+      // v2.1.4: MCP 経路 (fill_form op) と同じく検証サマリを同梱 (best-effort)
+      let validation: any = null;
+      try {
+        if (typeof _formSessionManager.getValidationSummary === 'function') {
+          validation = await _formSessionManager.getValidationSummary(sessionId);
+        }
+      } catch (_) { /* no-op */ }
+      jsonResponse(res, 200, { ok: true, results, validation });
     } catch (e) {
       jsonResponse(res, 500, { ok: false, error: e.message });
     }

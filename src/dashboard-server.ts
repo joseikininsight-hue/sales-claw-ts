@@ -3747,11 +3747,12 @@ function buildManagedAiSessionContract(providerId = getManagedAiProvider(), opti
     '- awaiting_approval はフォーム入力済み + ss-{No}-input.png 作成済み + sentMessage 付きの場合だけ許可',
     '- form_fill → confirm_reached → awaiting_approval / submitted の順で記録',
     '- 入力項目と本文の社員数・設立年・資本金などは設定にある値だけ使う。推測しない',
+    '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になってから送信ボタンを押す。送信/確認ボタンは browser_snapshot の buttons 配列 (selector+text, 最有力が先頭) から選んで browser_click する',
     autoSendSafe
-      ? '- CAPTCHA / 手動必須項目 / 営業NG / 不確実ケースを除き、確認画面到達後はできるだけ submitted まで進める'
+      ? '- ★ sendPolicy=safe-auto-send: 全項目の入力に成功し、必須の同意チェックボックスも入れ、確認画面に到達できたら、ためらわず送信ボタン (「送信」「確認」「送信する」「Submit」「同意して送信」等) を browser_click して submitted まで完了させる。送信を止めて awaiting_approval にしてよいのは次の4つだけ: (1) 操作が必要な画像/チェック型 CAPTCHA が残る、(2) 設定に無い値を要求する必須項目があり埋められない、(3) 営業NG/対象外フォーム → skipped、(4) 送信ボタンを押しても確認画面/完了画面に進めない。これ以外の「念のため」「不確実だから」を理由に止めてはいけない'
       : '- 送信は行わず awaiting_approval で止める',
-    '- submitted まで進めたら必ず ss-{No}-sent.png を残す。awaiting_approval / error / skipped は入力済みタブを残す',
-    '- submitted が明確に完了したタブは閉じる。送れなかったタブは残す',
+    '- submitted まで進めたら必ず ss-{No}-sent.png を残し、その会社のタブ (セッション) は閉じる',
+    '- awaiting_approval / error / skipped は入力済みタブを残す。送れなかったタブは残す',
     '- 同じセッションではこの契約を再説明しない。以後の batch payload だけ実行する',
   ].join('\n');
 }
@@ -3859,7 +3860,16 @@ function refreshWatchTargets() {
 function startHeartbeat() {
   if (heartbeatTimer) return;
   heartbeatTimer = setInterval(() => {
-    sseClients.forEach((res: any) => res.write(': heartbeat\n\n'));
+    // notifyClients と同じ防御: 切断済みクライアントへの write 例外で
+    //   setInterval ごと落ちる (uncaughtException) のを防ぎ、dead client を回収する
+    for (const res of sseClients) {
+      try {
+        if (!(res as any).writableEnded) (res as any).write(': heartbeat\n\n');
+        else sseClients.delete(res);
+      } catch (_) {
+        try { sseClients.delete(res); } catch (_) { /* no-op */ }
+      }
+    }
   }, 15000);
   if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
 }
@@ -11744,6 +11754,7 @@ function getApproveApiDispatch() {
       updateCompany,
       notifyClients,
       ensureParentDir,
+      getFormSessionManager: () => _formSessionManager,
     });
   }
   return _approveApiDispatch;

@@ -47,7 +47,8 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     '- ★ urlMissing=true companies: run WebSearch **at most 2 queries**. 1st query "<company name> official site" → if the top 3 results pin the official domain, navigate directly. Only if undecided (ambiguous domains, e.g. foreign-affiliated / group companies) may you run a 2nd query ("<company name> contact" or the formal English name). If still not decided within 30 seconds OR no official found, **mark as error immediately**. No per-candidate navigate-and-check loops, no 3rd query, no wikipedia detours (loop prevention).',
     '- ★ For companies with urlMissing=false but with empty siteExcerpt or failed site fetch, do NOT contact. Stop and mark as error. NEVER guess content and proceed to awaiting_approval / submitted.',
     '- ★ awaiting_approval / submitted is only accepted by the API when Phase A site_analysis collected sufficient site text AND form_fill → confirm_reached have already been logged.',
-    '- ★ How to reach the confirmation screen: the submit/confirm button is NOT in the browser_snapshot fields list (it is not a form field). Locate it by visible text ("Submit", "Confirm", "Send", "Next", "送信", "確認") and browser_click it. After clicking, use browser_wait_for until the confirmation text/URL change appears, then log confirm_reached. If you stop at form_fill without logging confirm_reached, that company cannot proceed to the send decision and stays incomplete.',
+    '- ★ Fill in one shot: from the browser_fill_form return value, re-type only fields with ok:false (value_mismatch / not_found) via browser_type, and make sure the bundled validation.problems is **empty before clicking submit**. problems lists required-but-empty / unchecked / radio-unselected / constraint-violating fields with selector + label, so you can fix them before hitting the site\'s "required field" error page. If problems is empty, do NOT re-snapshot — go straight to the submit button.',
+    '- ★ How to reach the confirmation screen: submit/confirm button candidates are provided in the browser_snapshot buttons array with selector + text (best candidate first). Pick the "Confirm"/"Submit" one and browser_click(selector) — no browser_evaluate button hunting needed. Only if buttons is empty, locate it by visible text ("Submit", "Confirm", "Send", "Next"). After clicking, use browser_wait_for until the confirmation text/URL change appears, then log confirm_reached. If you stop at form_fill without logging confirm_reached, that company cannot proceed to the send decision and stays incomplete.',
     '- When messagePrompt is provided, use it to finalize the body for this specific company before filling the form.',
     '- messageDraft is the Phase A draft, messagePrompt is the generation context. Prefer messagePrompt; fall back to messageDraft only.',
     '- Even when rewriting the body, do NOT add facts not present in messagePrompt / analysisHints / siteExcerpt. Never invent figures (employee count, founding year, capital, etc.) that are not in sender_json.',
@@ -81,10 +82,10 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
 
   lines.push(
     autoSendSafe
-      ? '- Unless CAPTCHA / required-manual-fields / no-solicitation / uncertainty applies, when the confirmation screen is captured, proceed all the way to final submission and mark as submitted.'
+      ? '- ★ Auto-send safe forms: once all fields are filled successfully + required consent checkboxes are checked + the confirmation screen is reached, click the submit button without hesitation and complete as submitted. The ONLY 4 reasons to stop at awaiting_approval are: (1) an interactive image/checkbox CAPTCHA remains, (2) a required field demands a value not present in settings, (3) no-solicitation / out-of-scope form → skipped, (4) clicking submit does not advance to a confirmation/completion screen. Never stop "just in case" or "because uncertain".'
       : '- Do NOT submit. Stop at awaiting_approval.',
   );
-  lines.push('- After successful submission, keep the sent screenshot and close the submitted tab.');
+  lines.push('- After completing submitted, keep ss-{No}-sent.png and close that company\'s tab (session).');
   lines.push(
     '- Only keep tabs open for awaiting_approval (filled but not sent). For not-filled (other than CAPTCHA) or no-form cases, mark as error / skipped.',
   );

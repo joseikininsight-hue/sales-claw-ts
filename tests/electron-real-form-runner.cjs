@@ -130,14 +130,34 @@ async function runTests() {
     if (fieldCount < 4) throw new Error(`expected >=4 form fields, got ${fieldCount}: ${JSON.stringify(structure.fields)}`);
     results.push({ step: 'getFormStructure', fieldCount, fieldSelectors: structure.fields.map((f) => f.selector), ok: true });
 
+    // 6.1) v2.1.4: 送信ボタン候補 (buttons) が snapshot に含まれるか
+    const buttons = structure.buttons || [];
+    const submitBtn = buttons.find((b) => /送信/.test(b.text || ''));
+    if (!submitBtn) throw new Error(`expected submit button candidate in buttons, got: ${JSON.stringify(buttons)}`);
+    if (!submitBtn.isSubmitType || !submitBtn.inForm) throw new Error(`submit button should be isSubmitType+inForm: ${JSON.stringify(submitBtn)}`);
+    results.push({ step: 'snapshot-buttons', buttonCount: buttons.length, best: buttons[0], ok: true });
+
+    // 6.2) v2.1.4: 入力前の検証サマリ — 必須未充足 (company/name/email/body/agree) を検出するか
+    const preValidation = await mgr.getValidationSummary(sessionId);
+    if (preValidation.ok !== false) throw new Error(`pre-fill validation should be ok:false, got: ${JSON.stringify(preValidation)}`);
+    if ((preValidation.problems || []).length < 5) throw new Error(`expected >=5 pre-fill problems, got: ${JSON.stringify(preValidation.problems)}`);
+    const agreeProblem = preValidation.problems.find((p) => p.reason === 'required_unchecked');
+    if (!agreeProblem) throw new Error(`expected required_unchecked problem for #agree: ${JSON.stringify(preValidation.problems)}`);
+    results.push({ step: 'pre-fill-validation', problems: preValidation.problems.length, ok: true });
+
     // 7) 本物の fillForm — executeJavaScript で実 DOM mutation
+    //    (checkbox / radio の native click トグルも実機検証する)
     const fillMappings = [
       { selector: '#company', value: '株式会社リアルテスト' },
       { selector: '#name', value: '中澤 圭志' },
       { selector: '#email', value: 'real@example.com' },
       { selector: '#body', value: 'お世話になります。本物のフォーム入力テストです。' },
+      { selector: '#agree', value: 'true', type: 'checkbox' },
+      { selector: '#cmEmail', value: 'email', type: 'radio' },
     ];
     const fillResults = await mgr.fillForm(sessionId, fillMappings);
+    const failedFills = (fillResults || []).filter((r) => !r.ok);
+    if (failedFills.length > 0) throw new Error(`fillForm reported failures: ${JSON.stringify(failedFills)}`);
     results.push({ step: 'fillForm', results: fillResults, ok: true });
 
     // 8) DOM verify (本当に DOM が書き換わったか)
@@ -146,6 +166,9 @@ async function runTests() {
       name: document.querySelector('#name').value,
       email: document.querySelector('#email').value,
       body: document.querySelector('#body').value,
+      agree: document.querySelector('#agree').checked,
+      cmEmail: document.querySelector('#cmEmail').checked,
+      cmTel: document.querySelector('#cmTel').checked,
     })`;
     const verifyJson = await view.webContents.executeJavaScript(verifyScript);
     const verify = JSON.parse(verifyJson);
@@ -153,7 +176,14 @@ async function runTests() {
     if (verify.name !== '中澤 圭志') throw new Error(`name mismatch: ${verify.name}`);
     if (verify.email !== 'real@example.com') throw new Error(`email mismatch: ${verify.email}`);
     if (!verify.body.includes('本物のフォーム入力テスト')) throw new Error(`body mismatch: ${verify.body}`);
+    if (verify.agree !== true) throw new Error(`agree checkbox not checked`);
+    if (verify.cmEmail !== true || verify.cmTel !== false) throw new Error(`radio mismatch: cmEmail=${verify.cmEmail} cmTel=${verify.cmTel}`);
     results.push({ step: 'verify-dom', verify, ok: true });
+
+    // 8.1) v2.1.4: 入力後の検証サマリ — 全必須充足で ok:true になるか
+    const postValidation = await mgr.getValidationSummary(sessionId);
+    if (postValidation.ok !== true) throw new Error(`post-fill validation should be ok:true, got: ${JSON.stringify(postValidation)}`);
+    results.push({ step: 'post-fill-validation', ok: true });
 
     // 9) 本物の capturePage で PNG 取得
     // captureScreenshot は screenshotDir guard があるので直接 capturePage を呼ぶ

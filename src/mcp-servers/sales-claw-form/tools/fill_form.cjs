@@ -5,7 +5,7 @@
 
 const SCHEMA = {
   name: 'browser_fill_form',
-  description: 'Fill multiple form fields in one call. Each mapping is {selector, value, type?}.',
+  description: 'Fill multiple form fields in one call. Each mapping is {selector, value, type?}. For checkbox pass value "true" to check / "false" to uncheck; for radio pass the selector of the option to select. Returns { results, validation }: results report per-field ok (ok:false with reason value_mismatch means the page rejected/truncated the value — retry via browser_type); validation lists required fields still empty/unchecked and HTML5 constraint violations (validation.problems MUST be empty before clicking submit, fix them first to avoid the site\'s "required field" error page).',
   inputSchema: {
     type: 'object',
     properties: {

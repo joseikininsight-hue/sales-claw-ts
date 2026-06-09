@@ -39,6 +39,7 @@ const { ensureDataDir, resolveDataPath } = require('../data-paths');
  * @param {function} ctx.updateCompany - (companyNo, patch) → void
  * @param {function} ctx.notifyClients - (payload?) → void
  * @param {function} ctx.ensureParentDir - (filePath) → void
+ * @param {function} ctx.getFormSessionManager - () → FormSessionManager | null (送信/スキップ確定時のタブ破棄に使用)
  * @returns {function} dispatch(req, res, pathname) → Promise<boolean> (handled なら true)
  */
 module.exports = function createApproveRoutes(ctx) {
@@ -56,7 +57,24 @@ module.exports = function createApproveRoutes(ctx) {
     updateCompany,
     notifyClients,
     ensureParentDir,
+    getFormSessionManager,
   } = ctx;
+
+  // 確定終了 (送信済み/スキップ) になった会社の操作中タブ (WebContentsView セッション) を
+  //   破棄する。ダッシュボードの「送信」ボタン経由 (approve) でもタブが残らないようにする。
+  //   AI 経由の log-action 側 (simple-api handleLogAction) と同じ後始末をここでも行う。
+  function destroyCompanySessions(companyNo) {
+    try {
+      if (typeof getFormSessionManager !== 'function') return;
+      const fsm = getFormSessionManager();
+      if (fsm && typeof fsm.destroySessionsByCompanyNo === 'function') {
+        fsm.destroySessionsByCompanyNo(companyNo);
+      }
+    } catch (e) {
+      // best-effort だが沈黙させない (「終わったのにタブが残る」原因を追跡可能にする)
+      try { console.warn('[approve-api] destroyCompanySessions failed:', (e && e.message) || e); } catch (_) { /* no-op */ }
+    }
+  }
 
   // approve の body は JSON 1 KiB 以下を想定 (feedback ~2000 chars + 小さなメタ情報)
   const APPROVE_BODY_MAX_BYTES = 64 * 1024;
@@ -186,6 +204,8 @@ module.exports = function createApproveRoutes(ctx) {
           });
           // 元のCSV/Excelに送信済みを書き戻す（失敗してもメイン処理に影響させない）
           try { updateCompany(companyNoNum, { progress: '送信済み' }); } catch (_) {}
+          // 送信確定 → 操作中タブを破棄（タブが残らないようにする）
+          destroyCompanySessions(companyNoNum);
         } else if (normalizedDecision === 'skip') {
           const reason = feedback ? 'Skip reason: ' + feedback : 'Skipped from dashboard';
           const approvalScreenshot = approvalArtifacts
@@ -221,6 +241,8 @@ module.exports = function createApproveRoutes(ctx) {
           });
           // 元のCSV/Excelにスキップを書き戻す
           try { updateCompany(companyNoNum, { progress: 'スキップ' }); } catch (_) {}
+          // スキップ確定 → 操作中タブを破棄
+          destroyCompanySessions(companyNoNum);
         } else {
           appendDiagnosticEvent('approve_invalid_decision', {
             companyNo: companyNoNum,

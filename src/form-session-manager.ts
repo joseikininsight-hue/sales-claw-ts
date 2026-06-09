@@ -217,6 +217,17 @@ const PURPOSE_PATTERNS = [
       /question/i, /remarks?/i, /note[s]?/i, /description/i,
     ],
   },
+  // email 確認欄 (再入力)。email より先に判定しないと 'email' に飲み込まれ、
+  //   AI が確認欄を埋め忘れて「必須項目を入力してください」になる
+  {
+    purpose: 'email-confirm',
+    patterns: [
+      /メール.*(確認|再入力)/, /(確認|再入力)(用)?.*メール/,
+      /e-?mail.{0,12}(confirm|check|verif|re-?enter|again)/i,
+      /(confirm|confirmation|verify|re-?enter).{0,12}e-?mail/i,
+      /e?mail2\b/i, /e?mail[-_]?conf/i,
+    ],
+  },
   // email
   {
     purpose: 'email',
@@ -300,7 +311,15 @@ function inferFieldPurpose(field) {
 
   // type ベースの早期判定
   if (type === 'textarea') return 'message';
-  if (type === 'email') return 'email';
+  if (type === 'email') {
+    // type=email でも label/name が「確認/再入力」系なら email-confirm として区別する
+    const confirmPatterns = PURPOSE_PATTERNS.find((p: any) => p.purpose === 'email-confirm');
+    const texts = [field.label, field.placeholder, field.name, field.id];
+    if (confirmPatterns && texts.some((t: any) => t && confirmPatterns.patterns.some((re: any) => re.test(String(t))))) {
+      return 'email-confirm';
+    }
+    return 'email';
+  }
   if (type === 'tel') return 'phone';
   if (type === 'url') return 'url';
 
@@ -531,6 +550,8 @@ class FormSessionManager {
 
     this._removeFromWindow(sessionId);
 
+    // dom-ready 等の残留リスナーを掃除してから閉じる (大量処理時の zombie listener 防止)
+    try { session.view.webContents.removeAllListeners(); } catch (_) {}
     try { session.view.webContents.close(); } catch (_) {}
 
     this._sessions.delete(sessionId);
@@ -712,12 +733,25 @@ class FormSessionManager {
                 role: roleOf(el),
                 label: accName(el) || el.getAttribute('name') || el.id || '',
                 placeholder: el.getAttribute('placeholder') || '',
-                required: !!el.required,
+                // required 属性に加え aria-required="true" も必須として扱う
+                //   (WordPress/CF7 等は required 属性を付けず aria-required や * 表記が多い)
+                required: !!el.required || el.getAttribute('aria-required') === 'true',
                 visible: vis,
                 location: loc
               };
+              // 入力制約をAIへ事前共有 (文字数超過・形式エラーを送信前に回避できる)
+              try { var ml = el.getAttribute('maxlength'); if(ml && Number(ml) > 0) field.maxLength = Number(ml); } catch(e){}
               if(el.tagName === 'SELECT'){
                 field.options = Array.prototype.slice.call(el.options).map(function(o){ return { value: o.value, text: (o.text || '').trim() }; });
+                // 現在の選択値。空 (placeholder 選択中) なら AI が「選択必要」と判断できる
+                field.value = el.value;
+              }
+              // ★ checkbox / radio は value 属性と現在のチェック状態を渡す。
+              //   AI が「同意チェックボックスをチェックする」「どの選択肢を選ぶか」を
+              //   一発で判断できるようにする (これが無いと再送信ループになる)。
+              if(el.tagName === 'INPUT' && (t === 'checkbox' || t === 'radio')){
+                field.value = el.getAttribute('value') || 'on';
+                field.checked = !!el.checked;
               }
               fields.push(field);
             } catch(e){}
@@ -728,6 +762,48 @@ class FormSessionManager {
         }
         scan(document, 'light', 0);
 
+        // ★ 送信/確認ボタン候補の収集。従来はフォーム項目しか返さず、AI が
+        //   browser_evaluate でボタンを探す往復が発生していた (遅延 + 探索ミスで
+        //   confirm_reached 未到達 stall の原因)。data-sc-fid マーカー付き selector を
+        //   渡すので AI は snapshot → fill → click を最短 3 往復で完了できる。
+        var buttons = [];
+        var SUBMIT_TEXT_RE = /送信|確認|送る|申し?込|問い?合わせ|次へ|進む|同意して|登録|submit|confirm|send|next|proceed|continue|apply/i;
+        function btnText(el){
+          var s = '';
+          try { s = el.innerText || el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('alt') || ''; } catch(e){ s = ''; }
+          return String(s).replace(/\\s+/g, ' ').trim().slice(0, 60);
+        }
+        function scanButtons(ctx, loc, depth){
+          if(depth > 8) return;
+          var els; try { els = ctx.querySelectorAll('button, input[type="submit"], input[type="button"], input[type="image"], [role="button"]'); } catch(e){ return; }
+          Array.prototype.forEach.call(els, function(el){
+            try {
+              if(buttons.length >= 12) return;
+              var tag = el.tagName.toUpperCase();
+              var bt = (el.getAttribute('type') || '').toLowerCase();
+              var isSubmitType = (tag === 'BUTTON' && (bt === '' || bt === 'submit')) || (tag === 'INPUT' && (bt === 'submit' || bt === 'image'));
+              var label = btnText(el);
+              if(!isSubmitType && !SUBMIT_TEXT_RE.test(label)) return;
+              if(!isVisible(el)) return;
+              var inForm = false; try { inForm = !!(el.form || (el.closest && el.closest('form'))); } catch(e){}
+              var fid = el.getAttribute('data-sc-fid');
+              if(!fid){ try { fid = String(++window.__scFidSeq); el.setAttribute('data-sc-fid', fid); } catch(e){ return; } }
+              buttons.push({
+                selector: '[data-sc-fid="' + fid + '"]',
+                text: label,
+                tag: tag.toLowerCase(),
+                type: bt || null,
+                isSubmitType: isSubmitType,
+                inForm: inForm,
+                location: loc
+              });
+            } catch(e){}
+          });
+          var bhosts; try { bhosts = ctx.querySelectorAll('*'); } catch(e){ bhosts = []; }
+          for(var bi=0;bi<bhosts.length;bi++){ if(bhosts[bi].shadowRoot){ scanButtons(bhosts[bi].shadowRoot, loc === 'light' ? 'shadow' : loc, depth + 1); } }
+        }
+        scanButtons(document, 'light', 0);
+
         // 同一オリジン iframe 内も収集 (cross-origin は不可)
         var iframes = document.querySelectorAll('iframe');
         var iframeIsCrossOrigin = false;
@@ -735,7 +811,7 @@ class FormSessionManager {
           var src = iframes[k].getAttribute('src') || '';
           var fd = null;
           try { fd = iframes[k].contentDocument; } catch(e){ iframeIsCrossOrigin = true; }
-          if(fd){ scan(fd, 'iframe', 0); }
+          if(fd){ scan(fd, 'iframe', 0); scanButtons(fd, 'iframe', 0); }
           else if(src){ try { var u = new URL(src, window.location.href); if(u.origin && u.origin !== window.location.origin) iframeIsCrossOrigin = true; } catch(e){} }
         }
 
@@ -767,6 +843,7 @@ class FormSessionManager {
         var cap = classifyCaptcha();
         return {
           fields: fields,
+          buttons: buttons,
           hasCaptcha: cap.present,
           captchaInteractive: cap.interactive,
           captchaKind: cap.kind,
@@ -785,6 +862,7 @@ class FormSessionManager {
       //   (無期限ハングで社単位 20 分喪失するより、即「取得失敗」を返す方が安全)
       return {
         fields: [],
+        buttons: [],
         meta: {
           fieldCount: 0,
           hasCaptcha: false,
@@ -805,6 +883,11 @@ class FormSessionManager {
     const rawFields = Array.isArray(raw && raw.fields) ? raw.fields : [];
     // サーバー側で用途ヒントを推定して付与する（CLIマッピング判断を支援）
     const fields = rawFields.map((f: any) => ({ ...f, purpose: inferFieldPurpose(f) }));
+    // 送信ボタン候補: フォーム内 submit 型 > submit 型 > フォーム内テキスト一致 の順に
+    //   並べ、先頭が「最有力の送信/確認ボタン」になるようにする (AI は通常先頭を使う)
+    const rawButtons = Array.isArray(raw && raw.buttons) ? raw.buttons : [];
+    const buttonScore = (b: any) => (b && b.isSubmitType ? 2 : 0) + (b && b.inForm ? 1 : 0);
+    const buttons = rawButtons.slice().sort((a: any, b: any) => buttonScore(b) - buttonScore(a)).slice(0, 8);
     const meta: any = {
       fieldCount: fields.length,
       hasCaptcha: !!(raw && raw.hasCaptcha),
@@ -815,6 +898,7 @@ class FormSessionManager {
       shadowFieldCount: (raw && raw.shadowFieldCount) || 0,
       iframeFieldCount: (raw && raw.iframeFieldCount) || 0,
       hasMessageField: fields.some((f: any) => f.purpose === 'message'),
+      submitButtonCount: buttons.length,
     };
 
     // 推奨ステータスの判定（純粋に meta から導出）
@@ -828,7 +912,7 @@ class FormSessionManager {
     meta.recommendedStatus = recommendedStatus;
     meta.recommendedReason = recommendedReason;
 
-    return { fields, meta };
+    return { fields, buttons, meta };
   }
 
   // ── Form filling ─────────────────────────────────────────────────────
@@ -883,6 +967,15 @@ class FormSessionManager {
         for(var a=0;a<alts.length;a++){ var r=resolve(alts[a]); if(r) return r; }
         return null;
       }
+      // checkbox の値を「チェックする/しない」に解釈する。
+      //   空 / 明示的な否定語 → false、それ以外(truthy) → チェック。
+      //   getFormStructure は checkbox の value を 'on' 以上で渡すため、同意系
+      //   チェックボックスは必ず truthy になりチェックされる。
+      function wantChecked(v){
+        var s=String(v==null?'':v).trim().toLowerCase();
+        if(s===''||s==='false'||s==='0'||s==='no'||s==='off'||s==='unchecked'||s==='いいえ'||s==='しない') return false;
+        return true;
+      }
       var out=[];
       for(var idx=0; idx<items.length; idx++){
         var it=items[idx];
@@ -890,11 +983,37 @@ class FormSessionManager {
           var el=resolveAny(it);
           if(!el){out.push({selector:it.selector,ok:false,reason:'not_found'});continue;}
           var view=(el.ownerDocument&&el.ownerDocument.defaultView)||window;
-          if(it.isSelect){
+          var tagU=(el.tagName||'').toUpperCase();
+          var typeL=(el.type||'').toLowerCase();
+          if(tagU==='INPUT' && (typeL==='checkbox' || typeL==='radio')){
+            // ★ checkbox / radio: el.value 代入では state が変わらない。
+            //   desired と異なるときだけ native click() でトグルし、フレームワーク
+            //   (React/Vue 等) のイベントハンドラも確実に発火させる。click() が効かない
+            //   実装向けに native checked setter + change/input をフォールバックで補う。
+            // radio は「選びたい選択肢の要素」に対してのみ fillForm が呼ばれる前提なので
+            //   常に選択(desired=true)。checkbox は値の真偽で判定する。
+            var desired = (typeL==='radio') ? true : wantChecked(it.value);
+            if(el.checked !== desired){
+              try{ el.click(); }catch(e){}
+            }
+            if(el.checked !== desired){
+              try{
+                var cd=Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype,'checked');
+                if(cd&&cd.set)cd.set.call(el,desired);else el.checked=desired;
+              }catch(e){ el.checked=desired; }
+              el.dispatchEvent(new view.Event('input',{bubbles:true}));
+              el.dispatchEvent(new view.Event('change',{bubbles:true}));
+            }
+            out.push({selector:it.selector,ok:el.checked===desired,checked:el.checked});
+          }else if(it.isSelect || tagU==='SELECT'){
             el.value=it.value;
+            el.dispatchEvent(new view.Event('input',{bubbles:true}));
             el.dispatchEvent(new view.Event('change',{bubbles:true}));
+            out.push({selector:it.selector,ok:String(el.value)===String(it.value)});
           }else{
-            var proto=el.tagName==='TEXTAREA'?view.HTMLTextAreaElement.prototype:view.HTMLInputElement.prototype;
+            // 操作中タブで進行が見えるよう対象へスクロール (画面外要素の lazy 初期化対策も兼ねる)
+            try{ el.scrollIntoView({block:'center',inline:'nearest'}); }catch(e){}
+            var proto=tagU==='TEXTAREA'?view.HTMLTextAreaElement.prototype:view.HTMLInputElement.prototype;
             var desc=Object.getOwnPropertyDescriptor(proto,'value');
             var setter=desc&&desc.set;
             if(setter)setter.call(el,it.value);else el.value=it.value;
@@ -902,8 +1021,16 @@ class FormSessionManager {
             el.dispatchEvent(new view.Event('input',{bubbles:true}));
             el.dispatchEvent(new view.Event('change',{bubbles:true}));
             el.dispatchEvent(new view.Event('blur',{bubbles:true}));
+            // ★ 読み戻し検証: React 等のカスタム setter が値を捨てた / maxlength で
+            //   切り詰められた場合に ok:false + applied を返す。旧実装は常に ok:true で
+            //   「入力できたはずなのに必須エラー」の主因だった。
+            var av=String(el.value==null?'':el.value);
+            if(av===it.value){
+              out.push({selector:it.selector,ok:true});
+            }else{
+              out.push({selector:it.selector,ok:false,reason:'value_mismatch',applied:av.slice(0,120),appliedLength:av.length,expectedLength:it.value.length});
+            }
           }
-          out.push({selector:it.selector,ok:true});
         }catch(e){out.push({selector:it.selector,ok:false,reason:String((e&&e.message)||e)});}
       }
       return out;
@@ -922,6 +1049,102 @@ class FormSessionManager {
 
     session.status = 'filled';
     return Array.isArray(results) ? results : [];
+  }
+
+  // ★ v2.1.4: 入力後のフォーム検証サマリ。「必須なのに未入力 / 未チェック /
+  //   ラジオ未選択 / HTML5 制約違反 (形式エラー)」を送信ボタンを押す **前** に
+  //   AI へ返す。これが無いと AI は送信 → サイト側エラー表示 → 原因分析 →
+  //   再入力という遅い往復をしていた (「必須項目を入力してください」問題の根治)。
+  //   検出は el.validity.valid (イベント非発火) を使い、ページ側の invalid
+  //   ハンドラを誤爆させない。
+  async getValidationSummary(sessionId) {
+    const session = this._sessions.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+    const script = `(function(){
+      function gcs(el){ try { var w = el.ownerDocument && el.ownerDocument.defaultView; return w ? w.getComputedStyle(el) : null; } catch(e){ return null; } }
+      function isVisible(el){
+        var s = gcs(el); if(!s) return true;
+        if(typeof el.checkVisibility === 'function'){ try { if(!el.checkVisibility()) return false; } catch(e){} }
+        if(s.visibility !== 'visible') return false;
+        var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+      }
+      function labelOf(el){
+        try {
+          var al = (el.getAttribute('aria-label') || '').trim(); if(al) return al.slice(0, 60);
+          var labels = el.labels ? Array.prototype.slice.call(el.labels) : [];
+          if(labels.length){ var t = (labels[0].textContent || '').replace(/\\s+/g, ' ').trim(); if(t) return t.slice(0, 60); }
+          return String(el.getAttribute('placeholder') || el.getAttribute('name') || el.id || '').slice(0, 60);
+        } catch(e){ return ''; }
+      }
+      function selOf(el){
+        try {
+          var fid = el.getAttribute('data-sc-fid'); if(fid) return '[data-sc-fid="' + fid + '"]';
+          if(el.id) return '#' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id);
+          var nm = el.getAttribute('name'); if(nm) return '[name="' + (window.CSS && CSS.escape ? CSS.escape(nm) : nm) + '"]';
+        } catch(e){}
+        return el.tagName ? el.tagName.toLowerCase() : '';
+      }
+      var problems = [];
+      var radioGroups = {};
+      var requiredTotal = 0;
+      function scan(ctx, depth){
+        if(depth > 8) return;
+        var ctrls; try { ctrls = ctx.querySelectorAll('input, textarea, select'); } catch(e){ return; }
+        Array.prototype.forEach.call(ctrls, function(el){
+          try {
+            var t = (el.type || '').toLowerCase();
+            if(['hidden','submit','button','reset','image','file'].indexOf(t) >= 0) return;
+            var req = !!el.required || el.getAttribute('aria-required') === 'true';
+            var vis = isVisible(el);
+            if(!vis && t !== 'radio' && t !== 'checkbox') return;
+            if(t === 'radio'){
+              var key = el.name || selOf(el);
+              var g = radioGroups[key] || (radioGroups[key] = { required: false, checked: false, label: labelOf(el), selector: selOf(el) });
+              if(req) g.required = true;
+              if(el.checked) g.checked = true;
+              return;
+            }
+            if(req) requiredTotal += 1;
+            if(t === 'checkbox'){
+              if(req && !el.checked) problems.push({ selector: selOf(el), label: labelOf(el), type: 'checkbox', reason: 'required_unchecked' });
+              return;
+            }
+            var val = el.value == null ? '' : String(el.value);
+            if(req && val.replace(/\\s+/g, '') === ''){
+              problems.push({ selector: selOf(el), label: labelOf(el), type: t || el.tagName.toLowerCase(), reason: 'required_empty' });
+              return;
+            }
+            if(el.willValidate && el.validity && !el.validity.valid){
+              problems.push({ selector: selOf(el), label: labelOf(el), type: t || el.tagName.toLowerCase(), reason: 'invalid', validationMessage: String(el.validationMessage || '').slice(0, 120) });
+            }
+          } catch(e){}
+        });
+        var hosts; try { hosts = ctx.querySelectorAll('*'); } catch(e){ hosts = []; }
+        for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ scan(hosts[i].shadowRoot, depth + 1); } }
+      }
+      scan(document, 0);
+      var iframes = document.querySelectorAll('iframe');
+      for(var k=0;k<iframes.length;k++){ try { var fd = iframes[k].contentDocument; if(fd) scan(fd, 0); } catch(e){} }
+      for(var rk in radioGroups){
+        var g2 = radioGroups[rk];
+        if(g2.required){ requiredTotal += 1; if(!g2.checked) problems.push({ selector: g2.selector, label: g2.label, type: 'radio', reason: 'radio_group_unselected' }); }
+      }
+      return { ok: problems.length === 0, problems: problems.slice(0, 20), requiredTotal: requiredTotal };
+    })()`;
+
+    try {
+      const result: any = await withTimeout(
+        session.view.webContents.executeJavaScript(script),
+        FORM_INJECT_TIMEOUT_MS,
+        'getValidationSummary injected JS timed out',
+      );
+      return (result && typeof result === 'object') ? result : { ok: true, problems: [], requiredTotal: 0 };
+    } catch (e: any) {
+      // 検証はベストエフォート。失敗しても fill 自体は成立しているので
+      //   ok:null (不明) として返し、AI 側は従来手順 (snapshot 再確認) に戻れる。
+      return { ok: null, problems: [], requiredTotal: 0, error: String((e && e.message) || e) };
+    }
   }
 
   // ── Screenshot ───────────────────────────────────────────────────────

@@ -27,6 +27,15 @@
     </select>
   </label>
   <label>本文 <textarea name="body" id="body" rows="6" required></textarea></label>
+  <label style="display:flex;gap:.5em;align-items:center">
+    <input type="checkbox" name="agree" id="agree" required style="width:auto">
+    個人情報の取り扱いに同意する
+  </label>
+  <fieldset>
+    <legend>希望連絡方法</legend>
+    <label style="display:inline-flex;gap:.3em;align-items:center"><input type="radio" name="contactMethod" id="cmEmail" value="email" style="width:auto"> メール</label>
+    <label style="display:inline-flex;gap:.3em;align-items:center"><input type="radio" name="contactMethod" id="cmTel" value="tel" style="width:auto"> 電話</label>
+  </fieldset>
   <button type="submit" id="submitBtn">送信</button>
 </form>
 
