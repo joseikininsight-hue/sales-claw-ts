@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.1.4 - 2026-06-10 — フォーム一発入力 (送信ボタン検出 + 入力後検証) とタブ後始末強化
+
+### ユーザー報告 (2026-06-10 v2.1.3 実機)
+
+「フォームにたどり着いて入力しようとすると『必須項目を入力してください』と出て、
+なぜそうなったかを分析してやっと送信している。遅い。一発で効率よく完璧に早く」
+「操作中の AI が次の会社のキューに行ったとき、終わったタブを削除しているのか」
+
+### 一発入力・高速化
+
+- `browser_snapshot` に **`buttons` 配列**を追加。送信/確認ボタン候補を
+  `selector` + テキスト付きで返し、最有力 (フォーム内 submit 型) を先頭にソート。
+  AI が `browser_evaluate` でボタンを探す往復を排除。
+- `browser_fill_form` の戻り値に **`validation`** を同梱。必須未入力 / 同意チェック
+  未投入 / ラジオ未選択 / HTML5 制約違反を送信ボタンを押す**前**に列挙し、
+  「必須項目を入力してください」エラー画面を踏む往復を根絶。
+- テキスト入力に読み戻し検証 (`value_mismatch` を `ok:false` で報告) + `scrollIntoView`。
+  React 等が値を捨てる silent fail を検出。
+- checkbox / radio の native click トグル入力 + `value`/`checked` を snapshot に返却。
+- `aria-required` / `maxlength` / select 現在値を snapshot に追加。
+- `inferFieldPurpose` に `email-confirm` (メール確認再入力欄) 判定を追加。
+- ja/en CLI プロンプトと ai-submit-final 手順を新フロー (buttons + validation) に更新。
+  英語版が日本語版の自動送信 4 条件ルールから取り残されていたバグも同期。
+
+### タブ / セッション後始末 (100〜2000 社処理対応)
+
+- ダッシュボードの「送信 / スキップ」確定 (/api/approve) 時に該当会社の
+  WebContentsView を破棄。AI 経由 (log-action) だけでなく手動承認でもタブが残らない。
+- `destroySession` で webContents リスナーを全掃除 (大量処理時の zombie listener 防止)。
+- SSE heartbeat に dead client 回収 + write 例外ガード。切断済みクライアントへの
+  write でサーバが落ちる経路を遮断。
+
+### テスト
+
+- 実 Electron ランナーに buttons / 入力前後 validation / checkbox・radio 実 DOM 検証を追加。
+- 旧仕様のまま失敗していた stale テスト 3 件を現行仕様に修正。単体 66 件全合格。
+
+---
+
 ## 2.0.92 - 2026-05-28 — タブ切替時 WebView 追従バグ + slot 外漏れ hard guard
 
 ### ユーザー報告 (2026-05-28 v2.0.91 実機)
