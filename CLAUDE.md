@@ -95,7 +95,7 @@ of the following steps:
 **The user makes the send decision from the screenshot on the dashboard.
 Without a screenshot, they cannot decide.**
 
-## Architecture — CLI-driven (v2.0.92)
+## Architecture — CLI-driven
 
 **Important: this project is driven by the Claude Code CLI.**
 
@@ -175,8 +175,8 @@ Env override: `SALES_CLAW_PHASE_B_PARALLEL_TABS=2`.
   **detached, not destroyed** — when the user comes back, HTML re-issues
   `setViewBounds` and the same session re-attaches.
 - Window resize is handled HTML-side: a resize listener re-emits
-  `setViewBounds`. `formSessionManager.onWindowResize()` in main is
-  intentionally a no-op (v2.0.91 removed the legacy `_positionView`).
+  `setViewBounds`. There is no main-side resize hook (the legacy no-op
+  `onWindowResize` / `_positionView` were removed during the Phase 1 cleanup).
 - On `before-quit`, `formSessionManager.destroyAllSessions()` is called
   to release every WebContentsView before the process exits
   (electron-main.ts).
@@ -217,7 +217,7 @@ When making changes that affect desktop distribution, Claude Code / Codex
 1. The preview dashboard must always be launched via the root
    `npm run dashboard:preview`. Do not treat the `.claude/worktrees/*` 3480
    instance as authoritative.
-2. The canonical operational dashboard is `src/dashboard-server.cjs` +
+2. The canonical operational dashboard is `src/dashboard-server.ts` +
    `src/ui/**` + `src/routes/**`. Preview and Electron both start from this
    same source.
 3. The web build `npm run lp:dev` is for the landing page / public web
@@ -758,7 +758,7 @@ To run in parallel via OMC's ultrawork mode:
 → The main agent drives MCP Playwright for form filling
 ```
 
-## File Structure (TypeScript port — v2.0.92)
+## File Structure (TypeScript port)
 
 Most source files are now `.ts`. `.cjs` is intentionally kept only for
 the internal MCP server entries (Claude CLI's MCP runtime requires CJS)
@@ -830,7 +830,7 @@ codex exec -m gpt-5.4 -s workspace-write "<task>"
 ```
 
 - Model: `gpt-5.4` (top model; `o3` is not available on the ChatGPT account)
-- Working directory: `C:\bp-outreach`
+- Working directory: `C:\bp-outreach-ts`
 
 ## AI session etiquette (preflight + cleanup)
 
@@ -844,7 +844,7 @@ npm run preflight
 
 This calls `scripts/preflight-ai.ps1`, which checks:
 
-- `pwd` is the `C:\bp-outreach` root (not inside `.claude/worktrees/*`).
+- `pwd` is the `C:\bp-outreach-ts` root (not inside `.claude/worktrees/*`).
 - `git worktree list` has no non-`main` worktrees (detects orphaned
   sandboxes).
 - `git status` is clean or only contains known work-in-progress.

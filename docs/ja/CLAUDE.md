@@ -84,7 +84,7 @@
 デスクトップ配布に関わる変更をした場合、Claude Code / Codex は以下を必ず守る:
 
 1. プレビューダッシュボードは必ずルートの `npm run dashboard:preview` を使う。`.claude/worktrees/*` の 3480 表示だけを最新扱いしない
-2. 運用ダッシュボードの正本は `src/dashboard-server.cjs` + `src/ui/**` + `src/routes/**`。プレビュー/Electron は同じ正本から起動する
+2. 運用ダッシュボードの正本は `src/dashboard-server.ts` + `src/ui/**` + `src/routes/**`。プレビュー/Electron は同じ正本から起動する
 3. Web版 `npm run lp:dev` はランディング/公開Web用。運用ダッシュボードの代替正本にしてはいけない
 4. `npm start` / `npm run dashboard:preview` / `npm run lp:dev` の表示だけで「デスクトップ版も最新」と判断しない
 5. リリース対象なら `package.json` / `package-lock.json` の version を必ず上げる
@@ -554,7 +554,7 @@ sales-claw/
 ├── config.cjs                  # 設定読み取りインターフェース
 ├── electron-main.js            # Electron メインプロセス
 ├── src/
-│   ├── dashboard-server.cjs    # ダッシュボード + 設定UI
+│   ├── dashboard-server.ts     # ダッシュボード + 設定UI
 │   ├── action-logger.cjs       # 操作ログ管理
 │   ├── contact-history.cjs     # 連絡履歴管理
 │   ├── company-analyzer.cjs    # 企業サイト分析
@@ -591,7 +591,7 @@ codex exec -m gpt-5.4 -s workspace-write "タスク内容"
 ```
 
 - モデル: `gpt-5.4`（最高モデル。`o3`はChatGPTアカウントで未対応）
-- 作業ディレクトリ: `C:\bp-outreach`
+- 作業ディレクトリ: `C:\bp-outreach-ts`
 
 ## AI 作業時のお作法（プリフライト + 片付け）
 
@@ -605,7 +605,7 @@ npm run preflight
 
 これは `scripts/preflight-ai.ps1` を呼んで以下を一括チェックする:
 
-- `pwd` が `C:\bp-outreach` ルート (≠ `.claude/worktrees/*` の中)
+- `pwd` が `C:\bp-outreach-ts` ルート (≠ `.claude/worktrees/*` の中)
 - `git worktree list` で main 以外の worktree が無い (孤児サンドボックス検出)
 - `git status` がクリーン or 把握済みの作業のみ
 - 1 時間以上前から残っている `cmd.exe` / `node.exe` の孤児プロセスが無い
