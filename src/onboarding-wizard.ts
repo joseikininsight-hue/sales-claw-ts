@@ -88,14 +88,8 @@ const TERMS_BULLETS_EN = [
   'Governing law is Japanese law; the Tokyo District Court has exclusive jurisdiction for any dispute',
 ];
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+// P2-8: サーバ側 escapeHtml は src/html-utils に集約。
+const { escapeHtml } = require('./html-utils');
 
 /**
  * ウィザード HTML 全体をレンダリング。dashboard-server.cjs の通常パスから

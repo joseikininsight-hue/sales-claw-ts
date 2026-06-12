@@ -14,14 +14,9 @@
  * v2.0.32+: bilingual 対応 (lang: 'ja' | 'en'). 未指定時は 'ja'。
  */
 
-function escapeHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+// P2-8: サーバ側 escapeHtml は src/html-utils に集約。
+//   (line 540 付近の client-side <script> 内 escapeHtml はブラウザ実行のため別物)
+const { escapeHtml } = require('./html-utils');
 
 // JSON.stringify した文字列を <script> タグ内に安全に埋めるためのエスケープ。
 // JSON.stringify 単体では </script> を分割しないため、終了タグ偽装が可能。
