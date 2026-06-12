@@ -241,7 +241,6 @@ const DEFAULT_SETTINGS = {
     houjinBangou: '',    // 国税庁 法人番号 Web-API (無料登録)
     gBizInfo: '',        // gBizINFO (無料登録)
     edinet: '',          // 金融庁 EDINET (無料登録、上場企業 IR/財務データ)
-    capSolver: '',       // 任意。Phase 1 では未使用
   },
 
   // === 企業リスト作成機能 (docs/list-builder-requirements.md v2.0) ===
@@ -1124,7 +1123,7 @@ function getAiModelForPhase(phase: string, providerId: string = 'claude') {
 
 /**
  * API キーセクション全体（実値）を取得する。内部専用、HTTP/UI に渡してはいけない。
- * @returns {Object} API キーマップ（{ serpApi, houjinBangou, gBizInfo, edinet, capSolver, ... }）
+ * @returns {Object} API キーマップ（{ serpApi, houjinBangou, gBizInfo, edinet, ... }）
  */
 function getApiKeys() {
   const section = getSection('apiKeys');

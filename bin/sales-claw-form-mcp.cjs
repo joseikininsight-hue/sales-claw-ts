@@ -20,13 +20,13 @@ const fs = require('fs');
 
 function findServerEntry() {
   const candidates = [
-    // 1) Same package (npm-install / dev source)
+    // 1) Same package (npm-install / dev source / installer bundle: src/ も同梱される)
     path.resolve(__dirname, '..', 'src', 'mcp-servers', 'sales-claw-form', 'server.cjs'),
-    // 2) Compiled output
-    path.resolve(__dirname, '..', 'dist-ts', 'src', 'mcp-servers', 'sales-claw-form', 'server.cjs'),
-    // 3) Bundled inside installer (Phase 2)
+    // 2) Bundled inside installer via explicit env override (Phase 2)
     process.env.SALES_CLAW_FORM_MCP_SERVER_PATH || '',
   ].filter(Boolean);
+  // 注: MCP server は .cjs のまま (tsc 非対象) で dist-ts には生成されない。
+  //   旧候補 "dist-ts/.../server.cjs" はどのビルドも生成しないデッドパスだったため削除。
   for (const p of candidates) {
     try { if (fs.existsSync(p)) return p; }
     catch (_) { /* ignore */ }

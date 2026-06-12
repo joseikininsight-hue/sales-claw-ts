@@ -235,7 +235,6 @@ export interface ApiKeys {
   houjinBangou: string;
   gBizInfo: string;
   edinet: string;
-  capSolver: string;
 }
 
 export type UnknownFieldPolicy = 'strict' | 'standard' | 'broad';
