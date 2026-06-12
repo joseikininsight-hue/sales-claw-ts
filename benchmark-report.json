@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-06-12T00:32:13.107Z",
+  "fixture": "tests/fixtures/local-form.html",
+  "runner": "real Electron + real WebContentsView (no mocks)",
+  "runs": [
+    {
+      "parallel": 1,
+      "ok": false,
+      "successCount": 8,
+      "failCount": 2,
+      "totalSec": "2.57",
+      "avgPerCompanyMs": 255,
+      "medianMs": 231,
+      "p95Ms": 446,
+      "throughputPerMin": 233.6,
+      "failures": [
+        {
+          "companyNo": 1000,
+          "errors": [
+            {
+              "message": "Current display surface not available for capture",
+              "stack": "Error: Current display surface not available for capture\n    at processCompany (C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:114:42)\n    at async C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:150:9"
+            }
+          ]
+        },
+        {
+          "companyNo": 1001,
+          "errors": [
+            {
+              "message": "Current display surface not available for capture",
+              "stack": "Error: Current display surface not available for capture\n    at processCompany (C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:114:42)\n    at async C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:150:9"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "parallel": 3,
+      "ok": false,
+      "successCount": 6,
+      "failCount": 4,
+      "totalSec": "1.19",
+      "avgPerCompanyMs": 385,
+      "medianMs": 361,
+      "p95Ms": 549,
+      "throughputPerMin": 503.8,
+      "failures": [
+        {
+          "companyNo": 1002,
+          "errors": [
+            {
+              "message": "Current display surface not available for capture",
+              "stack": "Error: Current display surface not available for capture\n    at processCompany (C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:114:42)\n    at async C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:150:9"
+            }
+          ]
+        },
+        {
+          "companyNo": 1004,
+          "errors": [
+            {
+              "message": "UnknownVizError",
+              "stack": "Error: UnknownVizError"
+            }
+          ]
+        },
+        {
+          "companyNo": 1005,
+          "errors": [
+            {
+              "message": "UnknownVizError",
+              "stack": "Error: UnknownVizError"
+            }
+          ]
+        },
+        {
+          "companyNo": 1007,
+          "errors": [
+            {
+              "message": "UnknownVizError",
+              "stack": "Error: UnknownVizError"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "parallel": 5,
+      "ok": false,
+      "successCount": 7,
+      "failCount": 3,
+      "totalSec": "1.22",
+      "avgPerCompanyMs": 643,
+      "medianMs": 667,
+      "p95Ms": 825,
+      "throughputPerMin": 493,
+      "failures": [
+        {
+          "companyNo": 1004,
+          "errors": [
+            {
+              "message": "Current display surface not available for capture",
+              "stack": "Error: Current display surface not available for capture\n    at processCompany (C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:114:42)\n    at async C:\\bp-outreach-ts\\tests\\benchmark-n-companies-runner.cjs:150:9"
+            }
+          ]
+        },
+        {
+          "companyNo": 1008,
+          "errors": [
+            {
+              "message": "UnknownVizError",
+              "stack": "Error: UnknownVizError"
+            }
+          ]
+        },
+        {
+          "companyNo": 1007,
+          "errors": [
+            {
+              "message": "UnknownVizError",
+              "stack": "Error: UnknownVizError"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
