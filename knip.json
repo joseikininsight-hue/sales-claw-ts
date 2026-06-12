@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/dashboard-server.ts!",
+    "src/parallel-analysis.ts!",
+    "src/company-analyzer.ts!",
+    "src/mcp-servers/sales-claw-form/server.cjs!",
+    "src/mcp-servers/sales-claw-form/tools/*.cjs!",
+    "scripts/*.ts",
+    "scripts/*.cjs",
+    "tests/**/*.test.cjs",
+    "tests/*-runner.cjs"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "src/**/*.cjs",
+    "scripts/**/*.{ts,cjs}"
+  ],
+  "ignore": [
+    "src/ui/client-scripts/**"
+  ],
+  "ignoreDependencies": [
+    "npm",
+    "@playwright/mcp",
+    "xterm",
+    "xterm-addon-fit",
+    "xterm-addon-search",
+    "xterm-addon-unicode11",
+    "xterm-addon-web-links",
+    "ts-prune"
+  ],
+  "ignoreBinaries": [
+    "powershell"
+  ]
+}

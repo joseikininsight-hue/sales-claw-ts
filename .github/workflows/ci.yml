@@ -51,3 +51,38 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
+
+  analyze:
+    name: Debt analysis (non-blocking)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # P0/QW9: 負債メトリクス + デッドコード/循環依存/重複の可視化。
+      #   いずれも non-blocking (continue-on-error) — 段階的に減らしていく
+      #   ラチェットの観測用であり、現時点では fail させない。
+      - name: Debt metrics
+        run: npm run debt:metrics
+        continue-on-error: true
+
+      - name: Dead code (knip)
+        run: npm run analyze:dead
+        continue-on-error: true
+
+      - name: Circular deps (madge)
+        run: npm run analyze:circular
+        continue-on-error: true
+
+      - name: Duplication (jscpd)
+        run: npm run analyze:dup
+        continue-on-error: true
