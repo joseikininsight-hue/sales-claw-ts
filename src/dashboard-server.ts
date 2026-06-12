@@ -24,6 +24,7 @@ const {
   getScreenshotSearchDirs,
 } = require('./approval-artifacts');
 const { findAvailablePort } = require('./port-utils');
+const { resolveScreenshotPath } = require('./screenshot-path');
 const { appendCompany, deleteCompany, findCompaniesByNos, getTargetPreview, importTargetList, readTargetList, repairImportedTargetListIfNeeded, updateCompany } = require('./target-list');
 const { getTargetMap, setTargets } = require('./outreach-targets');
 const { finishLiveMonitor, getLiveMonitorFile, getLiveMonitorSummary, readMonitorState, removeCompanyMonitor, updateLiveMonitor } = require('./live-monitor');
@@ -12044,19 +12045,12 @@ const server = http.createServer(async (req, res) => {
   // /screenshots/ss-{No}-{suffix}.png → settings.getScreenshotDir() 配下
   // 操作セッション UI が AI 撮影した PNG をサムネ表示するため。
   if (pathname.startsWith('/screenshots/')) {
-    const relative = decodeURIComponent(pathname.slice('/screenshots/'.length));
-    // path traversal guard
-    if (relative.includes('..') || relative.includes('\0') || !relative.endsWith('.png')) {
-      res.writeHead(400); res.end('Bad request'); return;
-    }
+    // path traversal guard は screenshot-path.resolveScreenshotPath に集約
+    //   (../ / ..%2f / 絶対パス / UNC / 兄弟ディレクトリ接頭辞バイパスを単体テスト済み)。
+    const ssDir = settings.getScreenshotDir ? settings.getScreenshotDir() : 'screenshots';
+    const normalized = resolveScreenshotPath(pathname, ssDir);
+    if (!normalized) { res.writeHead(400); res.end('Bad request'); return; }
     try {
-      const ssDir = settings.getScreenshotDir ? settings.getScreenshotDir() : 'screenshots';
-      const filepath = path.join(ssDir, relative);
-      // resolved path が ssDir 配下にあることを再確認
-      const normalized = path.resolve(filepath);
-      if (!normalized.startsWith(path.resolve(ssDir))) {
-        res.writeHead(403); res.end('Forbidden'); return;
-      }
       const data = fs.readFileSync(normalized);
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
       res.end(data);
@@ -12089,28 +12083,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Screenshot serving
-  if (pathname.startsWith('/screenshots/')) {
-    const filename = path.basename(pathname);
-    const filepath = findScreenshotPath(filename);
-    if (!filepath) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Not found');
-      return;
-    }
-    try {
-      const img = fs.readFileSync(filepath);
-      res.writeHead(200, {
-        'Content-Type': 'image/png',
-        'Cache-Control': 'no-store',
-      });
-      res.end(img);
-    } catch {
-      res.writeHead(404);
-      res.end('Not found');
-    }
-    return;
-  }
+  // (旧2つ目の /screenshots/ ブロックは到達不能なデッドコードだったため削除。
+  //  先行の /screenshots/ ハンドラが全 /screenshots/ パスを return 済み。)
 
   // --- Force-reset managed AI queue (v2.0.10) ---
   // POST /api/managed-ai-batch/reset

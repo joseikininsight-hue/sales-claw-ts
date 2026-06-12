@@ -1279,23 +1279,6 @@ class FormSessionManager {
     return { ok: true, hidden };
   }
 
-  // Called by electron-main on window resize
-  onWindowResize() {
-    // v2.0.91: resize 時に旧 _positionView (winW*0.45 右半分全面) を呼ぶと
-    //   HTML slot を無視して dock が崩れる。HTML 側 resize listener が
-    //   setViewBounds を呼ぶので main 側では何もしない。
-  }
-
-  // v2.0.91 で deprecate: 旧式 dock (winW*0.45 右半分占有) は HTML slot を
-  // 無視して dashboard 上に WebView が覆いかぶさるバグの原因だった。
-  // setViewBounds (HTML slot bbox 連動) に完全移行済。残置は意図的に呼ばない。
-  // 残しているのは下位互換目的のみで、誰も呼ばない。
-  // → 削除しても安全だが、外部から参照する古いコードがあれば落ちるので
-  //   今は no-op 化しておく (型シグネチャは維持)。
-  _positionView(_sessionId) {
-    // intentionally no-op (v2.0.91+); use setViewBounds via HTML slot.
-  }
-
   _removeFromWindow(sessionId) {
     const session = this._sessions.get(sessionId);
     if (!session) return;

@@ -305,11 +305,6 @@ async function main() {
       mgr.hideCurrentSession();
       assert.equal(mgr.activeSessionId, null);
     });
-
-    it('onWindowResize is no-op when no active session', () => {
-      const mgr = new FormSessionManager(() => null);
-      mgr.onWindowResize(); // should not throw
-    });
   });
 
   describe('FormSessionManager — SSRF guard via createSession', () => {
@@ -541,7 +536,6 @@ async function main() {
       assert.equal(fakeWin.contentView.children.length, 1);
       mgr.hideCurrentSession();
       assert.equal(fakeWin.contentView.children.length, 0);
-      mgr.onWindowResize(); // no active — no-op
       mgr.destroySession(id);
     });
 
@@ -581,13 +575,6 @@ async function main() {
       mgr.destroySession(id2);
     });
 
-    await itAsync('onWindowResize repositions active view', async () => {
-      const id = await mgr.createSession('http://example.com/', 10);
-      mgr.showSession(id);
-      mgr.onWindowResize();
-      assert.equal(fakeWin.contentView.children.length, 1);
-      mgr.destroySession(id);
-    });
 
     await itAsync('destroyed window is treated as no-op', async () => {
       const destroyedWin = { isDestroyed: () => true };

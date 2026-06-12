@@ -37,7 +37,6 @@ interface DashboardRuntimeModule {
 
 interface FormSessionManagerCtor {
   new (windowGetter: () => BrowserWindow | null): {
-    onWindowResize(): void;
     destroyAllSessions(): { ok: boolean; destroyed: number };
     [key: string]: unknown;
   };
@@ -320,7 +319,9 @@ function createWindow(): void {
   void mainWindow.loadURL(getSafeDashboardUrl());
   mainWindow.setMenuBarVisibility(false);
 
-  mainWindow.on('resize', () => formSessionManager.onWindowResize());
+  // v2.0.91+: ウィンドウ resize 時の WebContentsView 再配置は HTML 側 resize
+  //   listener が setViewBounds で行う。main 側のフック (旧 onWindowResize, no-op)
+  //   は不要なため削除済み。
 
   mainWindow.on('close', (event) => {
     if (!app.isQuiting) {
