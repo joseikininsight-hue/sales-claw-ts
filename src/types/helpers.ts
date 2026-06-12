@@ -156,6 +156,26 @@ export function errorMessage(e: unknown): string {
   }
 }
 
+/**
+ * errorMessage のエイリアス。`getErrorMessage` という名前を期待する
+ * 呼び出し側 (catch (e: unknown) 移行) のための discoverable な別名。
+ */
+export const getErrorMessage = errorMessage;
+
+/**
+ * unknown 型の error から `code` (NodeJS の errno 文字列など) を取り出す。
+ * `(e as any)?.code` / `(e as { code?: string }).code` を毎回書かないで済む。
+ * code が無い / string でない場合は undefined。
+ */
+export function getErrorCode(e: unknown): string | undefined {
+  if (e && typeof e === 'object' && 'code' in e) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    if (typeof code === 'number') return String(code);
+  }
+  return undefined;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 4. プロパティアクセス — Record<string, unknown> から型付きで取り出す
 // ─────────────────────────────────────────────────────────────────
