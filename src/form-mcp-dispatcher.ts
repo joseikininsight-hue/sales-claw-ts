@@ -15,27 +15,11 @@ import fs from 'fs';
 import * as cdp from './cdp-bridge';
 import type { IpcRequest, IpcServer, IpcHandler } from './ipc-server';
 
-// v2.1.0 回帰修正: fillForm だけが light DOM → open shadow DOM → 同一オリジン iframe を
-//   貫通して要素解決していたが、click / type / select_option は素の document.querySelector
-//   のままだった。その結果 shadow/iframe 内フォーム (v2.0.98 で入力対応した形態) では
-//   「入力はできたが送信/確認ボタンが押せない」非対称が生じ、confirm_reached に到達できず
-//   form_fill のまま stall していた。下記を全ハンドラに注入して貫通解決を統一する。
-//   ※ browser 内で実行される pure JS。light DOM を最初に試すため後方互換 (挙動不変)。
-const PIERCE_RESOLVE_SRC = `function(sel){
-  var el=null; try{ el=document.querySelector(sel); }catch(e){}
-  if(el) return el;
-  function search(ctx, depth){
-    if(depth > 8) return null;
-    var e=null; try{ e=ctx.querySelector(sel); }catch(_){}
-    if(e) return e;
-    var hosts; try{ hosts=ctx.querySelectorAll('*'); }catch(_){ hosts=[]; }
-    for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ var r=search(hosts[i].shadowRoot, depth+1); if(r) return r; } }
-    var fr; try{ fr=ctx.querySelectorAll('iframe'); }catch(_){ fr=[]; }
-    for(var k=0;k<fr.length;k++){ try{ var fd=fr[k].contentDocument; if(fd){ var r2=search(fd, depth+1); if(r2) return r2; } }catch(_){} }
-    return null;
-  }
-  return search(document, 0);
-}`;
+// 貫通要素解決 (light DOM → open shadow DOM → 同一オリジン iframe) は
+//   src/injected/pierce-resolve.ts に集約。click / type / select_option /
+//   fillForm の全経路で同一ソースを注入し、shadow/iframe 内の送信ボタンが
+//   押せない非対称 (confirm_reached 未到達 stall) を防ぐ。
+import { PIERCE_RESOLVE_FN_SRC as PIERCE_RESOLVE_SRC } from './injected/pierce-resolve';
 
 interface FormSessionManagerLike {
   createSession(formUrl: string, companyNo: number | string): Promise<string>;

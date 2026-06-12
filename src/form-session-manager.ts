@@ -6,6 +6,7 @@ const dns = require('dns').promises;
 const net = require('net');
 const path = require('path');
 const settings = require('./settings-manager');
+const { PIERCE_RESOLVE_FN_SRC } = require('./injected/pierce-resolve');
 
 // WebContentsView bounds for the form review pane (right 55% of content area)
 const HEADER_HEIGHT = 56;
@@ -939,27 +940,13 @@ class FormSessionManager {
       return [];
     }
 
-    // v2.0.98: light DOM → open shadow DOM → 同一オリジン iframe を貫通して要素解決する。
-    //   light DOM は従来通り document.querySelector を最初に試すため後方互換 (挙動不変)。
-    //   getFormStructure が付与した [data-sc-fid] マーカーで shadow/iframe 内も入力可能。
-    //   native value setter は要素自身の realm (iframe なら iframe window) を使う。
+    // light DOM → open shadow DOM → 同一オリジン iframe を貫通して要素解決する。
+    //   貫通リゾルバ resolve は src/injected/pierce-resolve.ts と単一ソース共有
+    //   (click/type/select_option との非対称を防ぐ)。[data-sc-fid] マーカーで
+    //   shadow/iframe 内も入力可能。native value setter は要素自身の realm を使う。
     const script = `(function(){
       var items=${JSON.stringify(items)};
-      function resolve(sel){
-        var el=null; try{ el=document.querySelector(sel); }catch(e){}
-        if(el) return el;
-        function search(ctx, depth){
-          if(depth > 8) return null; // 異常に深い shadow/iframe ネストでの stack overflow 防止
-          var e=null; try{ e=ctx.querySelector(sel); }catch(_){}
-          if(e) return e;
-          var hosts; try{ hosts=ctx.querySelectorAll('*'); }catch(_){ hosts=[]; }
-          for(var i=0;i<hosts.length;i++){ if(hosts[i].shadowRoot){ var r=search(hosts[i].shadowRoot, depth+1); if(r) return r; } }
-          var fr; try{ fr=ctx.querySelectorAll('iframe'); }catch(_){ fr=[]; }
-          for(var k=0;k<fr.length;k++){ try{ var fd=fr[k].contentDocument; if(fd){ var r2=search(fd, depth+1); if(r2) return r2; } }catch(_){} }
-          return null;
-        }
-        return search(document, 0);
-      }
+      var resolve=${PIERCE_RESOLVE_FN_SRC};
       function resolveAny(it){
         var el=resolve(it.selector);
         if(el) return el;
