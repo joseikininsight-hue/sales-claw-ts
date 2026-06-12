@@ -42,7 +42,8 @@ jobs:
 
       - name: TypeScript test config check
         run: npm run typecheck:tests
-        continue-on-error: true  # tests config が壊れていても main typecheck で十分
+        # P0-5: 現在 exit 0 で安定しているためブロッキング化。リリースゲート
+        #   (verify-release-readiness.ts 等) 自身の型崩れを CI で検出する。
 
       - name: Lint
         run: npm run lint
