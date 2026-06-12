@@ -5,6 +5,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 const settings = require('./settings-manager');
 const { PROJECT_ROOT, resolveDataPath } = require('./data-paths');
+const { atomicWriteJson } = require('./file-lock');
 
 const XLSX_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -211,20 +212,9 @@ function makeCompanionFileName(companyNo) {
 }
 
 function writeJsonAtomic(filePath, data) {
+  // P0/QW4: 共通 file-lock.atomicWriteJson に統一 (copyFileSync フォールバック撤廃)。
   ensureDirectory(path.dirname(filePath));
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e) {
-    if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-      throw e;
-    }
-  }
+  atomicWriteJson(filePath, JSON.stringify(data, null, 2));
 }
 
 function pickExtendedTargetFields(companyData) {

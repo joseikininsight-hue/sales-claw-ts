@@ -20,7 +20,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { resolveDataPath, ensureDataDir } = require('../data-paths');
-const { acquireFileLock: _acquireFileLock, releaseFileLock } = require('../file-lock');
+const { acquireFileLock: _acquireFileLock, releaseFileLock, atomicWriteJson } = require('../file-lock');
 
 const VALID_STATUSES = new Set([
   'queued', 'running', 'completed', 'failed', 'cancelled', 'partial',
@@ -69,23 +69,13 @@ function payloadHash(payload) {
 }
 
 // JSON ファイル atomic 書き込み
+//   P0/QW4: 共通 file-lock.atomicWriteJson (fsync + rename リトライ、copyFileSync
+//   フォールバック無し) に統一。ネスト dir (data/list-builder/runs/...) 作成は
+//   atomicWriteJson の ensureDataDir では足りないため呼出側で維持する。
 function writeJsonAtomic(filePath, data) {
-  ensureDataDir();
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e) {
-    if (process.platform === 'win32' && (e.code === 'EPERM' || e.code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
-      throw e;
-    }
-  }
+  atomicWriteJson(filePath, JSON.stringify(data, null, 2));
 }
 
 function readJsonSafe(filePath, fallback: any = null) {

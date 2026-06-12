@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 import { resolveDataPath, ensureDataDir } from '../data-paths';
-import { acquireFileLock as _acquireFileLock, releaseFileLock } from '../file-lock';
+import { acquireFileLock as _acquireFileLock, releaseFileLock, atomicWriteJson } from '../file-lock';
 import * as urlNormalizer from './url-normalizer';
 import * as nameNormalizer from './name-normalizer';
 
@@ -167,23 +167,10 @@ function normalizeLoaded(parsed: unknown): SuppressionData {
 }
 
 function writeJsonAtomic(filePath: string, data: SuppressionData): void {
-  ensureDataDir();
+  // P0/QW4: 共通 file-lock.atomicWriteJson に統一 (copyFileSync フォールバック撤廃)。
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const tmpFile = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e: unknown) {
-    const code = (e && typeof e === 'object' && 'code' in e) ? (e as { code?: string }).code : undefined;
-    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY')) {
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-      throw e;
-    }
-  }
+  atomicWriteJson(filePath, JSON.stringify(data, null, 2));
   cache.filePath = filePath;
   cache.signature = getFileSignature(filePath);
   cache.data = data;

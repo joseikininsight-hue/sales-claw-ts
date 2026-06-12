@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveDataPath } from './data-paths';
+import { atomicWriteJson } from './file-lock';
 
 export interface RecoveryBatch {
   id: string;
@@ -76,25 +77,15 @@ function saveRecoverySnapshot(snapshot: Partial<RecoverySnapshot> | null | undef
   if (!snapshot || typeof snapshot !== 'object') return;
   const filePath = getRecoveryFilePath();
   ensureDir(filePath);
-  const tmpFile = filePath + '.tmp.' + process.pid;
   const payload = JSON.stringify({
     savedAt: new Date().toISOString(),
     ...snapshot,
   }, null, 2);
-  fs.writeFileSync(tmpFile, payload, 'utf8');
-  try {
-    fs.renameSync(tmpFile, filePath);
-  } catch (e: unknown) {
-    const code = (e && typeof e === 'object' && 'code' in e) ? (e as { code?: string }).code : undefined;
-    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY')) {
-      // Windows で共有違反が出るケースへのフォールバック
-      fs.copyFileSync(tmpFile, filePath);
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-    } else {
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-      throw e;
-    }
-  }
+  // P0/QW4: 共通 atomicWriteJson (fsync + rename リトライ) に統一。
+  //   旧ローカル実装の copyFileSync フォールバックは file-lock.ts が
+  //   「torn write の元凶」として撤廃済み。クラッシュ復旧スナップショット
+  //   そのものなので耐久性の効果が最も大きい。
+  atomicWriteJson(filePath, payload);
 }
 
 /**
