@@ -19,6 +19,8 @@ interface SettingsManagerSubset {
   getSection: (key: string) => { logLevel?: string } | undefined;
 }
 
+let _lastDeliveryWarnAt = 0;
+
 export function log(message: string, type?: LogType): void {
   const logType: string = type ?? 'info';
 
@@ -50,7 +52,15 @@ export function log(message: string, type?: LogType): void {
         'X-CLI-Token': process.env.SALES_CLAW_CLI_TOKEN ?? '',
       },
     });
-    req.on('error', () => undefined);
+    req.on('error', (err) => {
+      // fire-and-forget は維持しつつ、送達失敗の完全無音はやめる (60秒に1回だけ警告)。
+      // 典型原因: ダッシュボードのポート違い / サーバ停止 — 進捗がUIに出ない事故の早期発見用。
+      const now = Date.now();
+      if (now - _lastDeliveryWarnAt > 60_000) {
+        _lastDeliveryWarnAt = now;
+        console.warn(`[cli-logger] dashboard notify failed (${target.hostname}:${target.port}): ${err && err.message}`);
+      }
+    });
     req.write(payload);
     req.end();
   } catch {

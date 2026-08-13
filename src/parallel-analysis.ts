@@ -36,7 +36,10 @@ function resolveProviderHomeDir(providerId: string): string {
 function loadActionLogger() {
   try {
     return require('./action-logger');
-  } catch (_) {
+  } catch (e) {
+    // v2.1.6: 旧仕様は無言の no-op スタブで、Phase A の全ログが黙って消えていた。
+    // 記録は諦めても、少なくとも stderr へ 1 回警告して親プロセス側で気づけるようにする。
+    console.error('[parallel-analysis] action-logger unavailable — Phase A logs will NOT be recorded:', e && (e as Error).message || e);
     return { logAction: () => {} };
   }
 }

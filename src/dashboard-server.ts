@@ -444,7 +444,12 @@ const MANAGED_AI_READY_DELAY_MS = {
 };
 
 const MANAGED_AI_MIN_READY_AGE_MS = {
-  claude: 0,
+  // v2.1.6: 0 → 1200ms。ready マーカーに Claude Code v2.x の TUI 文字 (❯ 等) を
+  // 追加したため、起動バナー描画の瞬間 (数百ms) にマーカーがマッチして
+  // 初期化中の TUI へプロンプトを早出しするリスクがある。従来の実効 ready は
+  // タイマー fallback の 1500ms だったので、1200ms 下限なら従来より遅くならず、
+  // かつ「プロンプトが実際に描画された」確認を上乗せできる。
+  claude: 1200,
   codex: 24000,
   gemini: 25000,
 };
@@ -1494,9 +1499,16 @@ function getManagedAiReadyMarkers(providerId) {
       ];
     case 'claude':
     default:
+      // v2.1.6: Claude Code v2.x の TUI はプロンプト文字が ASCII '>' ではなく
+      // '❯' (U+276F) で、"? for shortcuts" ヒントも常時表示ではなくなった。
+      // 旧パターンだけだと ready 検出が常にタイマー fallback (1.5s) 頼みになり、
+      // 低速環境で「準備前にプロンプト投入」する取りこぼしがあった。
       return [
         /\? for shortcuts/i,
         />\s*$/m,
+        /❯/,
+        /bypass permissions on/i,
+        /shift\+tab to cycle/i,
       ];
   }
 }
@@ -1647,9 +1659,18 @@ function flushManagedAiPromptQueue() {
     // PTY exited 中の write は同期 throw する。setTimeout 経由で呼ばれた場合
     // uncaughtException → gracefulShutdown(1) で Electron main が即死するので
     // ここで握り潰す。dispatcher state はリセットして次の queue 投入に備える。
+    // v2.1.6: shift 済みプロンプトを queue 先頭へ戻す。旧仕様は握り潰しと同時に
+    // プロンプト自体が消失し、PTY 復旧後もバッチが永久に再投入されなかった。
     state.dispatching = false;
-    console.warn('[pty-dispatch] prompt write failed (pty exited?):', error && error.message || error);
-    appendManagedAiPtyLog(state.providerId, `[dispatch] write failed: ${error && error.message || error}`, 'system');
+    state.queue.unshift(next);
+    appendDiagnosticEvent('managed_ai_prompt_dispatch_failed', {
+      provider: state.providerId,
+      promptChars: String(next.promptText || '').length,
+      requeued: true,
+      error: String(error && error.message || error),
+    });
+    console.warn('[pty-dispatch] prompt write failed (pty exited?), re-queued:', error && error.message || error);
+    appendManagedAiPtyLog(state.providerId, `[dispatch] write failed (re-queued): ${error && error.message || error}`, 'system');
     return;
   }
   const submitSequence = getManagedAiSubmitSequence(state.providerId);
@@ -11672,6 +11693,7 @@ function getSimpleApiDispatch() {
       APP_BUILD_SOURCE,
       APP_VERSION,
       getFormSessionManager: () => _formSessionManager,
+      appendDiagnosticEvent,
     });
   }
   return _simpleApiDispatch;
@@ -12502,4 +12524,7 @@ module.exports = {
   getFormFillMode,
   // v2.0.77: electron-main から IPC server 起動/失敗を診断記録できるよう export
   appendDiagnosticEvent,
+  _test: {
+    buildPage,
+  },
 };

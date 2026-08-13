@@ -7,6 +7,7 @@ import { getRequestTarget } from './dashboard-runtime';
 import { resolveDataPath } from './data-paths';
 import { acquireFileLock as _acquireFileLock, releaseFileLock, atomicWriteJson } from './file-lock';
 import type { ActionLogEntry, ActionType, ActionDetails } from './types/action-log';
+import { getErrorMessage } from './types/helpers';
 
 interface SettingsManagerShape {
   getSection: (key: string) => { maxLogEntries?: number } | undefined;
@@ -76,20 +77,70 @@ function flushNow(exitFlush = false): void {
     // ロック取得失敗: ロック無し書き込みは torn write を招くため禁止。
     // dirty フラグを立てたまま次の debounce 周期に委ねる。
     _pendingFlush = true;
-    console.warn('[action-logger] flushNow: lock timeout, will retry:', e instanceof Error ? e.message : String(e));
+    console.warn('[action-logger] flushNow: lock timeout, will retry:', getErrorMessage(e));
     // terminal action 等で flushNow が直接呼ばれた場合、タイマーが張られていないと
     // 次の logAction まで永続化が遅延する。非終了時はデバウンスを張り直す。
     if (!exitFlush) scheduleDebouncedFlush();
     return;
   }
   try {
+    // 別プロセス (Phase A サブプロセス群など) が同じファイルへ書いた追記を
+    // 全置換の前にマージする。ロックは torn write しか防げず、キャッシュ全体で
+    // ファイルを上書きすると「後勝ち」で他プロセスのエントリが消える (lost update)。
+    // 自プロセスが最後に書いた時点の signature と一致する場合はマージ不要。
+    if (getFileSignature(filePath) !== logCache.signature) {
+      mergeForeignEntriesIntoCache(filePath);
+    }
     saveLog(logCache.data);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = getErrorMessage(e);
     console.warn('[action-logger] flushNow failed:', msg);
   } finally {
     releaseFileLock(lockFile);
   }
+}
+
+/**
+ * エントリの同一性キー。Windows のタイマ分解能では ms timestamp が衝突しうる
+ * (既定 15.6ms 粒度) ため、details も含めて同一 timestamp の別エントリを
+ * 誤って重複扱いしないようにする。
+ */
+function entryIdentityKey(entry: ActionLogEntry): string {
+  let detailsKey = '';
+  try {
+    detailsKey = JSON.stringify(entry?.details ?? '');
+  } catch { /* 循環参照等は空キー扱い */ }
+  return `${entry?.timestamp ?? ''}|${entry?.companyNo ?? ''}|${entry?.action ?? ''}|${detailsKey}`;
+}
+
+/** ISO8601 timestamp の時系列比較 (ロケール非依存のバイト順比較)。 */
+function compareByTimestamp(a: ActionLogEntry, b: ActionLogEntry): number {
+  const ta = String(a?.timestamp ?? '');
+  const tb = String(b?.timestamp ?? '');
+  return ta < tb ? -1 : ta > tb ? 1 : 0;
+}
+
+/**
+ * ディスク上にあって in-memory cache に無いエントリを cache へ取り込み、
+ * timestamp 昇順に並べ直す。呼び出し側でファイルロックを保持していること。
+ */
+function mergeForeignEntriesIntoCache(filePath: string): void {
+  let diskEntries: ActionLogEntry[] = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    diskEntries = Array.isArray(parsed) ? (parsed as ActionLogEntry[]) : [];
+  } catch {
+    // 読めない/壊れている場合はマージせず、既存の cache を正とする
+    return;
+  }
+  if (diskEntries.length === 0) return;
+  const known = new Set(logCache.data.map(entryIdentityKey));
+  const foreign = diskEntries.filter((entry) => !known.has(entryIdentityKey(entry)));
+  if (foreign.length === 0) return;
+  // sort は stable (ES2019+) なので、同一 timestamp のエントリは挿入順を保つ。
+  // getLatestActions の「配列順 = 時系列順」前提はこの安定性に依存している。
+  logCache.data = logCache.data.concat(foreign).sort(compareByTimestamp);
+  console.warn(`[action-logger] merged ${foreign.length} entr${foreign.length === 1 ? 'y' : 'ies'} written by another process`);
 }
 
 // プロセス終了時に必ず flush (クラッシュ時の log 消失を最小化)
@@ -141,10 +192,23 @@ function readJsonCached(filePath: string, fallbackValue: ActionLogEntry[]): Acti
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     // v2.0.25: Array 以外 (null / number / object) でも安全に空配列フォールバック
-    const sanitized: ActionLogEntry[] = Array.isArray(parsed) ? (parsed as ActionLogEntry[]) : [];
+    let sanitized: ActionLogEntry[] = Array.isArray(parsed) ? (parsed as ActionLogEntry[]) : [];
     if (!Array.isArray(parsed)) {
       console.warn(`[action-logger] expected Array but got ${parsed === null ? 'null' : typeof parsed}; using empty fallback. file: ${filePath}`);
     }
+    // flush 待ちの自プロセスエントリを持ったまま別プロセスの書き込みで signature が
+    // 変わった場合、ディスク内容で cache を全置換すると未 flush 分が消滅する。
+    // pending がある間だけ「ディスク ∪ (メモリ − ディスク)」で保護する。
+    if ((_pendingFlush || _flushTimer) && logCache.filePath === filePath && logCache.data.length > 0) {
+      const known = new Set(sanitized.map(entryIdentityKey));
+      const pendingOnly = logCache.data.filter((entry) => !known.has(entryIdentityKey(entry)));
+      if (pendingOnly.length > 0) {
+        sanitized = sanitized.concat(pendingOnly).sort(compareByTimestamp);
+      }
+    }
+    // 注意: マージ後の signature は「ディスク内容」を指すが data は未 flush 分を
+    // 含むため、一時的に signature ≠ data 内容となる。この不整合は次の flushNow
+    // がディスク差分を再マージしてから全書き込みすることで解消される (意図的)。
     logCache.filePath = filePath;
     logCache.signature = signature;
     logCache.data = sanitized;
@@ -154,11 +218,11 @@ function readJsonCached(filePath: string, fallbackValue: ActionLogEntry[]): Acti
     const corruptPath = filePath + '.corrupt.' + Date.now();
     try {
       fs.copyFileSync(filePath, corruptPath);
-      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      const msg = getErrorMessage(parseErr);
       console.warn(`[action-logger] JSON parse failed: ${filePath} - backed up to ${corruptPath}, continuing with empty fallback. Error: ${msg}`);
     } catch (backupErr: unknown) {
-      const pmsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      const bmsg = backupErr instanceof Error ? backupErr.message : String(backupErr);
+      const pmsg = getErrorMessage(parseErr);
+      const bmsg = getErrorMessage(backupErr);
       console.warn(`[action-logger] JSON parse failed AND backup failed: ${filePath}. parse: ${pmsg}, backup: ${bmsg}`);
     }
     // 根本原因 5 の対策: .bak が存在すれば復元を試みる
@@ -200,7 +264,7 @@ function acquireFileLock(filePath: string): string | null {
   try {
     return _acquireFileLock(filePath, { label: 'action-logger', maxWaitMs: 3000 });
   } catch (e: unknown) {
-    console.warn('[action-logger]', e instanceof Error ? e.message : String(e));
+    console.warn('[action-logger]', getErrorMessage(e));
     return null;
   }
 }
@@ -326,16 +390,15 @@ export function removeCompanyLogs(companyNo: number | string): number {
   if (sqlite !== null) {
     // SQLite 経路 (現状未実装)
   }
+  // flushNow() also acquires this file's lock. Flush before taking the
+  // removal lock to avoid a same-process lock timeout.
+  if (_pendingFlush || _flushTimer) {
+    try { flushNow(); } catch { /* keep going - best effort */ }
+  }
   const filePath = getLogFile();
   const lockFile = acquireFileLock(filePath);
   try {
     const key = String(companyNo);
-    // v2.0.50: signature=null → loadLog で disk 再読込すると、debounce flush 待ち
-    // の他社の新規ログ (submitted など) を失う事故があった。
-    // 削除前に必ず pending flush を実行 → 以降は in-memory cache から filter する。
-    if (_pendingFlush || _flushTimer) {
-      try { flushNow(); } catch { /* keep going — best effort */ }
-    }
     const entries = logCache.data && logCache.data.length > 0
       ? logCache.data
       : loadLog();
@@ -350,4 +413,25 @@ export function removeCompanyLogs(companyNo: number | string): number {
   }
 }
 
-module.exports = { logAction, getCompanyLog, getAllLogs, getLatestActions, removeCompanyLogs };
+function resetCacheForTests(): void {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  _pendingFlush = false;
+  logCache.filePath = null;
+  logCache.signature = null;
+  logCache.data = [];
+}
+
+module.exports = {
+  logAction,
+  getCompanyLog,
+  getAllLogs,
+  getLatestActions,
+  removeCompanyLogs,
+  _test: {
+    flushNow,
+    resetCache: resetCacheForTests,
+  },
+};

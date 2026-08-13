@@ -59,6 +59,9 @@ const dataDir = path.join(sandbox, 'data');
 const logFile = path.join(dataDir, 'action-log.json');
 
 function resetLogFile() {
+  if (actionLogger._test && typeof actionLogger._test.resetCache === 'function') {
+    actionLogger._test.resetCache();
+  }
   // Write empty array + bump mtime forward so the in-module cache (keyed by
   // filePath + mtime/size) is invalidated. Plain unlink leaves both filePath
   // and signature=null cache states matching, so a stale array would be
@@ -69,11 +72,14 @@ function resetLogFile() {
   resetLogFile._tick = (resetLogFile._tick || 0) + 1;
   const ts = new Date(Date.now() + resetLogFile._tick * 60000);
   fs.utimesSync(logFile, ts, ts);
+  if (actionLogger._test && typeof actionLogger._test.resetCache === 'function') {
+    actionLogger._test.resetCache();
+  }
   // Wipe corrupt backups
   try {
     const dir = fs.readdirSync(dataDir);
     for (const f of dir) {
-      if (f.startsWith('action-log.json.corrupt.')) {
+      if (f.startsWith('action-log.json.corrupt.') || f === 'action-log.json.bak' || f === 'action-log.json.lock') {
         try { fs.unlinkSync(path.join(dataDir, f)); } catch (_) {}
       }
     }
@@ -226,11 +232,14 @@ function resetLogFile() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 10. cache invalidation: external modification triggers reload via signature
+// 10. cache invalidation: external modification triggers reload via signature.
+//     v2.1.6: 別プロセスの書き込みで cache を全置換すると、自プロセスの
+//     flush 待ちエントリが消える lost update があった。現仕様は
+//     「ディスク ∪ (メモリ − ディスク)」のマージで両方を保持する。
 // ─────────────────────────────────────────────────────────────
 {
   resetLogFile();
-  actionLogger.logAction(1, 'CacheTest', 'a1', 'd');
+  actionLogger.logAction(1, 'CacheTest', 'a1', 'd'); // non-terminal → flush 待ちのまま
   // Manually write a new file (simulating another process)
   const externalEntries = [
     { timestamp: new Date().toISOString(), companyNo: 1, companyName: 'CacheTest', action: 'a1', details: 'd' },
@@ -243,8 +252,10 @@ function resetLogFile() {
   fs.utimesSync(logFile, future, future);
 
   const all = actionLogger.getAllLogs();
-  assertEq('cache reload picks up external write', all.length, 2);
-  assertEq('external entry visible', all[1].companyName, 'External');
+  // 外部書き込み 2 件 + 自プロセスの flush 待ち 1 件 (timestamp が異なる別エントリ)
+  assertEq('external write merged with pending entries', all.length, 3);
+  assertEq('external entry visible', all.filter((e) => e.companyName === 'External').length, 1);
+  assertEq('pending own entry preserved (no lost update)', all.filter((e) => e.companyName === 'CacheTest').length, 2);
 }
 
 // ─────────────────────────────────────────────────────────────

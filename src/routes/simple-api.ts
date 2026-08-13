@@ -96,6 +96,7 @@ module.exports = function createSimpleApiRoutes(ctx) {
     APP_BUILD_SOURCE,
     APP_VERSION,
     getFormSessionManager,
+    appendDiagnosticEvent,
   } = ctx;
 
   function broadcastSse(payload) {
@@ -364,16 +365,38 @@ module.exports = function createSimpleApiRoutes(ctx) {
       if (bodyOverflow) return;
       try {
         const data = JSON.parse(body);
+        // v2.1.6: 拒否 (4xx) を diagnostics + CLI Activity へ必ず残す。
+        //   旧仕様は 422 を返すだけで、CLI がリトライしなければ「拒否されたまま
+        //   誰も気づかない = ログ完全消失」だった。拒否理由を可視化して、
+        //   ユーザー/watchdog が取りこぼしに気づけるようにする。
+        const rejectLog = (status, payload) => {
+          try {
+            if (typeof appendDiagnosticEvent === 'function') {
+              appendDiagnosticEvent('log_action_rejected', {
+                status,
+                no: Number(data && data.no) || null,
+                action: String((data && data.action) || ''),
+                error: payload && payload.error,
+              });
+            }
+            broadcastSse({
+              type: 'cli-log',
+              message: `[log-action 拒否 ${status}] No.${data && data.no} ${String((data && data.name) || '')}: ${payload && payload.error}`,
+              logType: 'warn',
+              time: new Date().toISOString(),
+            });
+          } catch (_) { /* 診断・SSE は best-effort */ }
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(payload));
+        };
         const no = Number(data.no);
         if (!Number.isFinite(no) || no <= 0) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, error: 'Invalid no' }));
+          rejectLog(400, { ok: false, error: 'Invalid no' });
           return;
         }
         let action = String(data.action || '').trim();
         if (!ALLOWED_ACTIONS.has(action)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, error: 'Invalid action. Allowed: ' + [...ALLOWED_ACTIONS].join(',') }));
+          rejectLog(400, { ok: false, error: 'Invalid action. Allowed: ' + [...ALLOWED_ACTIONS].join(',') });
           return;
         }
         // v2.0.65: no-solicitation / 営業お断り検出時の action 正規化。
@@ -431,23 +454,21 @@ module.exports = function createSimpleApiRoutes(ctx) {
             if (m) shotPath = m[0];
           }
           if (!shotPath) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: 'Screenshot is required for ' + action + '. details.screenshot must point to ss-' + no + '-{input|sent|confirm}.png.',
               hint: 'browser_take_screenshot で screenshots/ss-' + no + '-input.png (awaiting) または ss-' + no + '-sent.png (submitted) を撮影してから logAction を呼んでください。',
-            }));
+            });
             return;
           }
           const shotDir = settings.getScreenshotDir ? settings.getScreenshotDir() : path.join(process.cwd(), 'screenshots');
           const shotAbs = path.isAbsolute(shotPath) ? shotPath : path.join(shotDir, path.basename(shotPath));
           if (!fs.existsSync(shotAbs)) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: 'Screenshot file does not exist: ' + shotAbs,
               hint: 'スクリーンショットを screenshots/ ディレクトリへ保存してから logAction を呼んでください。',
-            }));
+            });
             return;
           }
         }
@@ -489,63 +510,49 @@ module.exports = function createSimpleApiRoutes(ctx) {
                 const safeRoots = [dataDir, tempDir, userDataDir].filter(Boolean);
                 const isSafe = safeRoots.some((root: any) => absPath.startsWith(root + path.sep) || absPath === root);
                 if (!isSafe) {
-                  res.writeHead(422, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({
+                  rejectLog(422, {
                     ok: false,
                     error: 'sentMessageFile must reside under sales-claw data dir or system temp dir.',
                     hint: 'BOM 無し UTF-8 で os.tmpdir() (Windows: %TEMP%, Linux: /tmp) に書き出してから path を渡してください。',
-                  }));
+                  });
                   return;
                 }
                 if (fs.statSync(absPath).size > 64 * 1024) {
-                  res.writeHead(422, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({
+                  rejectLog(422, {
                     ok: false,
                     error: 'sentMessageFile too large (>64KB).',
-                  }));
+                  });
                   return;
                 }
                 const raw = fs.readFileSync(absPath, 'utf8');
                 // BOM 除去
                 sentMsg = raw.replace(/^﻿/, '').trim();
               } catch (e: any) {
-                res.writeHead(422, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
+                rejectLog(422, {
                   ok: false,
                   error: 'sentMessageFile read failed: ' + (e && e.message || e),
                   hint: 'ファイルが存在し、サーバから読める permission か確認してください。BOM 無し UTF-8 推奨。',
-                }));
+                });
                 return;
               }
             }
           }
           if (!sentMsg) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: 'details.sentMessage is required for ' + action + ' (実フォームに入力した本文をそのまま渡してください).',
               hint: 'curl -d \'{"no":' + no + ',"name":"...","action":"' + action + '","details":{"sentMessage":"<実際にフォームに入力したお問い合わせ本文>","screenshot":"ss-' + no + '-input.png"}}\' のように details.sentMessage を必ず含めてください。Phase A の templateDraft ではなく、CLI が WebSearch 後に最終化した本文を使ってください。',
-            }));
+            });
             return;
           }
-          // v2.0.57: 30 文字下限を 10 文字に緩和。
-          //   旧仕様 (30 chars): Claude が curl の -d 引数で複数行 JSON を渡す際に
-          //     shell escape ミスで本文末尾が truncate されて 30 chars 未満 → 422
-          //     → リトライループ → dispatcher 進まず → ユーザーが「3 社しか処理さ
-          //     れない」と感じる事故が頻発 (実機 PTY ログで「メッセージが短すぎる
-          //     エラーでした。正しい本文をファイルに書いて curl で送信します」を
-          //     2026-05-21 08:00 周辺で 10 回以上観測)。
-          //   新仕様 (10 chars): TEL/MAIL ダンプだけの縮退本文 (例: 「TEL:090...」)
-          //     は依然弾けるが、一般的な署名 + 本文短縮ケースは通過させる。
-          //     既に placeholder 検出 / quality gate が後段で別途バリデーション
-          //     しているため安全性は維持。
-          if (sentMsg.length < 10) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+          // ABSOLUTE RULE: degenerate contact-info dumps must not reach
+          // awaiting_approval/submitted. CLAUDE.md fixes this threshold at 30.
+          if (sentMsg.length < 30) {
+            rejectLog(422, {
               ok: false,
-              error: 'details.sentMessage too short (' + sentMsg.length + ' chars). 10 文字以上の実本文を渡してください。',
+              error: 'details.sentMessage too short (' + sentMsg.length + ' chars). 30 文字以上の実本文を渡してください。',
               hint: 'TEL/MAIL のダンプだけのような縮退本文は不可。companyProfile + valuePropositions を活用した本文を生成してください。',
-            }));
+            });
             return;
           }
           // v2.0.80: 文字化け検出 — `?` が 3 文字以上連続 = curl の cmd.exe
@@ -554,24 +561,22 @@ module.exports = function createSimpleApiRoutes(ctx) {
           //   → 復元不能 + 顧客への送信内容も同様に化けている可能性。
           //   sentMessageFile 経由なら CP932 影響受けないので強制誘導する。
           if (/\?{3,}/.test(sentMsg)) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: 'details.sentMessage に `?` 連続検出 (' + sentMsg.replace(/[^?]/g,'').length + ' 文字)。Windows cmd.exe CP932 で日本語が破壊されています。',
               hint: 'sentMessage を直接 -d で渡さず、Write tool で UTF-8 BOM 無しテキストファイルに書いて、details.sentMessageFile":"<absolute path>" で渡してください。',
-            }));
+            });
             return;
           }
         }
         if (action === 'submitted' || action === 'awaiting_approval') {
           const prerequisite = validateTerminalActionPrerequisites(no);
           if (!prerequisite.ok) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: prerequisite.error,
               hint: prerequisite.hint,
-            }));
+            });
             return;
           }
           // v2.0.80: screenshot file 存在 + 0 byte でないこと検証。
@@ -587,22 +592,20 @@ module.exports = function createSimpleApiRoutes(ctx) {
               const screenshotDir = settings.getScreenshotDir ? settings.getScreenshotDir() : 'screenshots';
               const ssPath = pathMod.isAbsolute(screenshotName) ? screenshotName : pathMod.join(screenshotDir, screenshotName);
               if (!fsMod.existsSync(ssPath)) {
-                res.writeHead(422, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
+                rejectLog(422, {
                   ok: false,
                   error: `screenshot file '${screenshotName}' does not exist on disk. (expected at ${ssPath})`,
                   hint: 'browser_take_screenshot を実行し、ファイルが実際にディスクに保存されたことを確認してから awaiting_approval/submitted を記録してください。',
-                }));
+                });
                 return;
               }
               const st = fsMod.statSync(ssPath);
               if (st.size < 100) {
-                res.writeHead(422, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
+                rejectLog(422, {
                   ok: false,
                   error: `screenshot '${screenshotName}' is too small (${st.size} bytes; probably failed capture).`,
                   hint: 'browser_take_screenshot をリトライして実体のある PNG (>100 bytes) を保存してください。',
-                }));
+                });
                 return;
               }
             }
@@ -611,13 +614,12 @@ module.exports = function createSimpleApiRoutes(ctx) {
           }
           const quality = validateSentMessageQuality(sentMsg);
           if (!quality.ok) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: quality.error,
               hint: quality.hint,
               qualityCheck: quality.qualityCheck,
-            }));
+            });
             return;
           }
         }
@@ -657,13 +659,12 @@ module.exports = function createSimpleApiRoutes(ctx) {
           ];
           const hit = PLACEHOLDER_PATTERNS.find((p: any) => haystack.indexOf(p) >= 0);
           if (hit) {
-            res.writeHead(422, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            rejectLog(422, {
               ok: false,
               error: 'Placeholder body detected — CLI must regenerate the message via WebSearch before logging ' + action + '.',
               detected: hit,
               hint: 'urlMissing=true 経路: Phase B の CLI 本体が WebSearch で公式サイトを発見し、buildMessagePrompt() に基づいて本文を最終化してください。templateDraft をそのまま送らないでください。',
-            }));
+            });
             return;
           }
         }
