@@ -176,7 +176,12 @@ export function classifyCliText(rawText: string): CliIssueClassification | null 
     }
     const m = rawText.match(rule.pattern);
     const matchedSegment = m?.[0] ?? rawText;
-    const firstLine = matchedSegment.replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+    const flattened = matchedSegment.replace(/[\r\n]+/g, ' ').trim();
+    // PTY の TUI 再描画で 1 行にプロンプト本文とステータス行が連結されることが
+    // あり、先頭 200 字だけ切ると「プロンプト本文がエラー表示される」誤解を
+    // 生んだ (2026-08-13 実機: 品質基準テキストが認証エラーとして表示)。
+    // ステータス表記 (● Login expired 等) は行末側に出るため、長い行は末尾を残す。
+    const firstLine = flattened.length <= 200 ? flattened : '… ' + flattened.slice(-200);
     return { rule, line: firstLine };
   }
   return null;
