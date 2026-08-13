@@ -12,6 +12,13 @@ const { PIERCE_RESOLVE_FN_SRC } = require('./injected/pierce-resolve');
 const HEADER_HEIGHT = 56;
 const PANEL_LEFT_RATIO = 0.45; // dashboard left panel takes 45%
 const MAX_SESSIONS = 30;
+// v2.1.8: bot 判定 (reCAPTCHA v3 スコア低下) の主因だった「1 セッションごとに
+//   新品パーティション (cookie/履歴ゼロ) を作る」設計をやめ、ディスク永続の
+//   スロット 3 枠 (persist:form-slot-0..2) を使い回す。訪問履歴・cookie が
+//   バッチを跨いで蓄積し、通常ブラウザ相当の「使い込まれたプロファイル」に
+//   近づく。4 セッション以上の同時利用時のみ従来の使い捨てパーティションへ
+//   フォールバックする (安全劣化)。
+const PERSISTENT_SLOT_COUNT = 3;
 const ALLOWED_SCREENSHOT_SUFFIXES = new Set(['input', 'confirm', 'sent', 'error']);
 const DNS_LOOKUP_TIMEOUT_MS = 5000;
 // v2.1.0: getFormStructure / fillForm の注入JS が遷移中フレームや重いページで返らない
@@ -391,6 +398,7 @@ class FormSessionManager {
   _getMainWindow: any;
   _sessions: Map<any, any>;
   _activeSessionId: any;
+  _slotBySession: Map<string, number>;
   /**
    * @param {() => (import('electron').BrowserWindow|null)} getMainWindow - メインウィンドウを返すゲッタ（破棄済みなら null）
    */
@@ -399,6 +407,24 @@ class FormSessionManager {
     // sessionId → { id, view, formUrl, companyNo, status, screenshotPath }
     this._sessions = new Map<any, any>();
     this._activeSessionId = null;
+    // sessionId → 永続スロット番号 (0..PERSISTENT_SLOT_COUNT-1)。
+    this._slotBySession = new Map<string, number>();
+  }
+
+  /**
+   * v2.1.8: セッションに割り当てるパーティション名を返す。
+   * 空いている永続スロットがあれば persist:form-slot-<n> を使い回し、
+   * 全スロット使用中 (4 セッション以上同時) は従来の使い捨てへフォールバック。
+   */
+  _acquirePartition(sessionId: string): string {
+    const used = new Set(this._slotBySession.values());
+    for (let slot = 0; slot < PERSISTENT_SLOT_COUNT; slot += 1) {
+      if (!used.has(slot)) {
+        this._slotBySession.set(sessionId, slot);
+        return `persist:form-slot-${slot}`;
+      }
+    }
+    return `form-session-${sessionId}`;
   }
 
   // ── Session lifecycle ────────────────────────────────────────────────
@@ -433,7 +459,7 @@ class FormSessionManager {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
-        partition: `form-session-${id}`,
+        partition: this._acquirePartition(id),
       },
     });
     this._installRequestGuards(view, id);
@@ -556,6 +582,7 @@ class FormSessionManager {
     try { session.view.webContents.close(); } catch (_) {}
 
     this._sessions.delete(sessionId);
+    this._slotBySession.delete(sessionId);
     if (this._activeSessionId === sessionId) this._activeSessionId = null;
   }
 
