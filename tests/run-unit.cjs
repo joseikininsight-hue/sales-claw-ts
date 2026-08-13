@@ -16,21 +16,37 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const TESTS_DIR = __dirname;
+const REPO_ROOT = path.resolve(TESTS_DIR, '..');
 
-// ── Quarantine: stale tests that assert OLD behavior ────────────────────
-// These fail because the product behavior they pin has since evolved (guard
-//   order, prompt wording, flush/debounce semantics, build-output paths) —
-//   NOT because of a product regression (the underlying flows were exercised
-//   and verified in v2.1.4). They are quarantined here so the suite is green
-//   and the drift is visible. Each must be FIXED and removed from this list
-//   in the phase noted. Do NOT add new tests here to "make CI pass".
-const QUARANTINE = new Map([
-  ['action-logger.test.cjs', 'getAllLogs() flush/debounce behavior changed; test expects sync disk read (fix in P4 data-layer)'],
-  ['approval-artifacts.test.cjs', 'stale-screenshot acceptance rule changed (fix when approval-artifacts is touched, P3e/P6)'],
-  ['awaiting-approval-guard.test.cjs', 'prompt wording moved out of dashboard-server; assertion targets wrong source (fix in P3a prompt-builder extraction)'],
-  ['performance-guards.test.cjs', 'references removed .cjs build outputs (dist-ts/.../*.cjs, electron-main.js); path layout changed (fix in P6)'],
-  ['simple-api-p2.test.cjs', '422 guard order changed (screenshot-size now precedes site_analysis); fixtures use 5-byte screenshots (fix in P3e/P5 zod migration)'],
-]);
+function latestSourceMtime(target) {
+  if (!fs.existsSync(target)) return 0;
+  const stat = fs.statSync(target);
+  if (stat.isFile()) return stat.mtimeMs;
+  let latest = 0;
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    latest = Math.max(latest, latestSourceMtime(path.join(target, entry.name)));
+  }
+  return latest;
+}
+
+function assertFreshBuild() {
+  const stampPath = path.join(REPO_ROOT, 'dist-ts', '.build-stamp.json');
+  if (!fs.existsSync(stampPath)) {
+    throw new Error('dist-ts build stamp is missing; run npm run build before unit tests');
+  }
+  const stamp = JSON.parse(fs.readFileSync(stampPath, 'utf8'));
+  const sourceMax = Math.max(
+    latestSourceMtime(path.join(REPO_ROOT, 'src')),
+    latestSourceMtime(path.join(REPO_ROOT, 'electron-main.ts')),
+  );
+  if (!Number.isFinite(stamp.sourceMaxMtimeMs) || stamp.sourceMaxMtimeMs < sourceMax) {
+    throw new Error('dist-ts is older than src; run npm run build before unit tests');
+  }
+}
+
+// Quarantine is intentionally empty. A stale test must be repaired or moved to
+// E2E_SPECIAL with a concrete runtime requirement; it must not be hidden here.
+const QUARANTINE = new Map();
 
 // ── E2E / special: need the Electron binary, mutate the real user home, or
 //    are benchmarks. Run via dedicated scripts, not the default unit pass.
@@ -56,6 +72,7 @@ function relName(full) {
 }
 
 function main() {
+  assertFreshBuild();
   const all = collectTests(TESTS_DIR).sort();
   const toRun = [];
   const skippedE2e = [];
@@ -71,11 +88,18 @@ function main() {
   console.log(`[run-unit] running ${toRun.length}, quarantined ${QUARANTINE.size}, e2e/special ${skippedE2e.length}`);
 
   const failures = [];
+  const runtimeSkipped = [];
   for (const full of toRun) {
     const rel = relName(full);
     const res = spawnSync(process.execPath, [full], { encoding: 'utf8', cwd: path.resolve(TESTS_DIR, '..') });
     if (res.status === 0) {
-      console.log(`  PASS  ${rel}`);
+      const output = String((res.stdout || '') + (res.stderr || ''));
+      if (/^\s*SKIP(?:PED)?(?:\s|:)/mi.test(output)) {
+        console.log(`  SKIP  ${rel}`);
+        runtimeSkipped.push(rel);
+      } else {
+        console.log(`  PASS  ${rel}`);
+      }
     } else {
       console.error(`  FAIL  ${rel} (exit ${res.status})`);
       const tail = String((res.stdout || '') + (res.stderr || '')).split(/\r?\n/).filter(Boolean).slice(-8);
@@ -93,13 +117,17 @@ function main() {
     console.log('[run-unit] e2e/special (run via npm run test:e2e):');
     skippedE2e.forEach((n) => console.log(`  - ${n}`));
   }
+  if (runtimeSkipped.length) {
+    console.log('[run-unit] runtime-skipped:');
+    runtimeSkipped.forEach((n) => console.log(`  - ${n}`));
+  }
 
   console.log('');
   if (failures.length) {
     console.error(`[run-unit] FAILED: ${failures.length}/${toRun.length} test files failed`);
     process.exit(1);
   }
-  console.log(`[run-unit] OK: all ${toRun.length} unit test files passed`);
+  console.log(`[run-unit] OK: ${toRun.length - runtimeSkipped.length} passed, ${runtimeSkipped.length} skipped`);
 }
 
 main();

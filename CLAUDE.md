@@ -194,9 +194,11 @@ For each company that goes through Phase B:
 3. **finalize** — after `browser_take_screenshot` saves
    `screenshots/ss-{No}-input.png`, log `awaiting_approval` via
    `curl POST /api/log-action`.
-4. **on approve** — `POST /api/ai-submit-final` queues a new prompt; the
-   CLI re-uses the **same sessionId** to click submit, take
-   `ss-{No}-sent.png`, and log `submitted`.
+4. **on approve** — `POST /api/ai-submit-final` queues a new prompt. Since
+   finalized sessions may already have been destroyed, the CLI opens the
+   known `formUrl` in a new session, re-enters the exact approved
+   `sentMessage`, clicks submit, takes `ss-{No}-sent.png`, and logs
+   `submitted`.
 5. **destroy** — the session is destroyed when the company is finalized
    (sent / skipped / errored) or on `before-quit`. There is **no need to
    close "tabs"** the way the old Playwright contract demanded — there

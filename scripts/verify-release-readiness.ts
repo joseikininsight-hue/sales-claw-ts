@@ -24,9 +24,9 @@ const REQUIRED_RUNTIME_DEPENDENCIES = [
   'universalify',
 ];
 
-const failures = [];
-const warnings = [];
-const passes = [];
+const failures: string[] = [];
+const warnings: string[] = [];
+const passes: string[] = [];
 
 function rel(filePath) {
   return path.relative(ROOT, filePath).replace(/\\/g, '/');
@@ -37,7 +37,7 @@ function readText(relativePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function readJson(relativePath) {
+function readJson(relativePath): any {
   return JSON.parse(readText(relativePath));
 }
 
@@ -69,8 +69,8 @@ function requireContains(name, text, needle, message) {
   }
 }
 
-function parseFlatYaml(text) {
-  const result = {};
+function parseFlatYaml(text): Record<string, string> {
+  const result: Record<string, string> = {};
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith('- ')) continue;
@@ -83,7 +83,7 @@ function parseFlatYaml(text) {
 
 function parseLatestYaml(text) {
   const info = parseFlatYaml(text);
-  const urls = [];
+  const urls: string[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const match = rawLine.match(/^\s*-\s+url:\s*(.+)\s*$/) || rawLine.match(/^\s+url:\s*(.+)\s*$/);
     if (match) urls.push(match[1].trim().replace(/^['"]|['"]$/g, ''));

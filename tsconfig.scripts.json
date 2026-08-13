@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"],
+    "strict": false,
+    "noImplicitReturns": false
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "electron-main.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-released",
+    "dist-ts",
+    "out",
+    "tests",
+    "assets",
+    "data",
+    "docs",
+    "**/*.test.ts",
+    "**/*.test.cjs"
+  ]
+}

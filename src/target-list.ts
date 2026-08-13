@@ -754,28 +754,6 @@ function repairImportedTargetListIfNeeded() {
     candidateCount: bestCandidate.companyCount,
   };
   return importRepairCache.result;
-
-  const repairedTargetPath = getCanonicalImportFile(path.basename(bestCandidate.sourceFilePath));
-  const canonicalRows = buildCanonicalWorkbookRows(bestCandidate.normalizedCompanies, DEFAULT_COLUMN_MAPPING);
-  const repairedBundle = createEmptyWorkbookBundle(repairedTargetPath, 'xlsx', DEFAULT_COLUMN_MAPPING, 'Targets');
-  saveRows(repairedBundle, canonicalRows);
-  settings.updateSection('targetList', {
-    filePath: toRelativeProjectPath(repairedTargetPath),
-    fileType: 'xlsx',
-    sheetIndex: 0,
-    columnMapping: DEFAULT_COLUMN_MAPPING,
-  });
-
-  importRepairCache.result = {
-    ok: true,
-    repaired: true,
-    previousPath: resolvedTargetPath,
-    repairedPath: repairedTargetPath,
-    previousCount: currentCount,
-    repairedCount: bestCandidate.companyCount,
-    sourceFilePath: bestCandidate.sourceFilePath,
-  };
-  return importRepairCache.result;
 }
 
 function buildCanonicalWorkbookRows(companies, columnMapping) {

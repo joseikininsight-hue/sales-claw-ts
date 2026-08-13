@@ -111,7 +111,7 @@ export default [
       'eqeqeq': ['error', 'always', { null: 'ignore' }],
       'no-implicit-globals': 'error',
       'no-prototype-builtins': 'off',      // CJS でよく出る、誤検知
-      'no-empty': ['warn', { allowEmptyCatch: true }],
+      'no-empty': ['warn', { allowEmptyCatch: false }],
       'no-control-regex': 'off',           // sanitize で使用
       'no-misleading-character-class': 'warn',
       'no-useless-escape': 'warn',
@@ -147,7 +147,7 @@ export default [
   // 詳細ロードマップ: docs/typescript-migration-roadmap.md
   // ────────────────────────────────────────────────
   {
-    files: ['src/**/*.ts', 'electron-main.ts', 'tests/**/*.ts'],
+    files: ['src/**/*.ts', 'scripts/**/*.ts', 'electron-main.ts', 'tests/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -242,7 +242,7 @@ export default [
       'no-unused-vars': 'off',
       'eqeqeq': ['error', 'always', { null: 'ignore' }],
       'no-prototype-builtins': 'off',
-      'no-empty': ['warn', { allowEmptyCatch: true }],
+      'no-empty': ['warn', { allowEmptyCatch: false }],
       'no-control-regex': 'off',
       'no-useless-escape': 'warn',
       'no-irregular-whitespace': ['warn', { skipStrings: true, skipComments: true, skipRegExps: true, skipTemplates: true }],

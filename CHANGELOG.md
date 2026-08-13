@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.1.5 - 2026-06-13 — リファクタリング安全網と監査契約の復旧
+
+### 安全網
+
+- unit test を glob 自動発見へ統一し、quarantine 5 件を修正して通常実行へ復帰。
+- c8 coverage、負債ラチェット、scripts 型検査、knip / ts-prune / depcheck /
+  madge / jscpd、Windows non-blocking E2E を CI に追加。
+- プロンプト 8 分岐、正規化済み dashboard HTML、message-builder、
+  approve / ai-submit-final の characterization test を追加。
+- `dist-ts` build stamp により、古いコンパイル結果を unit test が黙って使う経路を遮断。
+
+### 修正
+
+- ABSOLUTE RULE とずれていた `sentMessage` 下限 10 文字を **30 文字**へ復元。
+- `removeCompanyLogs()` が同一ファイルロックを再取得する自己デッドロックを修正。
+- `target-list.ts` に残っていた到達不能な旧 auto-repair 実装を削除。
+- `/api/ai-submit-final` の正本契約を現行実装へ同期。破棄済み session は
+  `formUrl` から再生成し、承認済み `sentMessage` をそのまま再入力して送信する。
+
+### 検証
+
+- unit: 74 files、quarantine 0。
+- Playwright dashboard E2E: 17/17。
+- 実 Electron + WebContentsView + internal MCP E2E: pass。
+- c8 line coverage baseline: 69.24%。
+
+---
+
 ## 2.1.4 - 2026-06-10 — フォーム一発入力 (送信ボタン検出 + 入力後検証) とタブ後始末強化
 
 ### ユーザー報告 (2026-06-10 v2.1.3 実機)

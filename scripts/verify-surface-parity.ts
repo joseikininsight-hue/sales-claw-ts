@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const failures = [];
-const passes = [];
+const failures: string[] = [];
+const passes: string[] = [];
 
 function rel(filePath) {
   return path.relative(ROOT, filePath).replace(/\\/g, '/');

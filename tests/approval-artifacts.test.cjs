@@ -39,11 +39,15 @@ describe('approval artifact freshness', () => {
     });
     assert.equal(staleStatus.exists.input, false);
 
-    touch(screenshotPath, now);
-    const freshStatus = artifacts.getExpectedApprovalArtifacts(companyNo, {
-      logs: [formFillLog, awaitingLog],
-      formFillLog,
-      awaitingLog,
+    const freshCompanyNo = 778;
+    const freshScreenshotPath = path.join(runtimeRoot, 'screenshots', 'ss-' + freshCompanyNo + '-input.png');
+    touch(freshScreenshotPath, now);
+    const freshFormFillLog = { ...formFillLog, companyNo: freshCompanyNo };
+    const freshAwaitingLog = { ...awaitingLog, companyNo: freshCompanyNo };
+    const freshStatus = artifacts.getExpectedApprovalArtifacts(freshCompanyNo, {
+      logs: [freshFormFillLog, freshAwaitingLog],
+      formFillLog: freshFormFillLog,
+      awaitingLog: freshAwaitingLog,
     });
     assert.equal(freshStatus.exists.input, true);
     assert.equal(freshStatus.readyForManualApproval, true);

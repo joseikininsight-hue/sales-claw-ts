@@ -45,6 +45,9 @@ jobs:
         # P0-5: 現在 exit 0 で安定しているためブロッキング化。リリースゲート
         #   (verify-release-readiness.ts 等) 自身の型崩れを CI で検出する。
 
+      - name: TypeScript scripts check
+        run: npm run typecheck:scripts
+
       - name: Lint
         run: npm run lint
         continue-on-error: true  # 段階移行中。warning のみで fail させない
@@ -79,6 +82,14 @@ jobs:
         run: npm run analyze:dead
         continue-on-error: true
 
+      - name: Unused exports (ts-prune)
+        run: npm run analyze:exports
+        continue-on-error: true
+
+      - name: Dependency usage (depcheck)
+        run: npm run analyze:deps
+        continue-on-error: true
+
       - name: Circular deps (madge)
         run: npm run analyze:circular
         continue-on-error: true
@@ -86,3 +97,39 @@ jobs:
       - name: Duplication (jscpd)
         run: npm run analyze:dup
         continue-on-error: true
+
+      - name: Unit coverage
+        run: npm run test:coverage
+
+      - name: Debt ratchet
+        run: npm run debt:check
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage/
+          retention-days: 14
+
+  e2e:
+    name: E2E (Windows, non-blocking)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Run dashboard and Electron E2E
+        run: npm run test:e2e:ci

@@ -48,7 +48,7 @@ describe('awaiting_approval guard', () => {
 
   it('managed AI prompts explicitly guard awaiting approval and CAPTCHA handling', () => {
     const source = fs.readFileSync(path.join(ROOT, 'src', 'dashboard-server.ts'), 'utf8');
-    assert.match(source, /awaiting_approval はフォーム入力済み \+ ss-\{No\}-input\.png 作成済みの場合だけ許可/);
+    assert.match(source, /awaiting_approval はフォーム入力済み \+ ss-\{No\}-input\.png 作成済み \+ sentMessage 付きの場合だけ許可/);
     // 1.2.91+: CAPTCHA → fill+await 仕様 (旧 error 仕様から変更)
     assert.match(source, /CAPTCHA を見つけたら停止せず/);
     assert.match(source, /awaiting_approval \(人間が CAPTCHA 解いて送信\)/);

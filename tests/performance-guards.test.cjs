@@ -16,7 +16,7 @@ function readProjectFile(...parts) {
 
 describe('dashboard performance guards', () => {
   it('does not auto-load P1 operations APIs when the operations panel mounts', () => {
-    const renderAnalyticsScript = require('../dist-ts/src/ui/client-scripts/dashboard-analytics.cjs');
+    const renderAnalyticsScript = require('../dist-ts/src/ui/client-scripts/dashboard-analytics.js');
     const script = renderAnalyticsScript();
     const start = script.indexOf('function ensureOpsQuickPanel()');
     const end = script.indexOf('window.ensureOpsQuickPanel = ensureOpsQuickPanel;', start);
@@ -39,7 +39,7 @@ describe('dashboard performance guards', () => {
 
   it('guards the AI launch modal from repeated clicks', () => {
     const serverSource = readProjectFile('src', 'dashboard-server.ts');
-    const guardSource = readProjectFile('src', 'ui', 'client-scripts', 'launch-crash-guard.cjs');
+    const guardSource = readProjectFile('src', 'ui', 'client-scripts', 'launch-crash-guard.ts');
     const routeSource = readProjectFile('src', 'routes', 'ai-runtime-api.ts');
     assert.match(serverSource, /renderLaunchCrashGuardScript\(\)/, 'launch crash guard should be injected into dashboard HTML');
     assert.match(guardSource, /wrapGlobal\('confirmLaunch'/, 'confirmLaunch should be wrapped');
@@ -62,7 +62,7 @@ describe('dashboard performance guards', () => {
   it('does not leave AI launch locks stuck after stop or timeout', () => {
     const serverSource = readProjectFile('src', 'dashboard-server.ts');
     const routeSource = readProjectFile('src', 'routes', 'ai-runtime-api.ts');
-    const terminalSource = readProjectFile('src', 'ui', 'client-scripts', 'cli-terminal.cjs');
+    const terminalSource = readProjectFile('src', 'ui', 'client-scripts', 'cli-terminal.ts');
     assert.match(serverSource, /MANAGED_AI_LAUNCH_LOCK_STALE_MS/, 'server should expire stale launch locks');
     assert.match(serverSource, /function cancelManagedAiLaunch/, 'server should expose launch cancellation');
     assert.match(serverSource, /assertManagedAiLaunchActive\(launchToken, 'after-mcp-setup'\)/, 'cancelled launches must not spawn after MCP setup returns');
@@ -73,8 +73,8 @@ describe('dashboard performance guards', () => {
     // server 側 stale lock と client 側 abort timeout は揃える。
     // MCP playwright add (最大 30s) + version probe (5s) + 他 で 50s 超
     // 行く場合があるので 45s では client が abort してしまっていた。
-    assert.match(terminalSource, /LAUNCH_REQUEST_TIMEOUT_MS = 90000/, 'client should time out stuck launch requests');
-    assert.match(serverSource, /MANAGED_AI_LAUNCH_LOCK_STALE_MS = 90000/, 'server stale-lock should match the client launch timeout');
+    assert.match(terminalSource, /LAUNCH_REQUEST_TIMEOUT_MS = 200000/, 'client should time out stuck launch requests');
+    assert.match(serverSource, /MANAGED_AI_LAUNCH_LOCK_STALE_MS = 200000/, 'server stale-lock should match the client launch timeout');
     assert.match(serverSource, /_launchSpawnedChildren/, 'cancelManagedAiLaunch must kill in-flight CLI children');
   });
 
@@ -98,7 +98,7 @@ describe('dashboard performance guards', () => {
   });
 
   it('keeps desktop auto-update recoverable after a missed startup check', () => {
-    const mainSource = readProjectFile('electron-main.js');
+    const mainSource = readProjectFile('electron-main.ts');
     const serverSource = readProjectFile('src', 'dashboard-server.ts');
     const simpleApiSource = readProjectFile('src', 'routes', 'simple-api.ts');
     assert.match(mainSource, /check-update\.flag/, 'Electron should watch a manual update-check flag');

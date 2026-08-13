@@ -1,0 +1,11 @@
+{
+  "srcFiles": 130,
+  "srcLines": 54309,
+  "dashboardServerLines": 12509,
+  "explicitAny": 948,
+  "versionComments": 327,
+  "emptyCatch": 225,
+  "todoFixme": 1,
+  "ciTestFiles": 73,
+  "coverageLinesPct": 69.24
+}

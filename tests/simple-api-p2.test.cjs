@@ -134,6 +134,12 @@ function makeCtx(overrides = {}) {
   }, overrides);
 }
 
+function writeValidScreenshot(companyNo) {
+  const ssDir = path.join(TMP_ROOT, 'screenshots');
+  fs.mkdirSync(ssDir, { recursive: true });
+  fs.writeFileSync(path.join(ssDir, `ss-${companyNo}-input.png`), Buffer.alloc(2048, 0x89));
+}
+
 async function callDispatch(dispatch, req, res, pathname) {
   const reqUrl = new URL(req.url, 'http://127.0.0.1');
   const handled = await dispatch(req, res, pathname, reqUrl);
@@ -191,10 +197,62 @@ describe('simple-api dispatch — /api/log-action', () => {
     assert.match(res.bodyJson().error, /Allowed/);
   });
 
+  it('reports screenshot absence before sentMessage and prerequisite violations', async () => {
+    const dispatch = simpleApiFactory(makeCtx());
+    const req = makeReq({
+      method: 'POST',
+      url: '/api/log-action',
+      body: { no: 96, action: 'awaiting_approval', name: '順序社', details: {} },
+    });
+    const res = makeRes();
+    await callDispatch(dispatch, req, res, '/api/log-action');
+    assert.equal(res.statusCode, 422);
+    assert.match(res.bodyJson().error, /Screenshot is required/);
+  });
+
+  it('reports missing sentMessage after a valid screenshot', async () => {
+    writeValidScreenshot(97);
+    const dispatch = simpleApiFactory(makeCtx());
+    const req = makeReq({
+      method: 'POST',
+      url: '/api/log-action',
+      body: {
+        no: 97,
+        action: 'awaiting_approval',
+        name: '本文欠落社',
+        details: { screenshot: 'ss-97-input.png' },
+      },
+    });
+    const res = makeRes();
+    await callDispatch(dispatch, req, res, '/api/log-action');
+    assert.equal(res.statusCode, 422);
+    assert.match(res.bodyJson().error, /details\.sentMessage is required/);
+  });
+
+  it('rejects sentMessage shorter than 30 characters', async () => {
+    writeValidScreenshot(98);
+    const dispatch = simpleApiFactory(makeCtx());
+    const req = makeReq({
+      method: 'POST',
+      url: '/api/log-action',
+      body: {
+        no: 98,
+        action: 'awaiting_approval',
+        name: '短文社',
+        details: {
+          sentMessage: '短すぎるお問い合わせ本文です。',
+          screenshot: 'ss-98-input.png',
+        },
+      },
+    });
+    const res = makeRes();
+    await callDispatch(dispatch, req, res, '/api/log-action');
+    assert.equal(res.statusCode, 422);
+    assert.match(res.bodyJson().error, /30 文字以上/);
+  });
+
   it('accepts valid awaiting_approval action', async () => {
-    const ssDir = path.join(TMP_ROOT, 'screenshots');
-    fs.mkdirSync(ssDir, { recursive: true });
-    fs.writeFileSync(path.join(ssDir, 'ss-99-input.png'), 'dummy');
+    writeValidScreenshot(99);
     const { logAction } = require('../dist-ts/src/action-logger');
     logAction(99, 'X社', 'site_analysis', JSON.stringify({
       companyName: 'X社',
@@ -212,25 +270,21 @@ describe('simple-api dispatch — /api/log-action', () => {
     assert.equal(res.bodyJson().no, 99);
   });
 
-  it('rejects awaiting_approval without sufficient site_analysis', async () => {
-    const ssDir = path.join(TMP_ROOT, 'screenshots');
-    fs.mkdirSync(ssDir, { recursive: true });
-    fs.writeFileSync(path.join(ssDir, 'ss-100-input.png'), 'dummy');
+  it('accepts awaiting_approval without site_analysis after form_fill and confirm_reached', async () => {
+    writeValidScreenshot(100);
     const { logAction } = require('../dist-ts/src/action-logger');
     logAction(100, 'Y社', 'form_fill', '入力完了');
     logAction(100, 'Y社', 'confirm_reached', 'スクショ撮影完了');
     const dispatch = simpleApiFactory(makeCtx());
-    const req = makeReq({ method: 'POST', url: '/api/log-action', body: { no: 100, action: 'awaiting_approval', name: 'Y社', details: { sentMessage: 'テストメッセージです。お世話になります。株式会社サンプルと申します。', screenshot: 'ss-100-input.png' } } });
+    const req = makeReq({ method: 'POST', url: '/api/log-action', body: { no: 100, action: 'awaiting_approval', name: 'Y社', details: { sentMessage: 'テストメッセージです。お世話になります。テスト株式会社と申します。貴社のWeb受託開発の取り組みを拝見し、技術面で情報交換できればと思いご連絡しました。', screenshot: 'ss-100-input.png' } } });
     const res = makeRes();
     await callDispatch(dispatch, req, res, '/api/log-action');
-    assert.equal(res.statusCode, 422);
-    assert.match(res.bodyJson().error, /site_analysis/);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.bodyJson().ok, true);
   });
 
   it('rejects awaiting_approval when sentMessage conflicts with configured facts', async () => {
-    const ssDir = path.join(TMP_ROOT, 'screenshots');
-    fs.mkdirSync(ssDir, { recursive: true });
-    fs.writeFileSync(path.join(ssDir, 'ss-101-input.png'), 'dummy');
+    writeValidScreenshot(101);
     const settingsManager = require('../dist-ts/src/settings-manager');
     const current = structuredClone(settingsManager.load());
     current.companyProfile.employeeCount = '120名';

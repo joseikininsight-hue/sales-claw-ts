@@ -62,6 +62,7 @@ data/*.csv
 .playwright-mcp/
 
 # Test artifacts (generated)
+coverage/
 playwright-report/
 playwright-results.xml
 test-results/
@@ -149,4 +150,3 @@ src/**/*.js.map
 *.tsbuildinfo
 dist-ts/
 out/
-

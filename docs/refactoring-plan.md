@@ -2,6 +2,28 @@
 
 **版**: 2.0（レビュー反映済み・最終） / 対象コミット: `2860a60` (v2.1.4) / 前提: 10 並列監査の findings（god-module / dead-code / duplication / type-safety / architecture / tests / cruft / build-deps / data-layer / consistency）+ 計画レビューの是正事項（A-1〜A-7 / B-1〜B-7 / C-1〜C-5）を全件取込
 
+## 進捗再監査（2026-06-13 / `refactor/phase-0`）
+
+**厳格判定**: 本計画全体は未完了。P0 は実装ゲートをほぼ満たしたが、E2E の 2 週間安定観測と blocking 昇格は日数経過が必要なため「条件付き完了」。P1/P2 は一部完了、P3〜P6 は未完了。
+
+| フェーズ | 判定 | 2026-06-13 時点の事実 |
+|---|---|---|
+| P0 | **条件付き完了** | unit 51 手書き列挙 → glob 自動発見 **74 files / quarantine 0**。c8 lines **69.24%** を CI artifact 化しラチェット追加。Playwright **17/17** と実 Electron/WebContentsView E2E をローカル通過。Windows non-blocking E2E job、scripts 型検査、knip/ts-prune/depcheck/madge/jscpd、dist-ts build stamp、プロンプト 8 分岐 + HTML + message-builder golden、approve/ai-submit-final unit を追加。残件は non-blocking E2E の 2 週間観測後の blocking 昇格のみ |
+| P1 | **一部完了** | 確定 dead code / dead settings / stale path を削除、CLAUDE.md 同期、`target-list.ts` の到達不能 auto-repair ブロックを追加削除。歴史コメント整理、依存判断キュー全件、タブ契約後続は未完了 |
+| P2 | **一部完了** | `atomicWriteJson` 統一、pierce-resolve 単一化、server-side `escapeHtml` 集約の一部は完了。`net-guard.ts`、`llm-cli-runner.ts`、locale-pack/http-fetch 統合などは未完了 |
+| P3 | **未完了** | `dashboard-server.ts` は **12,509 行**で、目標 3,000 行以下に未到達 |
+| P4 | **未完了** | JSONL dual-write、store 層、lost-update/retention/schema migration は未実施 |
+| P5 | **未完了** | 明示的 any **948**。scripts 用型検査と helper 配線は開始したが、noImplicitAny flip / zod shadow→enforce は未実施 |
+| P6 | **未完了** | 空 catch **225**。ESLint `no-empty` は warn 可視化済みだが 0 件化、error envelope/i18n/定数/配布物軽量化は未実施 |
+
+### 今回の厳格監査で修正した見せかけの完了
+
+- 5 本の陳腐化テストを quarantine して green に見せていた状態を廃止し、全件を現行契約へ修正。
+- `sentMessage` 下限が正本の 30 文字から実装だけ 10 文字へ緩和されていたため、**30 文字 422 ガードへ復元**し複合違反順序を固定。
+- `removeCompanyLogs()` がロック保持中に `flushNow()` で同じロックを再取得する自己デッドロックを修正。
+- `CLAUDE.md` の「同一 sessionId 再利用」は現行 v2.0.96+ 実装と不一致だったため、`formUrl` から新規 session を作り承認済み `sentMessage` を再入力する契約へ訂正。
+- scripts/*.ts を ESLint が JS parser で解析していた設定不備と、`target-list.ts` の到達不能コードを修正。lint error は **8 → 0**（warning は段階負債として残存）。
+
 ---
 
 ## エグゼクティブサマリ
@@ -95,7 +117,7 @@
 | ③ buildPage HTML ハッシュ | lang=ja/en × 代表設定。**ハッシュ前正規化を仕様として実装**: セッショントークン（L10610 / L10641 `ensureDashboardSessionToken()`）、`APP_VERSION`（L7565 / L11672 — 各リリースで version bump する方針のため必須）、`process.versions.electron` 分岐（L10643 等）、絶対パスをプレースホルダ置換。**正規化関数自体のユニットテスト**（token を変えてもハッシュ不変 / 実コンテンツを変えるとハッシュ変化、の双方向検証）を同梱 |
 | ④ message-builder snapshot | `message-builder.ts`（795 行・純関数・テスト 0） |
 | ⑤ /api/log-action 422 ガード | 単独違反 4 ケース（sentMessage 欠落 / 30 字未満 / プレースホルダ / screenshot 不在）**+ 複合違反時にどのガードが先に発火するかの順序ケース**（レビュー A-4。これが無いと 5-3 の zod 化で順序保存を証明できない） |
-| ⑥ approve / ai-submit-final | **新規（レビュー A-3。tests/ に approve / submit を名前に含むテストは 0 本 — 実機確認済み）**: `/api/approve` の判定ロジック、`/api/ai-submit-final` のプロンプト enqueue と「同一 sessionId 再利用」契約（CLAUDE.md セッションライフサイクル契約 4 項）のユニットレベル固定。E2E ジャーニー（0-6）だけでは flaky 化した瞬間に 3b/3d/4-11 がこの収益クリティカル経路を無防備で触ることになる |
+| ⑥ approve / ai-submit-final | **新規（レビュー A-3。tests/ に approve / submit を名前に含むテストは 0 本 — 実機確認済み）**: `/api/approve` の判定ロジック、`/api/ai-submit-final` のプロンプト enqueue と「破棄済み session の `formUrl` から新規 session を作り、承認済み `sentMessage` を再入力する」契約（v2.0.96+）をユニットレベル固定。E2E ジャーニー（0-6）だけでは flaky 化した瞬間に 3b/3d/4-11 がこの収益クリティカル経路を無防備で触ることになる |
 | ⑦ SSE /events | 「接続 → イベント 1 件受信」ミニテスト（0-6 と分担。3b の移設前提、レビュー B-7） |
 | ⑧ recovery スナップショット形状 | `snapshotManagedAiBatchesForRecovery`（L1159）の **JSON 形状 golden**（レビュー B-1。クラッシュ復旧互換の差分検知器が現状存在しない。3d の前提テスト） |
 
@@ -408,7 +430,7 @@ envelope/エラー処理/ロギング/i18n/定数/命名/配布物の一貫性�
 | 3d（ManagedAiBatchEngine）が最高リスク: 35 グローバルがリクエストハンドラ・poller タイマ・recovery コールバックから読み書きされる | **Step 0（状態の単一オブジェクト集約、grep 検証可能）→ Step 1（ファイル内クラス化、シングルトン初期化位置・タイミング不変）→ 1 リリース実運用 → Step 2（移動、ctx キー名不変）**の 3 段。前提テスト（state-machine + recovery API + **recovery スナップショット JSON 形状 golden**）を事前に green。クラッシュ復旧の手動シナリオをリリースチェックリスト化 |
 | golden の形骸化（トークン・バージョン・electron 分岐による非決定出力で初回リリースから red） | **ハッシュ前正規化を 0-9 の仕様として実装し、正規化関数自体をテスト**（L10610/L10641 token、L7565/L11672 APP_VERSION、L10643 electron 分岐、絶対パス）。プロンプトは固定 env + パス正規化 |
 | auto-send フローの無防備（autoSendSafe 分岐を 2-5/3a/3d 全てが通過するのに既定 OFF 側が固定されない） | 0-9 ① のマトリクスを **autoSendSafe×{true,false} × tabs×{1,3} × mode×{internal,playwright} = 8 パターン**と明示 |
-| approve→submit 経路が E2E 1 本のみで、flaky 化した瞬間に 3b/3d/4-11 が無防備で触る | 0-9 ⑥ で `/api/approve` 判定 + `/api/ai-submit-final` enqueue + 同一 sessionId 再利用契約を**ユニットレベル**でも固定 |
+| approve→submit 経路が E2E 1 本のみで、flaky 化した瞬間に 3b/3d/4-11 が無防備で触る | 0-9 ⑥ で `/api/approve` 判定 + `/api/ai-submit-final` enqueue + 新規 session での承認済み本文再入力契約を**ユニットレベル**でも固定 |
 | E2E CI が「赤いまま無視される CI」になる | non-blocking 2 週間 → flaky 隔離 → blocking 昇格の段階導入（0-6） |
 | churn 衝突: dashboard-server.ts は 6 ヶ月で 70 回変更される現役機能開発の主戦場 | 各抽出 PR を 1-3 日で閉じる粒度に分割。長期ブランチ禁止。**dashboard-server の歴史コメント整理 166 件は各抽出 PR に同乗**させ三つ巴 conflict を回避（Phase 1 では触らない）。機能開発と同週に同領域を触らないよう着手前に調整 |
 | ツールの誤検知に基づく誤削除（knip 生出力の ~70% が偽陽性、runtime require / spawn 契約が静的に見えない） | 削除は「監査で検証済みのリスト（tmp/export-xref.tsv 等）」のみ。runtime 契約（`require('./dist-ts/src/company-analyzer')` 等 CLAUDE.md 指示の動的経路）を knip.json entry に明示してから判断。**Phase 1 の完了基準は knip ではなく検証済みリスト消化 100%** |

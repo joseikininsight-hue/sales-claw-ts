@@ -1,0 +1,15 @@
+{
+  "prompts": {
+    "internal-tabs1-autofalse": "e1dd39071ed89c953c195e33f5cf20f3e6a7e88f216560647462ea6023ba81e3",
+    "internal-tabs1-autotrue": "098b80b1c78591f15c12265772bdc2729c4078bbc85b37df05d258f12a21cd3d",
+    "internal-tabs3-autofalse": "ec8ee8e50a4acaf9afb13e83768ddf39d294d976094947fda1856c0e581fc67a",
+    "internal-tabs3-autotrue": "48426bc49ed6affa8f26db6d0438b84324a02b2b2f09a1c3e1eff39082be1591",
+    "playwright-tabs1-autofalse": "d6700fdf3478e17589aac195602f1557498daa4f1a125b52e76e13c09eae1dba",
+    "playwright-tabs1-autotrue": "5c4831e12f3aa7923f6510ff7104ea9552f4ed7eaa23c71e2c9e3b0052ca1b7b",
+    "playwright-tabs3-autofalse": "7f08c7b77df5edf11114d16a06d7ecde1d937f846ce67a2b9c7be2fa0619a309",
+    "playwright-tabs3-autotrue": "49f9c9cd9254b817fbb40e4a4e02e568c6ccf7902cc6ce27054d251274fd3168"
+  },
+  "page": "3464fa36f73b2fc82b7d45c1b0b70bac7f0f29d27ec980f78b47314e0b860696",
+  "messagePrompt": "b28c94b2195c8ed259f0b415aaee3f39b0b2920a4537611499fa044956917a21",
+  "messageFallback": "243c5f05415931ede40ea1d3fee50d68c13f9a6d2d87193a427d317dac027ef2"
+}

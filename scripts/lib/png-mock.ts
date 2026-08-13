@@ -53,7 +53,13 @@ function rawRgbToPng(raw, width, height) {
   ]);
 }
 
-function makeFormMockPng(opts = {}) {
+interface FormMockPngOptions {
+  width?: number;
+  height?: number;
+  accent?: number[];
+}
+
+function makeFormMockPng(opts: FormMockPngOptions = {}) {
   const width  = opts.width  || 1200;
   const height = opts.height || 720;
   const accent = opts.accent || [37, 99, 235]; // blue

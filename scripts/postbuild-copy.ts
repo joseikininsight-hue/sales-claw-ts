@@ -80,4 +80,28 @@ if (fs.existsSync(CLIENT_SCRIPTS_DST)) {
 // 2) package.json を dist-ts/ にコピー (simple-api.ts が require する)
 copyFileIfNewer(path.join(ROOT, 'package.json'), path.join(DIST_TS, 'package.json'));
 
+// 3) Tests that import dist-ts must reject stale output instead of silently
+// exercising an older build.
+const sourceRoots = [
+  path.join(ROOT, 'src'),
+  path.join(ROOT, 'electron-main.ts'),
+];
+function collectSourceMtime(target) {
+  if (!fs.existsSync(target)) return 0;
+  const stat = fs.statSync(target);
+  if (stat.isFile()) return stat.mtimeMs;
+  let latest = 0;
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist-ts') continue;
+    latest = Math.max(latest, collectSourceMtime(path.join(target, entry.name)));
+  }
+  return latest;
+}
+const buildStamp = {
+  builtAt: new Date().toISOString(),
+  sourceMaxMtimeMs: Math.max(...sourceRoots.map(collectSourceMtime)),
+  version: JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version,
+};
+fs.writeFileSync(path.join(DIST_TS, '.build-stamp.json'), JSON.stringify(buildStamp, null, 2) + '\n', 'utf8');
+
 console.log(`[postbuild-copy] copied=${copied} skipped=${skipped} removed_stale_cjs=${removed}`);

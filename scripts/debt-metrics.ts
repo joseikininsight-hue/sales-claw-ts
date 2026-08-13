@@ -26,6 +26,7 @@ interface Metrics {
   emptyCatch: number;
   todoFixme: number;
   ciTestFiles: number;
+  coverageLinesPct: number | null;
 }
 
 function collectTsFiles(dir: string): string[] {
@@ -76,8 +77,11 @@ function measure(): Metrics {
   let ciTestFiles = 0;
   try {
     const runUnit = fs.readFileSync(path.join(REPO_ROOT, 'tests', 'run-unit.cjs'), 'utf8');
-    const quarantine = countMatches(runUnit.split('QUARANTINE')[1]?.split('E2E_SPECIAL')[0] || '', /\.test\.cjs'/g);
-    const e2e = countMatches(runUnit.split('E2E_SPECIAL')[1]?.split('function')[0] || '', /\.test\.cjs'/g);
+    const quarantineStart = runUnit.indexOf('const QUARANTINE');
+    const e2eStart = runUnit.indexOf('const E2E_SPECIAL');
+    const collectStart = runUnit.indexOf('function collectTests');
+    const quarantine = countMatches(runUnit.slice(quarantineStart, e2eStart), /\.test\.cjs'/g);
+    const e2e = countMatches(runUnit.slice(e2eStart, collectStart), /\.test\.cjs'/g);
     function walk(d: string): number {
       let n = 0;
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -92,6 +96,13 @@ function measure(): Metrics {
     ciTestFiles = total - quarantine - e2e;
   } catch { /* best-effort */ }
 
+  let coverageLinesPct: number | null = null;
+  try {
+    const summary = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'coverage', 'coverage-summary.json'), 'utf8'));
+    const pct = Number(summary?.total?.lines?.pct);
+    coverageLinesPct = Number.isFinite(pct) ? pct : null;
+  } catch { /* coverage has not been generated yet */ }
+
   return {
     srcFiles: files.length,
     srcLines,
@@ -101,11 +112,41 @@ function measure(): Metrics {
     emptyCatch,
     todoFixme,
     ciTestFiles,
+    coverageLinesPct,
   };
+}
+
+function checkBaseline(metrics: Metrics): void {
+  const baselinePath = path.join(REPO_ROOT, 'scripts', 'debt-baseline.json');
+  const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8')) as Metrics;
+  const failures: string[] = [];
+  const maxKeys: Array<keyof Metrics> = ['dashboardServerLines', 'explicitAny', 'versionComments', 'emptyCatch'];
+  for (const key of maxKeys) {
+    if (Number(metrics[key]) > Number(baseline[key])) {
+      failures.push(`${key}: ${metrics[key]} > baseline ${baseline[key]}`);
+    }
+  }
+  if (metrics.ciTestFiles < baseline.ciTestFiles) {
+    failures.push(`ciTestFiles: ${metrics.ciTestFiles} < baseline ${baseline.ciTestFiles}`);
+  }
+  if (
+    baseline.coverageLinesPct !== null
+    && (metrics.coverageLinesPct === null || metrics.coverageLinesPct < baseline.coverageLinesPct)
+  ) {
+    failures.push(`coverageLinesPct: ${metrics.coverageLinesPct} < baseline ${baseline.coverageLinesPct}`);
+  }
+  if (failures.length > 0) {
+    throw new Error('Debt ratchet failed:\n- ' + failures.join('\n- '));
+  }
 }
 
 function main(): void {
   const m = measure();
+  if (process.argv.includes('--check')) {
+    checkBaseline(m);
+    console.log('Debt ratchet passed.');
+    return;
+  }
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify(m, null, 2) + '\n');
     return;
@@ -119,6 +160,7 @@ function main(): void {
     ['空 catch ブロック', m.emptyCatch, 'P4/P6 で可視化'],
     ['TODO/FIXME/HACK/XXX', m.todoFixme, ''],
     ['CI 実行テストファイル数', m.ciTestFiles, '増加が望ましい'],
+    ['ラインカバレッジ (%)', m.coverageLinesPct ?? -1, '低下禁止'],
   ];
   const w = Math.max(...rows.map((r) => r[0].length));
   console.log('=== 技術的負債メトリクス (' + new Date().toISOString().slice(0, 10) + ') ===');

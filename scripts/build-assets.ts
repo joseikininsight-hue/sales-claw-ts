@@ -77,7 +77,7 @@ const FONT_SPECS = [
 function bundleFonts() {
   console.log('[1/4] Fonts (Inter / Noto Sans JP / JetBrains Mono)');
   ensureDir(FONTS_DIR);
-  const cssChunks = [];
+  const cssChunks: string[] = [];
   for (const spec of FONT_SPECS) {
     const pkgRoot = packageRoot(spec.pkg);
     const subFamilyDir = path.basename(pkgRoot); // @fontsource/inter → inter

@@ -158,14 +158,25 @@ function makeMessageDraft(c) {
 }
 
 // awaiting カードのスクリーンショット PNG を後で書き出すためのプラン (buildDemoActionLog で populate)
-const awaitingScreenshotPlan = [];
+const awaitingScreenshotPlan: Array<{
+  companyNo: number;
+  companyName: string;
+  type: string;
+  mtimeMs: number;
+}> = [];
 
 function buildDemoActionLog() {
   const now = Date.now();
-  const log = [];
+  const log: Array<{
+    timestamp: string;
+    companyNo: number;
+    companyName: string;
+    action: string;
+    details: string;
+  }> = [];
   const minute = 60 * 1000;
 
-  function pushSubmittedFlow(c, baseTs, suffix) {
+  function pushSubmittedFlow(c, baseTs, suffix = '') {
     log.push({ timestamp: new Date(baseTs - 12 * minute).toISOString(), companyNo: c.no, companyName: c.name, action: 'site_analysis', details: '{"areas":["' + c.type + '"],"gaps":["cloud","webapp"],"focus":["DX推進","パートナー募集"]}' });
     log.push({ timestamp: new Date(baseTs - 10 * minute).toISOString(), companyNo: c.no, companyName: c.name, action: 'message_draft', details: makeMessageDraft(c) });
     log.push({ timestamp: new Date(baseTs -  6 * minute).toISOString(), companyNo: c.no, companyName: c.name, action: 'form_fill', details: '入力完了 (会社名 / 担当者名 / メール / 電話 / 本文)' });
@@ -268,7 +279,7 @@ function buildDemoActionLog() {
 
 function buildDemoTargetsCsv() {
   const header = ['No.', 'Status', 'Company', 'Type', 'Website URL', 'Form URL', 'Notes', '', 'CAPTCHA', '', 'Progress'];
-  const rows = [header];
+  const rows: Array<Array<string | number>> = [header];
 
   for (const c of COMPANIES) {
     let progress = '';
@@ -333,7 +344,7 @@ function seedDemoData(targetDataDir) {
 
 function planAccentFromType(type) {
   // 業種ごとに色を変えてカードに彩りを加える
-  const map = {
+  const map: Record<string, number[]> = {
     '物流':       [37, 99, 235],
     'ヘルスケア': [16, 185, 129],
     'IT':         [59, 130, 246],
