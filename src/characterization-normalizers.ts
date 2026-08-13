@@ -32,6 +32,11 @@ export function normalizeCharacterizationText(value: unknown, options: Normalize
     // "Version 2.1.6" のような表記 (dashboard ヘッダの title 属性等)。
     // これを取り逃すとバージョンを上げるたびに page ハッシュが壊れる。
     .replace(/(\bVersion\s+)\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/gi, '$1<APP_VERSION>')
+    // <ABS_ROOT> に続くパスの区切りを '/' へ統一する。Windows と Linux で
+    // path.join の区切りが異なり (\\ vs /)、CI (ubuntu) と開発機 (win32) で
+    // golden hash が一致しなくなるのを防ぐ。JSON 文字列内のエスケープ済み
+    // \\\\ と生の \\ の両方を対象にする。
+    .replace(/<ABS_ROOT>(?:(?:\\\\|\\|\/)[A-Za-z0-9._\-]+)+/g, (m) => m.replace(/\\\\|\\/g, '/'))
     .replace(/(["']?version["']?\s*[:=]\s*["'])\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/g, '$1<APP_VERSION>')
     .replace(/(https?:\/\/(?:127\.0\.0\.1|localhost)):\d+/g, '$1:<PORT>')
     .replace(/(isElectron\s*[:=]\s*)(?:true|false)/g, '$1<ELECTRON>');

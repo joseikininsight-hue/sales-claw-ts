@@ -23,6 +23,12 @@ export function isSafeScreenshotRelative(relative: unknown): relative is string 
   if (typeof relative !== 'string' || relative.length === 0) return false;
   if (relative.includes('..')) return false;
   if (relative.includes('\0')) return false;
+  // バックスラッシュは全プラットフォームで拒否する。Windows では区切り文字
+  // (UNC \\server\share 含む)、Linux ではファイル名の一部として解釈が割れ、
+  // Linux だと `\\server\share\x.png` が baseDir 配下の 1 ファイル扱いで
+  // ガードを素通りしていた。正規のスクショ名 (ss-{No}-{suffix}.png) に
+  // バックスラッシュは現れないため一律拒否で問題ない。
+  if (relative.includes('\\')) return false;
   if (!relative.toLowerCase().endsWith('.png')) return false;
   return true;
 }

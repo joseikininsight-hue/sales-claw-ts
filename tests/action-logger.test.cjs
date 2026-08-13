@@ -241,9 +241,12 @@ function resetLogFile() {
   resetLogFile();
   actionLogger.logAction(1, 'CacheTest', 'a1', 'd'); // non-terminal → flush 待ちのまま
   // Manually write a new file (simulating another process)
+  // timestamp は意図的に過去へずらす: 同一 ms だと identity key
+  // (timestamp|no|action|details) が自プロセスの pending エントリと衝突し、
+  // 「同一エントリ」と判定されてマージ件数が環境の時計分解能で揺れる。
   const externalEntries = [
-    { timestamp: new Date().toISOString(), companyNo: 1, companyName: 'CacheTest', action: 'a1', details: 'd' },
-    { timestamp: new Date().toISOString(), companyNo: 2, companyName: 'External', action: 'submitted', details: 'ext' },
+    { timestamp: new Date(Date.now() - 60000).toISOString(), companyNo: 1, companyName: 'CacheTest', action: 'a1', details: 'd' },
+    { timestamp: new Date(Date.now() - 59000).toISOString(), companyNo: 2, companyName: 'External', action: 'submitted', details: 'ext' },
   ];
   // Need different mtime/size to bust cache
   fs.writeFileSync(logFile, JSON.stringify(externalEntries, null, 2), 'utf-8');
