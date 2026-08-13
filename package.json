@@ -1,6 +1,6 @@
 {
   "name": "sales-claw-ts",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "Automated B2B company outreach via web contact forms — TypeScript port (Electron main + dashboard server)",
   "main": "dist-ts/electron-main.js",
   "bin": {
