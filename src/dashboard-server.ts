@@ -12274,6 +12274,22 @@ const server = http.createServer(async (req, res) => {
 
   // --- AI Form Fill API endpoint (src/routes/ai-form-fill-api.cjs) ---
   // POST /api/ai-form-fill
+  // v2.1.7: formFill.phaseBParallel=true なら並列ヘッドレスへサーバ側で委譲する。
+  //   UI 側は従来どおり /api/ai-form-fill を叩くだけでよい (クライアント変更不要)。
+  //   旧 1.2.91 の「managed PTY 単一ブラウザ+タブ方式に統一」は Playwright 時代の
+  //   タブ管理契約が理由で、internal モード (partition 分離 WebContentsView) では
+  //   複数プロセスが同時にフォームセッションを持っても競合しない。
+  if (pathname === '/api/ai-form-fill') {
+    let phaseBParallel = false;
+    try {
+      const ff = settings.getSection('formFill');
+      phaseBParallel = !!(ff && ff.phaseBParallel === true);
+    } catch (_) { /* settings 読み取り失敗時は従来経路 */ }
+    if (phaseBParallel) {
+      appendDiagnosticEvent('ai_form_fill_delegated_to_parallel', {});
+      if (await getParallelFormFillApiDispatch()(req, res, '/api/ai-form-fill-parallel')) return;
+    }
+  }
   if (await getAiFormFillApiDispatch()(req, res, pathname)) return;
 
   // --- Recovery API (src/routes/recovery-api.cjs) ---

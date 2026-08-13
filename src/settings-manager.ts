@@ -231,6 +231,11 @@ const DEFAULT_SETTINGS = {
   formFill: {
     mode: 'internal',
     parallelism: 3,  // 1-5。同時に処理する社数
+    // v2.1.7: true で複数社バッチを並列ヘッドレス (最大3プロセス同時、
+    // /api/ai-form-fill-parallel) に自動委譲する。既定 false = 従来の
+    // managed PTY 単一CLI逐次処理 (~4分/社)。並列時は 1社あたり実効
+    // ~1.5-2分まで短縮されるが、Claude のレート枠消費も並列分速くなる。
+    phaseBParallel: false,
   },
 
   // === 外部 API キー（list-builder などで利用） ===
