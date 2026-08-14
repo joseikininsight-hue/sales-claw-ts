@@ -4331,6 +4331,13 @@ function markParallelCompaniesFailed(companies, reason, meta: Record<string, any
       step: safeReason,
       currentUrl: company.formUrl || company.url || '',
     });
+    // v2.1.9: slot timeout / プロセス死亡時に WebContentsView が入力途中のまま
+    // 凍結して操作中タブに残骸が並ぶ (2026-08-14 実機 50社) のを防ぐ。
+    try {
+      if (_formSessionManager && typeof _formSessionManager.destroySessionsByCompanyNo === 'function') {
+        _formSessionManager.destroySessionsByCompanyNo(company.no);
+      }
+    } catch (_) { /* session 掃除は best-effort */ }
   });
 }
 

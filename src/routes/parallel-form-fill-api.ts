@@ -68,7 +68,17 @@ module.exports = function createParallelFormFillRoutes(ctx) {
       const companyNos = Array.isArray(body && body.companyNos)
         ? body.companyNos.map(Number).filter(Number.isFinite)
         : [];
-      const concurrency = parseBoundedNumber(body && body.concurrency, DEFAULT_CONCURRENCY, 1, 3);
+      // v2.1.9: 既定 concurrency を settings formFill.parallelism (1-3 に clamp) に連動。
+      let settingsConcurrency = DEFAULT_CONCURRENCY;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const settingsManager = require('../settings-manager');
+        const ff = settingsManager.getSection('formFill') || {};
+        if (Number.isFinite(Number(ff.parallelism))) {
+          settingsConcurrency = Math.max(1, Math.min(3, Math.floor(Number(ff.parallelism))));
+        }
+      } catch (_) { /* settings 不在時は既定値 */ }
+      const concurrency = parseBoundedNumber(body && body.concurrency, settingsConcurrency, 1, 3);
       const timeoutMs = parseBoundedNumber(body && body.timeoutMs, DEFAULT_TIMEOUT_MS, 60 * 1000, 30 * 60 * 1000);
       const staggerMs = parseBoundedNumber(body && body.staggerMs, DEFAULT_STAGGER_MS, 0, 120 * 1000);
       const providerId = normalizeProviderId((body && body.provider) || getSelectedAiProvider());

@@ -13,31 +13,29 @@ function it(n, f) {
   });
 }
 
-describe('_splitIntoGroups', () => {
-  it('round-robin distributes 5 items across 3 groups', () => {
+describe('_splitIntoGroups (v2.1.9: groupSize 単位のチャンク分割)', () => {
+  // 旧仕様 (N グループへのラウンドロビン) は 50 社 → 25社×2 の巨大グループを生み、
+  // グループ単位 timeout と矛盾して全滅した (2026-08-14)。新仕様は連続 groupSize 社
+  // ずつのチャンク列で、ワークキューの投入単位になる。
+  it('chunks 5 items into groups of 3', () => {
     const groups = dispatcher._splitIntoGroups([1, 2, 3, 4, 5], 3);
-    assert.equal(groups.length, 3);
-    assert.deepEqual(groups[0], [1, 4]);
-    assert.deepEqual(groups[1], [2, 5]);
-    assert.deepEqual(groups[2], [3]);
-  });
-
-  it('returns groups equal to N when companies >= N', () => {
-    const groups = dispatcher._splitIntoGroups([1, 2, 3], 3);
-    assert.equal(groups.length, 3);
-    assert.deepEqual(groups, [[1], [2], [3]]);
-  });
-
-  it('returns groups equal to companies when companies < N', () => {
-    const groups = dispatcher._splitIntoGroups([1, 2], 3);
     assert.equal(groups.length, 2);
-    assert.deepEqual(groups, [[1], [2]]);
+    assert.deepEqual(groups[0], [1, 2, 3]);
+    assert.deepEqual(groups[1], [4, 5]);
   });
 
-  it('returns 1 group when N=1', () => {
+  it('50 items with groupSize 3 never exceed 3 per group', () => {
+    const big = Array.from({ length: 50 }, (_, i) => i);
+    const groups = dispatcher._splitIntoGroups(big, 3);
+    assert.equal(groups.length, 17);
+    assert.ok(groups.every((g) => g.length <= 3));
+    assert.equal(groups.flat().length, 50);
+  });
+
+  it('groupSize 1 yields one group per item', () => {
     const groups = dispatcher._splitIntoGroups([1, 2, 3, 4], 1);
-    assert.equal(groups.length, 1);
-    assert.deepEqual(groups[0], [1, 2, 3, 4]);
+    assert.equal(groups.length, 4);
+    assert.deepEqual(groups[0], [1]);
   });
 
   it('returns empty array for empty input', () => {
@@ -61,15 +59,13 @@ describe('concurrency clamping', () => {
     assert.equal(dispatcher.DEFAULT_STAGGER_MS, 30 * 1000);
   });
 
-  it('caps concurrency at 3 even when 100 requested', () => {
-    // Indirect via _splitIntoGroups since runParallelBatch needs full ctx
-    // 100 requested → only 3 groups should be built since we cap at min(N, companies.length)
-    // and runParallelBatch normalizes options.concurrency to max 3.
+  it('MAX_GROUP_SIZE keeps per-process work bounded for 50-company batches', () => {
+    // v2.1.9: concurrency cap (3) は runParallelBatch 側の worker 数で決まる。
+    // 分割はグループサイズ固定で、どのグループも timeout 内に完了できる粒度を保つ。
     const big = Array.from({ length: 50 }, (_, i) => i);
     const groups = dispatcher._splitIntoGroups(big, 3);
-    assert.equal(groups.length, 3);
-    // Distribution should be balanced (within 1)
-    assert.ok(Math.abs(groups[0].length - groups[2].length) <= 1);
+    assert.ok(groups.every((g) => g.length <= 3));
+    assert.equal(groups.flat().length, 50);
   });
 });
 

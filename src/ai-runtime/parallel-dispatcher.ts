@@ -30,8 +30,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const DEFAULT_CONCURRENCY = 2;
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 分
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 分 (1 グループ = 最大 MAX_GROUP_SIZE 社に適用)
 const DEFAULT_STAGGER_MS = 30 * 1000;
+// v2.1.9: ワークキュー投入単位。1 ヘッドレスプロセスが一度に受け持つ社数。
+//   timeoutMs はこの単位に適用されるため、大きくしすぎると 50 社バッチ全滅
+//   (2026-08-14) の再発になる。3 社 × ~4分 = 12分 < 15分 で整合。
+const MAX_GROUP_SIZE = 3;
 
 /**
  * @param {Array<object>} companies
@@ -74,11 +78,19 @@ async function runParallelBatch(companies, ctx, options: Record<string, unknown>
     return { ok: false, error: 'no companies', slots: [], totalCompanies: 0, succeeded: 0, failed: 0 };
   }
 
-  const groups = _splitIntoGroups(list, concurrency);
+  // v2.1.9: 「concurrency 個の巨大グループに事前分割」をやめ、
+  //   小グループ (MAX_GROUP_SIZE 社) のワークキュー方式に変更。
+  //   旧方式は 50 社バッチが 25 社×2 グループになり、グループ単位の
+  //   timeoutMs (15分) と物理的に矛盾して全社 slot timeout で全滅した
+  //   (2026-08-14 00:43 実機)。新方式は空いたワーカーがキューから次の
+  //   小グループを取るため、timeoutMs は常に「数社分の処理時間」に対して
+  //   適用され、100-200 社でも連続的に消化できる。
+  const groups = _splitIntoGroups(list, MAX_GROUP_SIZE);
   ctx.appendDiagnosticEvent && ctx.appendDiagnosticEvent('parallel_dispatch_started', {
     provider: providerId,
     totalCompanies: list.length,
     concurrency,
+    groupCount: groups.length,
     groupSizes: groups.map((g: any) => g.length),
     timeoutMs,
     staggerMs,
@@ -86,20 +98,42 @@ async function runParallelBatch(companies, ctx, options: Record<string, unknown>
   });
 
   const delay = (ms) => new Promise<unknown>((resolve) => setTimeout(resolve, ms));
-  const slotPromises = groups.map((groupCompanies, slotIdx) =>
-    delay(slotIdx * staggerMs)
-      .then(() => _runSlot(groupCompanies, slotIdx, ctx, { mode, timeoutMs }))
-      .catch((err) => ({ ok: false, slotIdx, error: err && err.message || String(err), companies: groupCompanies }))
-  );
+  const queue = groups.slice();
+  const slots: any[] = [];
+  let nextSlotIdx = 0;
 
   const startedAt = Date.now();
-  const results: any = await Promise.allSettled(slotPromises);
-  const elapsedMs = Date.now() - startedAt;
+  const workerCount = Math.min(concurrency, groups.length);
+  const workers = Array.from({ length: workerCount }, (_, workerIdx) => (async () => {
+    // 初回のみ stagger でバースト回避。2 グループ目以降は前グループ完了直後に続行。
+    await delay(workerIdx * staggerMs);
+    while (queue.length > 0) {
+      const groupCompanies = queue.shift();
+      if (!groupCompanies || groupCompanies.length === 0) continue;
+      const slotIdx = nextSlotIdx;
+      nextSlotIdx += 1;
+      const result = await _runSlot(groupCompanies, slotIdx, ctx, { mode, timeoutMs })
+        .catch((err) => ({
+          ok: false,
+          slotIdx,
+          error: err && err.message || String(err),
+          companies: groupCompanies,
+          failedCompanyNos: groupCompanies.map((c: any) => c && c.no).filter((n: any) => n != null),
+        }));
+      slots.push(result);
+      ctx.appendDiagnosticEvent && ctx.appendDiagnosticEvent('parallel_group_completed', {
+        provider: providerId,
+        workerIdx,
+        slotIdx,
+        ok: !!(result as any).ok,
+        companyCount: groupCompanies.length,
+        remainingGroups: queue.length,
+      });
+    }
+  })());
 
-  const slots = results.map((r, i) => {
-    if (r.status === 'fulfilled') return r.value;
-    return { ok: false, slotIdx: i, error: r.reason && r.reason.message || String(r.reason), companies: groups[i] };
-  });
+  await Promise.allSettled(workers);
+  const elapsedMs = Date.now() - startedAt;
   const succeeded = slots.filter((s: any) => s.ok).length;
   const failed = slots.length - succeeded;
   const failedCompanyNos = new Set<any>();
@@ -135,10 +169,13 @@ async function runParallelBatch(companies, ctx, options: Record<string, unknown>
   };
 }
 
-function _splitIntoGroups(companies: unknown[], n: number) {
-  // 「1 company per slot」を最大限優先 = ラウンドロビン分配
-  const groups: unknown[][] = Array.from({ length: Math.min(n, companies.length) }, () => [] as any[]);
-  companies.forEach((c: any, i: number) => { groups[i % groups.length].push(c); });
+function _splitIntoGroups(companies: unknown[], groupSize: number) {
+  // v2.1.9: 連続 groupSize 社ずつの小グループ列に分割 (ワークキュー投入単位)。
+  const size = Math.max(1, Number(groupSize) || 1);
+  const groups: unknown[][] = [];
+  for (let i = 0; i < companies.length; i += size) {
+    groups.push(companies.slice(i, i + size));
+  }
   return groups;
 }
 
