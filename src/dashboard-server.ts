@@ -10470,6 +10470,14 @@ ${renderStyles()}
               </div>
             </div>
             <div class="settings-group">
+              <label><input type="checkbox" id="ff-phaseBParallel" style="margin-right:8px;vertical-align:middle">${_lang === 'ja' ? '複数社を並列ヘッドレスで処理 (高速)' : 'Process companies in parallel headless (fast)'}</label>
+              <div class="help-text">
+                ${_lang === 'ja'
+                  ? 'ON: 複数社を同時に別プロセスで処理し大幅高速化。OFF: 1 社ずつ (安定重視)。大量バッチは ON 推奨。'
+                  : 'ON: process multiple companies simultaneously (much faster). OFF: one at a time (stable). Recommended ON for large batches.'}
+              </div>
+            </div>
+            <div class="settings-group">
               <label style="opacity:.6">${_lang === 'ja' ? '現在のモード' : 'Current mode'}</label>
               <div id="ff-currentMode" style="padding:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:.8rem">—</div>
               <div class="help-text">${_lang === 'ja' ? '保存後、次回 AI 起動から反映 (再起動推奨)' : 'Applies on next AI launch (restart recommended)'}</div>
@@ -10522,7 +10530,9 @@ ${renderStyles()}
                 document.getElementById('ff-mode').value =
                   (mode === 'playwright' || mode === 'internal' || mode === 'both') ? mode : 'internal';
                 document.getElementById('ff-parallelism').value = parallelism;
-                document.getElementById('ff-currentMode').textContent = mode;
+                const pbpEl = document.getElementById('ff-phaseBParallel');
+                if (pbpEl) pbpEl.checked = ff.phaseBParallel === true;
+                document.getElementById('ff-currentMode').textContent = mode + (ff.phaseBParallel === true ? ' / parallel' : ' / sequential');
               } catch (e) {
                 document.getElementById('ff-currentMode').textContent = 'error: ' + (e.message || e);
               }
@@ -10534,21 +10544,23 @@ ${renderStyles()}
               if (!modeEl || !parEl || !status) return;
               const mode = modeEl.value;
               const parallelism = Math.min(5, Math.max(1, parseInt(parEl.value, 10) || 3));
+              const pbpEl = document.getElementById('ff-phaseBParallel');
+              const phaseBParallel = !!(pbpEl && pbpEl.checked);
               status.textContent = ${_lang === 'ja' ? "'保存中…'" : "'Saving…'"};
               status.style.color = 'var(--text-2)';
               try {
                 const r = await fetch('/api/settings/formFill', {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ mode: mode, parallelism: parallelism }),
+                  body: JSON.stringify({ mode: mode, parallelism: parallelism, phaseBParallel: phaseBParallel }),
                 });
                 const j = await r.json().catch(() => ({}));
                 if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
                 status.textContent = ${_lang === 'ja'
-                  ? "'✓ 保存しました。次回 AI 起動から反映されます (再起動推奨)。'"
-                  : "'✓ Saved. Will apply on next AI launch (restart recommended).'"};
+                  ? "'✓ 保存しました。次回バッチから反映されます。'"
+                  : "'✓ Saved. Applies from the next batch.'"};
                 status.style.color = 'var(--success, #16a34a)';
-                document.getElementById('ff-currentMode').textContent = mode;
+                document.getElementById('ff-currentMode').textContent = mode + (phaseBParallel ? ' / parallel' : ' / sequential');
               } catch (e) {
                 status.textContent = ${_lang === 'ja' ? "'保存失敗: '" : "'Save failed: '"} + (e.message || e);
                 status.style.color = 'var(--error, #dc2626)';
@@ -12288,13 +12300,21 @@ const server = http.createServer(async (req, res) => {
   //   複数プロセスが同時にフォームセッションを持っても競合しない。
   if (pathname === '/api/ai-form-fill') {
     let phaseBParallel = false;
+    let settingsReadOk = true;
     try {
       const ff = settings.getSection('formFill');
       phaseBParallel = !!(ff && ff.phaseBParallel === true);
-    } catch (_) { /* settings 読み取り失敗時は従来経路 */ }
+    } catch (_) { settingsReadOk = false; /* settings 読み取り失敗時は従来経路 */ }
+    // v2.1.11: どちらの経路を通ったかを常に診断へ残す。真因Aの「並列 ON の
+    //   つもりが逐次で走っていたのに無言」を即検知できるようにするため。
+    //   ダッシュボードの CLI Activity にも 1 行出して運用者が気づけるようにする。
     if (phaseBParallel) {
-      appendDiagnosticEvent('ai_form_fill_delegated_to_parallel', {});
+      appendDiagnosticEvent('ai_form_fill_delegated_to_parallel', { settingsReadOk });
+      emitClaudeAutomationLog('[並列モード] 複数社を同時ヘッドレス処理で開始します。', 'system', getSelectedAiProvider());
       if (await getParallelFormFillApiDispatch()(req, res, '/api/ai-form-fill-parallel')) return;
+    } else {
+      appendDiagnosticEvent('ai_form_fill_sequential_mode', { settingsReadOk });
+      emitClaudeAutomationLog('[逐次モード] formFill.phaseBParallel=false のため 1 社ずつ処理します。並列化するには設定タブで有効化してください。', 'system', getSelectedAiProvider());
     }
   }
   if (await getAiFormFillApiDispatch()(req, res, pathname)) return;
