@@ -85,7 +85,11 @@ async function runParallelBatch(companies, ctx, options: Record<string, unknown>
   //   (2026-08-14 00:43 実機)。新方式は空いたワーカーがキューから次の
   //   小グループを取るため、timeoutMs は常に「数社分の処理時間」に対して
   //   適用され、100-200 社でも連続的に消化できる。
-  const groups = _splitIntoGroups(list, MAX_GROUP_SIZE);
+  // v2.1.10: グループサイズを「全ワーカーが即時稼働する」よう適応させる。
+  //   固定 3 だと 3 社バッチが 1 グループに固まり、結局 1 プロセス逐次になる
+  //   (2026-08-14 実機)。N=3,C=3 → 1社×3グループ (3 同時)、N=50,C=3 → 3社×17。
+  const adaptiveGroupSize = Math.max(1, Math.min(MAX_GROUP_SIZE, Math.ceil(list.length / concurrency)));
+  const groups = _splitIntoGroups(list, adaptiveGroupSize);
   ctx.appendDiagnosticEvent && ctx.appendDiagnosticEvent('parallel_dispatch_started', {
     provider: providerId,
     totalCompanies: list.length,
