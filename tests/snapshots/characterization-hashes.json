@@ -1,13 +1,13 @@
 {
   "prompts": {
     "internal-tabs1-autofalse": "14c925e977cacc80d35db3eb5ba1b519b61fc2e590634517c6a74be797de64d9",
-    "internal-tabs1-autotrue": "f6d0553c096edb4717a4935976bd3c3ac720c0c28ce75fa5dd6087ce318fa514",
+    "internal-tabs1-autotrue": "92eb9a86f2fd956eb43c93c2b9cd38f50cd8aecd16c9e7ace0b0ec55ce45c344",
     "internal-tabs3-autofalse": "bcdb4fa3367c541b9e1a2a9906804f64eec1261129aa05e8d54a2e472a06f5a8",
-    "internal-tabs3-autotrue": "3d151e10b4d3535e2170a20fe9d54fef4f267eaf4240ab1febbce832d0121c92",
+    "internal-tabs3-autotrue": "8886ceda2e6d2157d6fe0238771b3d6800b0bdf3211909498b9cc622bf530bad",
     "playwright-tabs1-autofalse": "67030ef98896df529728e38c9da30f65e04ea4f7bd98fa3fbcb66846f6feac11",
-    "playwright-tabs1-autotrue": "c645bf9d511f376fb89c50bb3003aac379e7d7191a62363379cb390a3d101546",
+    "playwright-tabs1-autotrue": "3f5409a16ed4a52efab924b654fb79ca5bcd8e040c2bf164baa0b62417fba799",
     "playwright-tabs3-autofalse": "01a64b324c64a58f32b47b130c039fe6e62710caacd0ddde36ed8832b10291bc",
-    "playwright-tabs3-autotrue": "0a7a82734d646e948b6ee101f0437a63774084188e85a58e49debda448d3ed9c"
+    "playwright-tabs3-autotrue": "0ca3fcf20c51aa7ab970df5a23e9d8d634de80310dc57b31e79cd8febfd0b58a"
   },
   "page": "8aae6333603020f262fc899590d17a70906aef5727c588b3c156185c66b57fbe",
   "messagePrompt": "b28c94b2195c8ed259f0b415aaee3f39b0b2920a4537611499fa044956917a21",

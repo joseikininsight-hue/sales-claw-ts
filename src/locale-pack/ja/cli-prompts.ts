@@ -96,6 +96,13 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
       ? '- ★ 安全フォームは自動送信: 全項目入力成功 + 必須の同意チェック投入 + 確認画面到達 まで来たら、ためらわず送信ボタンを browser_click して submitted にする。止めてよいのは (1)操作要 CAPTCHA (2)設定に無い必須項目 (3)営業NG=skipped (4)送信しても次画面に進めない の4つだけ。「念のため」で確認待ちにしない'
       : '- 送信は行わず awaiting_approval で止める',
   );
+  if (autoSendSafe) {
+    // v2.1.12: 送信後の往復を最小化して confirm→submitted の時間を削る。
+    //   送信後の再 snapshot は完了確認に不要 (screenshot が送信の記録)。
+    lines.push(
+      '- ★ 送信後は往復を最小化: 送信ボタン browser_click → browser_wait_for で完了文言/URL変化を短く待つ (既定 8 秒で十分、出なくても可) → browser_take_screenshot({suffix:"sent"}) → curl submitted の順で即完了させる。送信後に browser_snapshot は撮らない (screenshot が送信記録として十分)。確認画面が無い直接送信フォームは click → screenshot(sent) → curl の 3 手で終える。',
+    );
+  }
   lines.push('- submitted 完了時は ss-{No}-sent.png を残し、その会社のタブ (セッション) を閉じる');
   lines.push(
     '- 入力済みだが最終送信しない場合だけタブを残して awaiting_approval。未入力 (CAPTCHA 以外の理由) / フォーム無しは error / skipped',

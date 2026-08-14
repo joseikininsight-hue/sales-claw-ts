@@ -435,7 +435,10 @@ const MANAGED_AI_BATCH_DISPATCH_GAP_MS = 100;
 //   完全に取りこぼした場合の safety net」。banner 検出は実機で 99% 動作するため
 //   8s に短縮しても誤発火リスクは小さい。最悪 8s で 2nd Enter を送って次バッチ
 //   が進む方が、30s 待ってから進むより全体時間が短い。
-const MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS = 8000;
+// v2.1.12: 8s→3.5s。ready マーカー強化 (❯ / minReadyAge 1200ms, v2.1.6) と
+//   banner 検出 primary path (1-3s) が効くため、検出取りこぼし時の保険待ちを
+//   短縮してプロンプト投入〜実行開始を速める。
+const MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS = 3500;
 
 const MANAGED_AI_READY_DELAY_MS = {
   claude: 1500,
