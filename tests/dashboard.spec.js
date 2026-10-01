@@ -107,7 +107,7 @@ test.describe('Suite 1: settings-manager', () => {
     expect(all.companyProfile).toBeDefined();
   });
 
-  test('AIフォーム入力プロンプトが finalFormTab タブ管理契約を含む', () => {
+  test('AIフォーム入力プロンプトが内蔵モードのセッションルールを含む (旧タブ契約は送らない)', () => {
     const dashboardServer = requireBuiltModule('dashboard-server.js');
     const prompt = dashboardServer.buildClaudeFormFillPrompt([
       {
@@ -123,22 +123,23 @@ test.describe('Suite 1: settings-manager', () => {
       phone: '03-0000-0000',
     }, 'claude', { autoSendSafe: false });
 
-    expect(prompt).toContain('SALES_CLAW_TAB_CONTRACT');
-    expect(prompt).toContain('finalFormTab');
-    expect(prompt).toContain('baselineTabs');
-    expect(prompt).toContain('workingTabs');
-    expect(prompt).toContain('既存の他社タブ');
-    expect(prompt).toContain('tabContract":"finalFormTabOnly');
+    // v2.2.0: formFill.mode=internal (既定) では Playwright 時代のタブ契約を送らない
+    expect(prompt).toContain('SALES_CLAW_SESSION_RULES');
+    expect(prompt).toContain('companyNo');
+    expect(prompt).not.toContain('baselineTabs');
+    expect(prompt).not.toContain('SALES_CLAW_TAB_CONTRACT');
+    // 承認待ちモードでは「送信」系ボタンを押させない
+    expect(prompt).toContain('絶対に押さない');
   });
 
-  test('managed session 契約も finalFormTab タブ管理契約を含む', () => {
+  test('managed session 契約も内蔵モードのセッションルールを含む', () => {
     const dashboardServer = requireBuiltModule('dashboard-server.js');
     const contract = dashboardServer.buildManagedAiSessionContract('claude', { autoSendSafe: false });
 
-    expect(contract).toContain('SALES_CLAW_TAB_CONTRACT');
-    expect(contract).toContain('finalFormTab');
+    expect(contract).toContain('SALES_CLAW_SESSION_RULES');
     expect(contract).toContain('browser_tabs');
-    expect(contract).toContain('baselineTabs');
+    expect(contract).toContain('sessionId');
+    expect(contract).not.toContain('baselineTabs');
   });
 });
 

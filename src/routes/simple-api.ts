@@ -97,6 +97,7 @@ module.exports = function createSimpleApiRoutes(ctx) {
     APP_VERSION,
     getFormSessionManager,
     appendDiagnosticEvent,
+    onActionLogged,
   } = ctx;
 
   function broadcastSse(payload) {
@@ -695,6 +696,10 @@ module.exports = function createSimpleApiRoutes(ctx) {
           }
         }
         logAction(no, name, action, details);
+        // v2.2.0: バッチ完了判定をポーリング (2 秒) 待ちにせず即座に回す
+        if (typeof onActionLogged === 'function') {
+          try { onActionLogged(no, action); } catch (_) { /* best-effort */ }
+        }
         // v2.0.97: 完了系セッションのみ破棄する。
         //   awaiting_approval は **破棄しない** — reCAPTCHA 等で人間がライブブラウザで
         //   解く必要があり、確認待ち移行時にセッションを消すと「誰も解けない」状態に

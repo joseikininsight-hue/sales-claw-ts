@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const WebSocket = require('ws');
 const XLSX = require('xlsx');
-const { getAllLogs, logAction, removeCompanyLogs } = require('./action-logger');
+const { getAllLogs, getAllLogsReadonly, logAction, removeCompanyLogs } = require('./action-logger');
 const { getAllHistorySummary, getHistory, recordContact, removeHistory } = require('./contact-history');
 const { readRuntime, toClientHost, writeRuntime, clearRuntime } = require('./dashboard-runtime');
 const settings = require('./settings-manager');
@@ -1213,7 +1213,7 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = [], options: { si
     }
     return false;
   };
-  const logs = getAllLogs();
+  const logs = getAllLogsReadonly();
   logs.forEach((entry: any) => {
     const key = String(entry.companyNo || entry.no || '');
     if (!keySet.has(key)) return;
@@ -1763,6 +1763,7 @@ function startManagedAiBatchPoller() {
     try {
       runPollerTickBody(activeController);
     } finally {
+      controller.pollNudged = false;
       const stillController = managedAiBatchController;
       if (stillController && stillController.pollTimer) {
         // clearManagedAiBatchControllerTimer が呼ばれていなければ次回をスケジュール。
@@ -1777,10 +1778,28 @@ function startManagedAiBatchPoller() {
       }
     }
   };
+  controller.pollTick = tick;
   controller.pollTimer = setTimeout(tick, MANAGED_AI_BATCH_POLL_MS);
   if (typeof controller.pollTimer.unref === 'function') {
     controller.pollTimer.unref();
   }
+}
+
+// v2.2.0: /api/log-action で terminal ログが入った直後にポーラーを前倒しで回す。
+//   旧: 最後の社が完了しても次の tick (最大 2 秒) まで次バッチが投入されなかった。
+const MANAGED_AI_TERMINAL_LOG_ACTIONS = new Set(['awaiting_approval', 'submitted', 'skipped', 'error', 'confirm_reached']);
+function nudgeManagedAiBatchPoller(companyNo, action) {
+  const controller = managedAiBatchController;
+  if (!controller || !controller.pollTimer || typeof controller.pollTick !== 'function') return;
+  if (!controller.activeBatch || controller.pollNudged) return;
+  if (!MANAGED_AI_TERMINAL_LOG_ACTIONS.has(String(action || ''))) return;
+  const nos = Array.isArray(controller.activeBatch.companyNos) ? controller.activeBatch.companyNos : [];
+  if (!nos.some((no: any) => Number(no) === Number(companyNo))) return;
+  controller.pollNudged = true;
+  clearTimeout(controller.pollTimer);
+  // action-log の debounce flush を待ってから判定する
+  controller.pollTimer = setTimeout(controller.pollTick, 300);
+  if (typeof controller.pollTimer.unref === 'function') controller.pollTimer.unref();
 }
 
 // v2.0.48 F3: tick 本体を関数化。setInterval から再帰 setTimeout に切り替えた際、
@@ -3977,7 +3996,7 @@ function appendHeadlessAiLog(filePath, stream, text) {
 
 function companyHasTerminalLogSince(companyNo, startedAtMs) {
   const terminalActions = new Set(['awaiting_approval', 'submitted', 'skipped', 'error']);
-  return getAllLogs().some((entry: any) => {
+  return getAllLogsReadonly().some((entry: any) => {
     if (String(entry.companyNo) !== String(companyNo)) return false;
     if (!terminalActions.has(String(entry.action || '').trim())) return false;
     const timestampMs = Date.parse(entry.timestamp || '');
@@ -5241,13 +5260,21 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   // LLM 解析が 90 秒タイムアウトしていた。Claude CLI の同時起動を抑えるため
   // Phase A の並列度を 2 に固定する (LLM 解析 + メッセージ生成で実質 4 並列)。
   //
-  // Claude は Pro 個人プランの厳しいレート制限のため 2 を上限とする
-  //   (SALES_CLAW_PHASE_A_CONCURRENCY=1 で更に絞ることは可能)。
+  // v2.2.0: 2 並列の制約は Phase A 内で claude -p を呼ぶ (LLM 解析 / LLM 文面生成)
+  //   場合の Claude Pro レート制限が理由。既定 (両フラグ OFF) の Phase A は HTTP 取得
+  //   だけなので 4 並列にして、最初の社が Phase B に入るまでの待ちと全体時間を短縮する。
+  //   SALES_CLAW_PHASE_A_CONCURRENCY で 1〜6 に上書き可能。
+  let phaseAUsesLlm = true;
+  try {
+    const ic = typeof settings.getIdealCustomer === 'function' ? settings.getIdealCustomer() : null;
+    phaseAUsesLlm = !!(ic && (ic.useLLMAnalyzer || ic.useLLMMessageGenerator));
+  } catch (_) { /* 設定読込失敗時は保守的に LLM 有り扱い */ }
+  const PHASE_A_DEFAULT_CONCURRENCY = phaseAUsesLlm ? 2 : 4;
+  const PHASE_A_MAX_CONCURRENCY = 6;
   const phaseAEnvOverride = Number(process.env.SALES_CLAW_PHASE_A_CONCURRENCY);
-  const PHASE_A_MAX_CONCURRENCY = 2;
   const phaseAEffective = Number.isFinite(phaseAEnvOverride) && phaseAEnvOverride > 0
-    ? phaseAEnvOverride
-    : PHASE_A_MAX_CONCURRENCY;
+    ? Math.floor(phaseAEnvOverride)
+    : PHASE_A_DEFAULT_CONCURRENCY;
   const PHASE_A_CONCURRENCY = Math.max(1, Math.min(PHASE_A_MAX_CONCURRENCY, phaseAEffective));
   const results = new Array(companies.length);
   let nextIdx = 0;
@@ -6600,6 +6627,7 @@ function buildDashboardDataFromSources() {
   const nameToNo: Record<string, any> = {};
   const rowMap = new Map<any, any>();
   const orderedNos: any[] = [];
+  const orderedNoSet = new Set<any>();
   const targetNoSet = new Set<any>();
 
   function upsertCompanyRow(row, source = 'target') {
@@ -6618,7 +6646,7 @@ function buildDashboardDataFromSources() {
       progress: row.progress || existing.progress || '',
     };
     rowMap.set(key, next);
-    if (!orderedNos.includes(key)) orderedNos.push(key);
+    if (!orderedNoSet.has(key)) { orderedNoSet.add(key); orderedNos.push(key); }
     if (next.companyName) nameToNo[next.companyName] = next.no;
     if (source === 'target') targetNoSet.add(key);
     return key;
@@ -6973,10 +7001,10 @@ function buildPage() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sales Claw</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
-<!-- ローカルバンドル: フォント・Material Symbols・Phosphor・Tailwind (全てオフライン動作) -->
+<!-- ローカルバンドル: フォント・Material Symbols・Tailwind (全てオフライン動作) -->
+<!-- v2.2.0: 未使用の Phosphor アイコン (CSS 78KB + webfont 147KB) の読み込みを削除 -->
 <link rel="stylesheet" href="/assets/vendor/fonts.css">
 <link rel="stylesheet" href="/assets/vendor/material-symbols.css">
-<link rel="stylesheet" href="/assets/vendor/phosphor.css">
 <link rel="stylesheet" href="/assets/vendor/tailwind.css">
 <link rel="stylesheet" href="/assets/vendor/js/xterm.css">
 <script src="/assets/vendor/js/xterm.js" defer></script>
@@ -7983,21 +8011,25 @@ ${renderStyles()}
 
         async function refreshLiveFormSessions() {
           try {
+            // v2.2.0: 進捗表示に必要な liveMonitor だけを取得 (旧: 毎秒 /api/data 全体)。
+            //   操作中タブが非表示なら badge 用に sessions だけ取る。
+            const liveTabActive = document.querySelector('.tab-content.active')?.id === 'tab-live-form';
             const [sessionsRes, dataRes] = await Promise.all([
               fetch('/api/form-session'),
-              fetch('/api/data'),
+              liveTabActive ? fetch('/api/live-monitor') : Promise.resolve(null),
             ]);
             if (!sessionsRes.ok) return;
             const j = await sessionsRes.json();
             const list = j.sessions || [];
-            const data = dataRes.ok ? await dataRes.json() : { liveMonitor: { events: [] } };
+            const badge = document.getElementById('liveFormBadge');
+            if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+            if (!liveTabActive) return; // 非表示タブの DOM は書き換えない
+            const data = dataRes && dataRes.ok ? await dataRes.json() : { liveMonitor: { events: [] } };
             const events = (data.liveMonitor && data.liveMonitor.events) || [];
 
             const bar = document.getElementById('liveFormSessions');
             const empty = document.getElementById('liveFormEmpty');
             if (!bar) return;
-            const badge = document.getElementById('liveFormBadge');
-            if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
 
             // セッション ID / ステータス更新
             const sessionIdEl = document.getElementById('liveSessionId');
@@ -8451,12 +8483,9 @@ ${renderStyles()}
         async function refreshScreenshots(sessions) {
           const el = document.getElementById('liveScreenshots');
           if (!el) return;
-          // session 各社の screenshot path を収集 (action-log の screenshot field から)
+          // session 各社の ss-{No}-{input|confirm|sent}.png を並べる
+          // (v2.2.0: 結果を使っていなかった /api/data 取得を削除)
           try {
-            const r = await fetch('/api/data');
-            if (!r.ok) return;
-            const j = await r.json();
-            const events = (j.liveMonitor && j.liveMonitor.events) || [];
             const noSet = new Set(sessions.map(s => Number(s.companyNo)).filter(n => Number.isFinite(n)));
             const shots = [];
             for (const no of noSet) {
@@ -11082,6 +11111,7 @@ let _simpleApiDispatch: any = null;
 function getSimpleApiDispatch() {
   if (!_simpleApiDispatch) {
     _simpleApiDispatch = require('./routes/simple-api')({
+      onActionLogged: nudgeManagedAiBatchPoller,
       jsonResponse,
       parseJsonBody,
       loadData,
@@ -11504,6 +11534,19 @@ const server = http.createServer(async (req, res) => {
 
   // (旧2つ目の /screenshots/ ブロックは到達不能なデッドコードだったため削除。
   //  先行の /screenshots/ ハンドラが全 /screenshots/ パスを return 済み。)
+
+  // --- Live monitor only (v2.2.0) ---
+  // GET /api/live-monitor
+  //   操作中タブは liveMonitor.events しか使わないのに、毎秒 /api/data (全社分の
+  //   一覧・履歴・本文入り、数 MB) を取得していた。進捗表示に必要な分だけ返す。
+  if (pathname === '/api/live-monitor' && req.method === 'GET') {
+    try {
+      jsonResponse(res, 200, { ok: true, liveMonitor: buildMonitorPayload(getAllLogsReadonly() as any[]) || { events: [] } });
+    } catch (e) {
+      jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
 
   // --- Force-reset managed AI queue (v2.0.10) ---
   // POST /api/managed-ai-batch/reset

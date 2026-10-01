@@ -241,7 +241,18 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const pipelineBuffer: any[] = [];
       const pipelinePhaseAByCompany = new Map<string, any>();
       let pipelineQueuedCount = 0;
+      let pipelineInFlight = 0;
       let pipelineQueueError: any = null;
+      // v2.2.0: Phase B (CLI) が何も処理していない時は N 社溜まるのを待たずに即投入する。
+      //   旧: 常に parallelism 社 (既定 3) の Phase A 成功を待ってから最初のバッチを
+      //   送っていたため、CLI が数十秒〜数分アイドルになっていた。
+      function isPhaseBIdle() {
+        if (pipelineInFlight > 0) return false;
+        const controller = getManagedAiBatchController();
+        if (!controller) return true;
+        const pending = Array.isArray(controller.pending) ? controller.pending.length : 0;
+        return !controller.activeBatch && pending === 0;
+      }
       // v2.0.19: queueAiFormFill の呼び出しを Promise chain で **順次** 実行する。
       // 旧実装は Promise.resolve().then(...) で投げ放しだったため、Phase A の
       // onSuccess が連続発火すると enqueue 順序が逆転して controller.pending
@@ -253,6 +264,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
         const batch = pipelineBuffer.splice(0);
         const localMap = new Map(batch.map((c: any) => [String(c.no), pipelinePhaseAByCompany.get(String(c.no))]));
         pipelineQueuedCount += batch.length;
+        pipelineInFlight += 1;
         appendDiagnosticEvent('phase_a_pipeline_flush', {
           provider: providerId,
           reason,
@@ -266,7 +278,8 @@ module.exports = function createAiFormFillRoutes(ctx) {
           phaseAByCompany: localMap,
           phaseASuccesses: batch.map((c: any) => c.phaseA),
           phaseAFailures: [],
-        })).catch((err: any) => {
+        })).then(() => { pipelineInFlight -= 1; }, (err: any) => {
+          pipelineInFlight -= 1;
           pipelineQueueError = err;
           appendDiagnosticEvent('phase_a_pipeline_enqueue_failed', {
             provider: providerId,
@@ -301,6 +314,8 @@ module.exports = function createAiFormFillRoutes(ctx) {
           pipelineBuffer.push(enriched);
           if (pipelineBuffer.length >= pipelineFlushSize) {
             pipelineEnqueueBuffer('buffer-full');
+          } else if (isPhaseBIdle()) {
+            pipelineEnqueueBuffer('phase-b-idle');
           }
         },
       } : {};

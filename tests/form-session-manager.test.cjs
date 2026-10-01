@@ -348,6 +348,27 @@ async function main() {
       assert.equal(s.formUrl, 'http://example.com/');
     });
 
+    await itAsync('_waitForLoad returns immediately on main-frame did-fail-load (v2.2.0)', async () => {
+      const s = mgr._sessions.get(sessionId);
+      const prevStatus = s.status;
+      s.status = 'loading';
+      s.view.webContents._setLoading(true);
+      const started = Date.now();
+      const waiting = mgr._waitForLoad(sessionId, 20000);
+      // サブフレーム失敗と ERR_ABORTED (-3) は無視される
+      s.view.webContents._emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', 'http://example.com/ad', false);
+      s.view.webContents._emit('did-fail-load', {}, -3, 'ERR_ABORTED', 'http://example.com/', true);
+      assert.equal(s.status, 'loading');
+      s.view.webContents._emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', 'http://example.com/', true);
+      await waiting;
+      assert.ok(Date.now() - started < 1000, 'should not wait for the 20s timeout');
+      assert.equal(s.status, 'load_failed');
+      assert.match(String(s.blockedReason), /ERR_NAME_NOT_RESOLVED/);
+      s.view.webContents._setLoading(false);
+      s.status = prevStatus;
+      s.blockedReason = null;
+    });
+
     await itAsync('listSessions returns active session', () => {
       const list = mgr.listSessions();
       assert.equal(list.length, 1);
