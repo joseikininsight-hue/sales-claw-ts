@@ -190,7 +190,7 @@ const THEME_CSS = `
 .stat-card-v2-icon .material-symbols-outlined{font-size:14px;font-variation-settings:'FILL' 0,'wght' 500}
 .stat-card-v2-label{font-size:.75rem;font-weight:700;color:var(--text-2);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stat-card-v2-num{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;line-height:1;letter-spacing:-.02em;color:var(--_c,var(--text-1))}
-/* v2.2.0: 淡色のアクセント色そのままだと数字のコントラストが 2.2〜2.6:1 だったため本文色と混ぜる (GB-11-1) */
+/* 淡色のアクセント色そのままだと数字のコントラストが 2.2〜2.6:1 だったため本文色と混ぜる (GB-11-1) */
 .stat-card-v2-num{color:color-mix(in srgb,var(--_c,var(--text-1)) 55%,var(--text-1))}
 .stat-card-v2-note{font-size:.75rem;color:var(--text-3);margin-top:4px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -299,7 +299,7 @@ const THEME_CSS = `
 .main-table .company-action-btn.btn-success:hover{background:var(--success-dim);border-color:rgba(5,150,105,.3)}
 [data-theme="dark"] .main-table .company-action-btn.btn-success{color:#10b981}
 [data-theme="dark"] .main-table .company-action-btn.btn-success:hover{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35)}
-/* v2.2.0: ダークでは --success が明るい緑 (#10b981) なので塗りボタンの文字は濃色に (白だと 2.5:1) */
+/* ダークでは --success が明るい緑 (#10b981) なので塗りボタンの文字は濃色に (白だと 2.5:1) */
 [data-theme="dark"] .btn-success:not(.company-action-btn),[data-theme="dark"] .btn-act-success,[data-theme="dark"] #memoBadge{color:#04120c}
 .main-table .company-action-btn.btn-primary{background:rgba(59,130,246,.06);color:var(--primary);border:1px solid rgba(59,130,246,.3);box-shadow:none;font-weight:700}
 .main-table .company-action-btn.btn-primary:hover{background:rgba(59,130,246,.14);border-color:var(--primary);box-shadow:0 2px 10px rgba(59,130,246,.25)}

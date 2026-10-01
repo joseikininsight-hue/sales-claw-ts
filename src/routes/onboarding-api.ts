@@ -245,7 +245,7 @@ module.exports = function createOnboardingRoutes(ctx) {
       next.valuePropositions = Object.assign({}, next.valuePropositions || {}, {
         strengths: (body.valuePropositions && body.valuePropositions.strengths) || next.valuePropositions?.strengths || [],
       });
-      // v2.2.0: Claude Code CLI のみサポート
+      // Claude Code CLI のみサポート
       if (body.aiProvider) next.aiProvider = 'claude';
 
       // marker

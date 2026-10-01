@@ -927,7 +927,7 @@ function normalizeSettings(input) {
   }
 
   const prefs = settings.preferences;
-  // v2.2.0: Claude Code CLI のみサポート。旧設定の 'codex' / 'gemini' は 'claude' へ移行する。
+  // Claude Code CLI のみサポート。旧設定の 'codex' / 'gemini' は 'claude' へ移行する。
   prefs.aiProvider = 'claude';
 
   const aiModels = prefs.aiModels && typeof prefs.aiModels === 'object' && !Array.isArray(prefs.aiModels)

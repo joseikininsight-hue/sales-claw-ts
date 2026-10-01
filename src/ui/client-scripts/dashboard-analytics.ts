@@ -212,7 +212,7 @@ function updateAnalyticsDonut(pct){
   fill.style.strokeDashoffset = String(circumference * (1 - clamped / 100));
 }
 
-// v2.2.0: details が JSON 文字列 ({"reason":...}) のまま表示されていたのを文章化する
+// details が JSON 文字列 ({"reason":...}) のまま表示されていたのを文章化する
 function humanizeRecentErrorReason(v){
   if (typeof window.humanizeLogDetail === 'function') return window.humanizeLogDetail(v);
   return typeof v === 'string' ? v : (v && (v.reason || v.error || v.message)) || '';

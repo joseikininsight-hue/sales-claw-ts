@@ -9,7 +9,7 @@ const { atomicWriteJson } = require('./file-lock');
 
 const XLSX_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-// v2.2.0: CSV の文字コードを判定してから SheetJS に文字列で渡す。
+// CSV の文字コードを判定してから SheetJS に文字列で渡す。
 //   SheetJS は BOM 無しの CSV バッファを Latin-1 として読むため、Google スプレッド
 //   シートや Mac で書き出した UTF-8 (BOM 無し) CSV の日本語が全件文字化けしていた。
 //   UTF-8 として妥当ならそのまま、そうでなければ Shift_JIS (Excel 日本語版の既定) で復号する。

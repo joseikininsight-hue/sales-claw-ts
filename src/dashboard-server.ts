@@ -1198,7 +1198,7 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = [], options: { si
   const keySet = new Set((companyNos || []).map((value: any) => String(value)));
   const latestLogByCompany = new Map<any, any>();
   const latestMonitorByCompany = new Map<any, any>();
-  // v2.2.0: バッチ開始 (sinceMs) より前に書かれた terminal ログ / monitor は
+  // バッチ開始 (sinceMs) より前に書かれた terminal ログ / monitor は
   //   「前回の試行の結果」なので今回のバッチの完了判定に使わない。
   //   旧: エラー再試行した会社は直前の 'error' ログが最新のままなので、投入直後の
   //     最初の tick で batch 完了扱い → 次バッチが CLI 作業中に dispatch され、
@@ -1785,7 +1785,7 @@ function startManagedAiBatchPoller() {
   }
 }
 
-// v2.2.0: /api/log-action で terminal ログが入った直後にポーラーを前倒しで回す。
+// /api/log-action で terminal ログが入った直後にポーラーを前倒しで回す。
 //   旧: 最後の社が完了しても次の tick (最大 2 秒) まで次バッチが投入されなかった。
 const MANAGED_AI_TERMINAL_LOG_ACTIONS = new Set(['awaiting_approval', 'submitted', 'skipped', 'error', 'confirm_reached']);
 function nudgeManagedAiBatchPoller(companyNo, action) {
@@ -1852,7 +1852,7 @@ function runPollerTickBody(activeController: any) {
     if (snapshot.latestActivityAt && snapshot.latestActivityAt > activeController.activeBatch.lastProgressAt) {
       activeController.activeBatch.lastProgressAt = snapshot.latestActivityAt;
       activeController.activeBatch.lastProgressReason = 'action-log';
-      // v2.2.0: 進捗が再開したら停滞通知を再武装する。旧実装は 1 バッチにつき 1 回しか
+      // 進捗が再開したら停滞通知を再武装する。旧実装は 1 バッチにつき 1 回しか
       //   stall 判定しなかったため、自動タイムアウト後に別の社が止まると永久に拾えなかった。
       activeController.activeBatch.stallNotified = false;
       activeController.activeBatch.softWarnNotified = false;
@@ -3361,7 +3361,7 @@ function estimateTextTokens(text) {
   return Math.max(1, Math.ceil(String(text || '').length / 4));
 }
 
-// v2.2.0: 2 — 内蔵モードのセッションルール / 承認待ちモードのボタン制限を反映
+// 2 — 内蔵モードのセッションルール / 承認待ちモードのボタン制限を反映
 const MANAGED_AI_CONTRACT_VERSION = 2;
 
 function trimOneLineText(value, maxLength = 160) {
@@ -3463,7 +3463,7 @@ function buildCompactApproachPayload(objective = '', guardrails = '') {
 }
 
 function buildTabManagementContractLines(formFillMode = getFormFillMode()) {
-  // v2.2.0: internal モード (内蔵 WebContentsView) では Playwright 時代のタブ契約
+  // internal モード (内蔵 WebContentsView) では Playwright 時代のタブ契約
   //   (baselineTabs / workingTabs / finalFormTab / タブを閉じる) は不要。CLAUDE.md の
   //   Session lifecycle contract と同じ「1 社 = 1 sessionId」ルールだけを渡す。
   //   旧契約を送り続けると、存在しない Chromium タブの管理に CLI がターンを浪費し、
@@ -5124,7 +5124,7 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
     activePhaseAChildProcesses.add(child);
     let stdout = '';
     let stderr = '';
-    // v2.2.0: 1 社の Phase A がハング (page.goto / claude -p の応答待ち等) すると
+    // 1 社の Phase A がハング (page.goto / claude -p の応答待ち等) すると
     //   /api/ai-form-fill 全体が返らなくなるため、上限時間で子プロセスごと打ち切る。
     let timedOut = false;
     const timeoutMs = getPhaseAWorkerTimeoutMs();
@@ -5260,7 +5260,7 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   // LLM 解析が 90 秒タイムアウトしていた。Claude CLI の同時起動を抑えるため
   // Phase A の並列度を 2 に固定する (LLM 解析 + メッセージ生成で実質 4 並列)。
   //
-  // v2.2.0: 2 並列の制約は Phase A 内で claude -p を呼ぶ (LLM 解析 / LLM 文面生成)
+  // 2 並列の制約は Phase A 内で claude -p を呼ぶ (LLM 解析 / LLM 文面生成)
   //   場合の Claude Pro レート制限が理由。既定 (両フラグ OFF) の Phase A は HTTP 取得
   //   だけなので 4 並列にして、最初の社が Phase B に入るまでの待ちと全体時間を短縮する。
   //   SALES_CLAW_PHASE_A_CONCURRENCY で 1〜6 に上書き可能。
@@ -5355,7 +5355,7 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
     }
   });
 
-  // v2.2.0: Phase A で失敗した社 (subprocess crash / timeout / 認証失効で中断) は
+  // Phase A で失敗した社 (subprocess crash / timeout / 認証失効で中断) は
   //   subprocess 側が terminal ログを書かないことがあり、site_analysis / message_draft
   //   のまま「処理中」に見え続けていた。バッチ開始以降に terminal ログが無い社は
   //   ここで error を記録し、エラータブから再試行できるようにする。
@@ -7002,7 +7002,7 @@ function buildPage() {
 <title>Sales Claw</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <!-- ローカルバンドル: フォント・Material Symbols・Tailwind (全てオフライン動作) -->
-<!-- v2.2.0: 未使用の Phosphor アイコン (CSS 78KB + webfont 147KB) の読み込みを削除 -->
+<!-- 未使用の Phosphor アイコン (CSS 78KB + webfont 147KB) の読み込みを削除 -->
 <link rel="stylesheet" href="/assets/vendor/fonts.css">
 <link rel="stylesheet" href="/assets/vendor/material-symbols.css">
 <link rel="stylesheet" href="/assets/vendor/tailwind.css">
@@ -7603,7 +7603,7 @@ ${renderStyles()}
     <div class="company-toolbar" style="flex-direction:column;gap:0">
       <!-- Row 1: Bulk action buttons -->
       <div class="bulk-toolbar" style="justify-content:flex-end">
-        <!-- v2.2.0: 破壊的操作 (選択を削除) は左端に離し、主要操作 (AIでフォーム入力) と隣接させない (GB-4-1) -->
+        <!-- 破壊的操作 (選択を削除) は左端に離し、主要操作 (AIでフォーム入力) と隣接させない (GB-4-1) -->
         <button class="btn btn-outline-danger btn-sm" style="margin-right:auto" onclick="bulkDeleteCompanies()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
         <button class="btn btn-outline-primary btn-sm" onclick="triggerCompanyImport()">${_t['action.importTargets'] || 'Import Excel/CSV'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openCompanyFormModal()">${_t['action.addCompany'] || 'Add Company'}</button>
@@ -7843,7 +7843,7 @@ ${renderStyles()}
       <div id="liveFormViewSlot" class="lfs-view-slot">
         <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
           <div>${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}</div>
-          <!-- v2.2.0: 空状態から次の操作へ 1 クリックで進める (GB-9-3) -->
+          <!-- 空状態から次の操作へ 1 クリックで進める (GB-9-3) -->
           <button type="button" class="btn btn-primary btn-sm" onclick="document.querySelector('.tab-btn[data-tab=&quot;companies&quot;]').click()">
             ${_lang === 'ja' ? '企業一覧で対象を選んで開始する' : 'Pick companies to start'}
           </button>
@@ -8019,7 +8019,7 @@ ${renderStyles()}
 
         async function refreshLiveFormSessions() {
           try {
-            // v2.2.0: 進捗表示に必要な liveMonitor だけを取得 (旧: 毎秒 /api/data 全体)。
+            // 進捗表示に必要な liveMonitor だけを取得 (旧: 毎秒 /api/data 全体)。
             //   操作中タブが非表示なら badge 用に sessions だけ取る。
             const liveTabActive = document.querySelector('.tab-content.active')?.id === 'tab-live-form';
             const [sessionsRes, dataRes] = await Promise.all([
@@ -8492,7 +8492,7 @@ ${renderStyles()}
           const el = document.getElementById('liveScreenshots');
           if (!el) return;
           // session 各社の ss-{No}-{input|confirm|sent}.png を並べる
-          // (v2.2.0: 結果を使っていなかった /api/data 取得を削除)
+          // (結果を使っていなかった /api/data 取得を削除)
           try {
             const noSet = new Set(sessions.map(s => Number(s.companyNo)).filter(n => Number.isFinite(n)));
             const shots = [];
@@ -8653,7 +8653,7 @@ ${renderStyles()}
         <button class="btn btn-sm btn-outline-primary" onclick="toggleAllAwaiting()">${_t['action.selectAll']}</button>
         <button class="btn btn-sm btn-success" onclick="bulkApprove('sent')">${_t['action.bulkSent']}</button>
         <button class="btn btn-sm btn-outline-danger" onclick="bulkSkipWithFeedback()">${_t['action.bulkSkip']}</button>
-        <!-- v2.2.0: 破壊的操作 (削除) は他ボタンから離して右端に置く (GB-4-1) -->
+        <!-- 破壊的操作 (削除) は他ボタンから離して右端に置く (GB-4-1) -->
         <button class="btn btn-sm btn-outline-danger" style="margin-left:16px" onclick="bulkDeleteAwaiting()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
       </div>
     </div>
@@ -11549,7 +11549,7 @@ const server = http.createServer(async (req, res) => {
   // (旧2つ目の /screenshots/ ブロックは到達不能なデッドコードだったため削除。
   //  先行の /screenshots/ ハンドラが全 /screenshots/ パスを return 済み。)
 
-  // --- Live monitor only (v2.2.0) ---
+  // --- Live monitor only ---
   // GET /api/live-monitor
   //   操作中タブは liveMonitor.events しか使わないのに、毎秒 /api/data (全社分の
   //   一覧・履歴・本文入り、数 MB) を取得していた。進捗表示に必要な分だけ返す。

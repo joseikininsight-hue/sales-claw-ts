@@ -243,7 +243,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
       let pipelineQueuedCount = 0;
       let pipelineInFlight = 0;
       let pipelineQueueError: any = null;
-      // v2.2.0: Phase B (CLI) が何も処理していない時は N 社溜まるのを待たずに即投入する。
+      // Phase B (CLI) が何も処理していない時は N 社溜まるのを待たずに即投入する。
       //   旧: 常に parallelism 社 (既定 3) の Phase A 成功を待ってから最初のバッチを
       //   送っていたため、CLI が数十秒〜数分アイドルになっていた。
       function isPhaseBIdle() {
@@ -424,7 +424,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
           skippedCount: phaseASkipped.length,
           failureCount: phaseA.failures.length,
           elapsedMs: phaseA.elapsedMs,
-          // v2.2.0: 一部成功時もスキップ理由を返す (旧: 全件失敗時しか返さず、
+          // 一部成功時もスキップ理由を返す (旧: 全件失敗時しか返さず、
           //   営業お断り / URL 未設定 で落ちた社がオペレーターに見えなかった)
           skipped: phaseASkipped.map((entry: any) => ({
             companyNo: entry.no,

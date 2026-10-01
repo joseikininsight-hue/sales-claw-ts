@@ -18,7 +18,7 @@ const PROVIDERS = {
   },
 };
 
-// Claude Code CLI のみをサポートする (v2.2.0 で Codex / Gemini 対応を削除)。
+// Claude Code CLI のみをサポートする (Codex / Gemini 対応は削除済み)。
 // 旧設定の aiProvider: 'codex' / 'gemini' などは全て 'claude' に正規化される。
 function normalizeProviderId(value) {
   const key = typeof value === 'string' ? value.trim().toLowerCase() : '';

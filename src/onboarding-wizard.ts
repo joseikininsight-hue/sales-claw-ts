@@ -660,7 +660,7 @@ body {
     bypassAi: false,
     errors: [],
   }, SAVED || {});
-  // v2.2.0: Claude Code CLI のみサポート。保存済み進捗の 'codex' / 'gemini' は 'claude' に戻す。
+  // Claude Code CLI のみサポート。保存済み進捗の 'codex' / 'gemini' は 'claude' に戻す。
   state.aiProvider = 'claude';
 
   // ---- helpers ----

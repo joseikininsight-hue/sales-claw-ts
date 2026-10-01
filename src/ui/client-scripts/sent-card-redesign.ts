@@ -226,7 +226,7 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    // v2.2.0: 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
+    // 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
     //   (industry) で埋めていたため、フォームに入力した値と誤解されていた (GB-0-1)。
     var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || '';
     void industry;
@@ -237,7 +237,7 @@ const SCRIPT = `(function(){
 
     var fields = [
       (inquiryType ? renderField('help', sent2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }) : ''),
-      // v2.2.0: 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
+      // 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
       renderField('domain', sent2T('awaitingCard.field.company', '会社名'), (p && p.companyName) || '', { valueClass: 'aw2-fld-company', placeholder: settingsLoadingPh }),
       renderField('person', sent2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
       renderField('mail', sent2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),

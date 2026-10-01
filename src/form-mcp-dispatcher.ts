@@ -110,7 +110,7 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
       await ctx.formSessionManager._waitForLoad(p.sessionId, 15000);
       sessionId = p.sessionId;
     } else {
-      // 新規セッション。v2.2.0: companyNo を必須にする。
+      // 新規セッション。companyNo を必須にする。
       //   旧: 未指定でも ss-0-*.png (tabs new では ss-undefined-*.png) で作成し続けたため、
       //     awaiting_approval の screenshot 存在チェックが 422 になり CLI が再試行ループに
       //     入っていた。作成時点で明示エラーを返し、CLI に即座に引数を直させる。

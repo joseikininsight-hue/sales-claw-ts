@@ -298,7 +298,7 @@ const SCRIPT = `(function(){
           : '')
       + '<div class="aw2-head-icon"><span class="material-symbols-outlined">description</span></div>'
       + '<div>'
-      // v2.2.0: 見出しを会社名にする (旧: 全カード「送信内容の確認」で、どの会社か走査できなかった)
+      // 見出しを会社名にする (旧: 全カード「送信内容の確認」で、どの会社か走査できなかった)
       + '<h3 class="aw2-head-title">' + safeText(cardHeading(c, aw2T('awaitingCard.title', '送信内容の確認'))) + '</h3>'
       + '<p class="aw2-head-sub">' + safeText(aw2T('awaitingCard.title', '送信内容の確認')) + ' — ' + safeText(aw2T('awaitingCard.subtitle', 'AI が入力した内容とスクリーンショットを確認してください')) + '</p>'
       + '</div>'
@@ -329,7 +329,7 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    // v2.2.0: 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
+    // 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
     //   (industry) で埋めていたため、フォームに入力した値と誤解されていた (GB-0-1)。
     var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || '';
     void industry;
@@ -340,7 +340,7 @@ const SCRIPT = `(function(){
 
     var fields = [
       (inquiryType ? renderField('help', aw2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }) : ''),
-      // v2.2.0: 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
+      // 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
       renderField('domain', aw2T('awaitingCard.field.company', '会社名'), (p && p.companyName) || '', { valueClass: 'aw2-fld-company', placeholder: settingsLoadingPh }),
       renderField('person', aw2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
       renderField('mail', aw2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),
@@ -464,7 +464,7 @@ const SCRIPT = `(function(){
       ? aw2T('awaitingCard.btn.aiSend.disabledCaptcha', 'CAPTCHA / 認証が要求されているため AI 送信できません。ブラウザで手動送信してください')
       : aw2T('awaitingCard.btn.aiSend.title', 'AI に再度フォームを開かせ、submit ボタンをクリックさせます (実送信)');
     return '<div class="aw2-foot">'
-      // v2.2.0: 実際の動作は「この会社を送らずスキップ」。旧ラベル「キャンセル」は動作と不一致 (GB-4-5)
+      // 実際の動作は「この会社を送らずスキップ」。旧ラベル「キャンセル」は動作と不一致 (GB-4-5)
       + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel"><span class="material-symbols-outlined">block</span>' + safeText(aw2T('awaitingCard.btn.cancel', '送らない（スキップ）')) + '</button>'
       + '<div class="aw2-foot-right">'
       + (formUrl ? '<span class="aw2-form-url" title="' + formUrl + '">' + formUrl + '</span>' : '')

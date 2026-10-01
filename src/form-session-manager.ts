@@ -510,7 +510,7 @@ class FormSessionManager {
 
       session.view.webContents.loadURL(url).catch((error) => {
         const s = this._sessions.get(sessionId);
-        // v2.2.0: ERR_ABORTED はリダイレクト等でナビゲーションが差し替わっただけで、
+        // ERR_ABORTED はリダイレクト等でナビゲーションが差し替わっただけで、
         //   ページ自体は続けて読み込まれる。load_failed にすると後続の dom-ready でも
         //   'loaded' に戻らず、CLI が読み込み済みページを失敗扱いしてターンを浪費していた。
         if (/ERR_ABORTED/i.test(String(error && error.message))) return;
@@ -565,7 +565,7 @@ class FormSessionManager {
         if (session.status === 'loading') session.status = 'loaded';
         resolve();
       };
-      // v2.2.0: メインフレームの読み込み失敗 (DNS 失敗 / 接続拒否等) は即座に返す。
+      // メインフレームの読み込み失敗 (DNS 失敗 / 接続拒否等) は即座に返す。
       //   旧: dom-ready しか待たず、失敗時も 20 秒 (再試行込みで 40 秒超) 待っていた。
       const onFail = (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
         if (isMainFrame === false || Number(errorCode) === -3 /* ERR_ABORTED */) return;

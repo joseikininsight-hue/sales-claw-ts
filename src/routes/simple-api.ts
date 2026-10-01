@@ -122,7 +122,7 @@ module.exports = function createSimpleApiRoutes(ctx) {
     }
   }
 
-  // v2.2.0: AI 最終送信 (ai-final-submit) の submitted は、承認済み本文を CLI に
+  // AI 最終送信 (ai-final-submit) の submitted は、承認済み本文を CLI に
   //   curl で再タイプさせず、直近の awaiting_approval ログの sentMessage を引き継ぐ。
   //   (長文の再タイプは CP932 文字化け / エスケープ失敗で 422 ループの原因だった)
   function findApprovedSentMessage(no) {
@@ -696,7 +696,7 @@ module.exports = function createSimpleApiRoutes(ctx) {
           }
         }
         logAction(no, name, action, details);
-        // v2.2.0: バッチ完了判定をポーリング (2 秒) 待ちにせず即座に回す
+        // バッチ完了判定をポーリング (2 秒) 待ちにせず即座に回す
         if (typeof onActionLogged === 'function') {
           try { onActionLogged(no, action); } catch (_) { /* best-effort */ }
         }

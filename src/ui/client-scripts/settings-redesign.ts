@@ -506,7 +506,7 @@ const SCRIPT = `(function(){
     obs.observe(tab, { attributes: true, attributeFilter: ['class'] });
   }
 
-  // v2.2.0: 設定フォームの <label> と入力欄を for/id で関連付ける (GB-11-6)。
+  // 設定フォームの <label> と入力欄を for/id で関連付ける (GB-11-6)。
   //   クリックで入力欄にフォーカスでき、スクリーンリーダーにも項目名が伝わる。
   function associateLabels() {
     var root = document.getElementById('tab-settings');
