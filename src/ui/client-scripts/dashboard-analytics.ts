@@ -212,6 +212,12 @@ function updateAnalyticsDonut(pct){
   fill.style.strokeDashoffset = String(circumference * (1 - clamped / 100));
 }
 
+// v2.2.0: details が JSON 文字列 ({"reason":...}) のまま表示されていたのを文章化する
+function humanizeRecentErrorReason(v){
+  if (typeof window.humanizeLogDetail === 'function') return window.humanizeLogDetail(v);
+  return typeof v === 'string' ? v : (v && (v.reason || v.error || v.message)) || '';
+}
+
 function renderRecentErrors(data){
   const host = document.getElementById('recentErrorsList');
   if (!host) return;
@@ -222,7 +228,7 @@ function renderRecentErrors(data){
     data.recentErrors.slice(0, 5).forEach((e) => {
       items.push({
         name: e.companyName || e.name || '(unknown)',
-        reason: e.reason || e.detail || e.message || '',
+        reason: humanizeRecentErrorReason(e.reason || e.detail || e.message || ''),
         ts: e.ts || e.time || null
       });
     });
@@ -232,7 +238,7 @@ function renderRecentErrors(data){
       if (c && c.lastAction === 'error') {
         items.push({
           name: c.name || c.companyName || '',
-          reason: c.lastErrorDetail || c.lastActionDetail || c.errorReason || c.formUrl || '',
+          reason: humanizeRecentErrorReason(c.lastErrorDetail || c.lastActionDetail || c.errorReason || c.formUrl || ''),
           ts: c.lastActionAt || c.sentAt || c.awaitingAt || null
         });
       }
@@ -400,7 +406,7 @@ function ensureOpsQuickPanel(){
         '<button class="analytics-sub-action" onclick="downloadActionLogCsv()"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:-3px">download</span> action-log CSV</button>' +
         '<button class="analytics-sub-action" onclick="downloadCompaniesCsv()"><span class="material-symbols-outlined" style="font-size:15px;vertical-align:-3px">download</span> companies CSV</button>' +
       '</div>' +
-      '<div style="font-size:.72rem;color:var(--text-muted);line-height:1.5;margin-top:4px">Excel 直開き用 UTF-8 BOM 付き。数式注入はサーバー側でテキスト化します。</div>' +
+      '<div style="font-size:.75rem;color:var(--text-muted);line-height:1.5;margin-top:4px">Excel 直開き用 UTF-8 BOM 付き。数式注入はサーバー側でテキスト化します。</div>' +
     '</div>';
   row.appendChild(grid);
   _opsQuickPanelMounted = true;

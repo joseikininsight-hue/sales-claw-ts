@@ -9,6 +9,47 @@ const { atomicWriteJson } = require('./file-lock');
 
 const XLSX_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+// v2.2.0: CSV の文字コードを判定してから SheetJS に文字列で渡す。
+//   SheetJS は BOM 無しの CSV バッファを Latin-1 として読むため、Google スプレッド
+//   シートや Mac で書き出した UTF-8 (BOM 無し) CSV の日本語が全件文字化けしていた。
+//   UTF-8 として妥当ならそのまま、そうでなければ Shift_JIS (Excel 日本語版の既定) で復号する。
+function detectCsvEncoding(buffer: Buffer): 'utf8' | 'utf8-bom' | 'utf16le' | 'utf16be' | 'shift_jis' {
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) return 'utf8-bom';
+  // UTF-16 (Excel の「Unicode テキスト」を .csv にリネームしたもの等)
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) return 'utf16le';
+  if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) return 'utf16be';
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    return 'utf8';
+  } catch (_) {
+    return 'shift_jis';
+  }
+}
+
+function decodeCsvBuffer(buffer: Buffer): string {
+  switch (detectCsvEncoding(buffer)) {
+    case 'utf8-bom': return buffer.subarray(3).toString('utf8');
+    case 'utf16le': return new TextDecoder('utf-16le').decode(buffer.subarray(2));
+    case 'utf16be': return new TextDecoder('utf-16be').decode(buffer.subarray(2));
+    case 'utf8': return buffer.toString('utf8');
+    default:
+      try {
+        return new TextDecoder('shift_jis').decode(buffer);
+      } catch (_) {
+        return buffer.toString('latin1');
+      }
+  }
+}
+
+function readWorkbookFromBuffer(buffer: Buffer, isCsv: boolean, options: Record<string, unknown> = {}) {
+  if (isCsv) return XLSX.read(decodeCsvBuffer(buffer), { ...options, type: 'string' });
+  return XLSX.read(buffer, { ...options, type: 'buffer' });
+}
+
+function readWorkbookFile(filePath: string, options: Record<string, unknown> = {}) {
+  return readWorkbookFromBuffer(fs.readFileSync(filePath), path.extname(filePath).toLowerCase() === '.csv', options);
+}
+
 // 既存の XLSX/CSV 既定カラム（DEFAULT_COLUMN_MAPPING に列位置を持つ）
 const CORE_TARGET_FIELDS = ['no', 'status', 'companyName', 'type', 'url', 'formUrl', 'notes', 'captcha', 'progress'];
 
@@ -435,7 +476,7 @@ function readWorkbookBundle(targetPath, options: Record<string, unknown> = {}) {
   try {
     const stat = fs.statSync(targetPath);
     if (stat.size > XLSX_MAX_FILE_SIZE) throw new Error(`ファイルサイズが上限(50MB)を超えています: ${stat.size} bytes`);
-    const workbook = XLSX.readFile(targetPath, { raw: false, defval: '' });
+    const workbook = readWorkbookFile(targetPath, { raw: false, defval: '' });
     const sheetNames = workbook.SheetNames || [];
     const sheetName = sheetNames[sheetIndex] || sheetNames[0] || 'Targets';
 
@@ -707,7 +748,7 @@ function repairImportedTargetListIfNeeded() {
   let bestCandidate: any = null;
   candidatePaths.forEach((candidatePath: any) => {
     try {
-      const workbook = XLSX.readFile(candidatePath, { raw: false, defval: '' });
+      const workbook = readWorkbookFile(candidatePath, { raw: false, defval: '' });
       const selectedSheet = selectImportSheet(workbook);
       if (!selectedSheet || !selectedSheet.headers || selectedSheet.headers.length === 0) return;
       const importMapping = {
@@ -1109,31 +1150,14 @@ function importTargetList({ fileName, buffer, mode = 'upsert' }: { fileName: str
 
   const warnings: string[] = [];
 
-  // CSV の文字コード簡易判定 (UTF-8 BOM / SJIS 高確率の検出)
-  if (ext === '.csv') {
-    const head = buffer.slice(0, Math.min(buffer.length, 4096));
-    const hasBom = head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF;
-    if (!hasBom) {
-      // 0x80-0xFF が多く現れて UTF-8 として不正なら SJIS の可能性が高い
-      let nonAsciiInvalidUtf8 = 0;
-      for (let i = 0; i < head.length; i += 1) {
-        const b = head[i];
-        if (b < 0x80) continue;
-        // UTF-8 リード bytes パターンを満たすか簡易チェック
-        if ((b & 0xE0) === 0xC0 && i + 1 < head.length && (head[i + 1] & 0xC0) === 0x80) { i += 1; continue; }
-        if ((b & 0xF0) === 0xE0 && i + 2 < head.length && (head[i + 1] & 0xC0) === 0x80 && (head[i + 2] & 0xC0) === 0x80) { i += 2; continue; }
-        if ((b & 0xF8) === 0xF0 && i + 3 < head.length && (head[i + 1] & 0xC0) === 0x80 && (head[i + 2] & 0xC0) === 0x80 && (head[i + 3] & 0xC0) === 0x80) { i += 3; continue; }
-        nonAsciiInvalidUtf8 += 1;
-      }
-      if (nonAsciiInvalidUtf8 > 4) {
-        warnings.push('CSV の文字コードが UTF-8 でない可能性があります。文字化けする場合は UTF-8 (BOM 付き) で保存し直してください。');
-      }
-    }
+  // CSV の文字コードは decodeCsvBuffer と同じ判定を使い、Shift_JIS で読んだ時だけ知らせる
+  if (ext === '.csv' && detectCsvEncoding(buffer) === 'shift_jis') {
+    warnings.push('CSV を Shift_JIS として読み込みました。会社名が文字化けしていないかプレビューで確認してください。');
   }
 
   let workbook;
   try {
-    workbook = XLSX.read(buffer, { type: 'buffer', raw: false, defval: '' });
+    workbook = readWorkbookFromBuffer(buffer, ext === '.csv', { raw: false, defval: '' });
   } catch (error) {
     return { ok: false, error: `ファイルを読み込めませんでした: ${error.message}. 形式が壊れていないか確認してください。` };
   }
@@ -1234,6 +1258,7 @@ function importTargetList({ fileName, buffer, mode = 'upsert' }: { fileName: str
 }
 
 module.exports = {
+  decodeCsvBuffer,
   DEFAULT_COLUMN_MAPPING,
   TARGET_FIELDS,
   CORE_TARGET_FIELDS,

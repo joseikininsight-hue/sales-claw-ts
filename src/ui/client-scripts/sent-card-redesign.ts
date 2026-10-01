@@ -19,18 +19,18 @@ const RESEND_STYLE = [
   '.aw2-modal-icon{width:30px;height:30px;border-radius:8px;background:rgba(37,99,235,.12);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
   '.aw2-modal-icon .material-symbols-outlined{font-size:18px}',
   '.aw2-modal-title{font-size:.92rem;font-weight:800;margin:0}',
-  '.aw2-modal-sub{font-size:.7rem;color:var(--text-2);margin:1px 0 0}',
+  '.aw2-modal-sub{font-size:.75rem;color:var(--text-2);margin:1px 0 0}',
   '.aw2-modal-close{margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-3);padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center}',
   '.aw2-modal-close:hover{color:var(--text-1);background:var(--bg-hover)}',
   '.aw2-modal-body{padding:14px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}',
-  '.aw2-modal-meta{font-size:.7rem;color:var(--text-2);display:flex;flex-wrap:wrap;gap:10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px 10px}',
+  '.aw2-modal-meta{font-size:.75rem;color:var(--text-2);display:flex;flex-wrap:wrap;gap:10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:8px 10px}',
   '.aw2-modal-meta b{color:var(--text-1);font-weight:700}',
-  '.aw2-modal-label{font-size:.7rem;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 0}',
+  '.aw2-modal-label{font-size:.75rem;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 0}',
   '.aw2-modal textarea{width:100%;min-height:240px;padding:10px 12px;border:1px solid var(--border-default);border-radius:var(--radius-md)!important;background:var(--bg-deep);color:var(--text-1);font-size:.82rem;font-family:var(--font-body);line-height:1.65;resize:vertical;transition:border-color .15s,box-shadow .15s}',
   '.aw2-modal textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.15)}',
-  '.aw2-modal-counter{font-size:.66rem;color:var(--text-3);text-align:right;font-family:var(--font-mono)}',
+  '.aw2-modal-counter{font-size:.75rem;color:var(--text-3);text-align:right;font-family:var(--font-mono)}',
   '.aw2-modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--border-subtle);background:var(--bg-surface)}',
-  '.aw2-modal-error{display:none;padding:8px 12px;background:var(--error-dim);color:var(--error);border:1px solid rgba(220,38,38,.25);border-radius:var(--radius-sm);font-size:.74rem}',
+  '.aw2-modal-error{display:none;padding:8px 12px;background:var(--error-dim);color:var(--error);border:1px solid rgba(220,38,38,.25);border-radius:var(--radius-sm);font-size:.75rem}',
   '.aw2-modal-error.visible{display:block}',
   '.aw2-modal .aw2-btn-send[data-busy="1"]{opacity:.7;cursor:wait!important;pointer-events:none}'
 ].join('\n');
@@ -88,6 +88,7 @@ const SCRIPT = `(function(){
     var p = senderProfile();
     if (!p) return;
     var map = {
+      'aw2-fld-company': p.companyName || '',
       'aw2-fld-contact': p.contactName || p.name || '',
       'aw2-fld-email': p.email || '',
       'aw2-fld-phone': p.phone || ''
@@ -156,7 +157,7 @@ const SCRIPT = `(function(){
     if (history.length === 0) {
       return '<div class="aw2-log">'
         + '<div class="aw2-section-title"><span class="material-symbols-outlined">timeline</span>' + safeText(sent2T('sentCard.historyTitle', '連絡履歴')) + '</div>'
-        + '<div style="font-size:.74rem;color:var(--text-3);padding:6px 4px">' + safeText(sent2T('sentCard.historyEmpty', 'この企業への連絡は本件のみです。')) + '</div>'
+        + '<div style="font-size:.75rem;color:var(--text-3);padding:6px 4px">' + safeText(sent2T('sentCard.historyEmpty', 'この企業への連絡は本件のみです。')) + '</div>'
       + '</div>';
     }
     var items = history.map(function(h){
@@ -169,12 +170,12 @@ const SCRIPT = `(function(){
       else { dot = ' pending'; dotIcon = 'schedule'; }
       var d = h.date ? fmtDate(h.date) : '-';
       var preview = h.message ? safeText(String(h.message).substring(0, 80)) : '';
-      var respChip = resp ? '<span style="font-size:.62rem;font-weight:700;padding:1px 7px;border-radius:var(--radius-pill);background:var(--bg-raised);color:var(--text-2);margin-right:6px">' + safeText(resp) + '</span>' : '';
+      var respChip = resp ? '<span style="font-size:.75rem;font-weight:700;padding:1px 7px;border-radius:var(--radius-pill);background:var(--bg-raised);color:var(--text-2);margin-right:6px">' + safeText(resp) + '</span>' : '';
       return '<li class="aw2-log-item">'
         + '<span class="aw2-log-dot' + dot + '"><span class="material-symbols-outlined">' + dotIcon + '</span></span>'
         + '<span class="aw2-log-label" style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto">'
-        +   '<span style="display:flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600">' + respChip + '<span style="color:var(--text-3);font-family:var(--font-mono);font-size:.7rem">' + safeText(d) + '</span></span>'
-        +   (preview ? '<span style="font-size:.7rem;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + preview + '</span>' : '')
+        +   '<span style="display:flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600">' + respChip + '<span style="color:var(--text-3);font-family:var(--font-mono);font-size:.75rem">' + safeText(d) + '</span></span>'
+        +   (preview ? '<span style="font-size:.75rem;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + preview + '</span>' : '')
         + '</span>'
       + '</li>';
     }).join('');
@@ -193,8 +194,8 @@ const SCRIPT = `(function(){
       + '<div class="aw2-head-left">'
       + '<div class="aw2-head-icon" style="background:var(--success-dim);color:var(--success)"><span class="material-symbols-outlined">mark_email_read</span></div>'
       + '<div>'
-      + '<h3 class="aw2-head-title">' + safeText(sent2T('sentCard.title', '送信済みの内容')) + '</h3>'
-      + '<p class="aw2-head-sub">' + safeText(sent2T('sentCard.subtitle', '送信済みフォームの入力内容と連絡履歴を確認できます')) + '</p>'
+      + '<h3 class="aw2-head-title">' + safeText((c && c.name) ? ((c.no != null ? 'No.' + c.no + '  ' : '') + c.name) : sent2T('sentCard.title', '送信済みの内容')) + '</h3>'
+      + '<p class="aw2-head-sub">' + safeText(sent2T('sentCard.title', '送信済みの内容')) + ' — ' + safeText(sent2T('sentCard.subtitle', '送信済みフォームの入力内容と連絡履歴を確認できます')) + '</p>'
       + '</div>'
       + '</div>'
       + '<div class="aw2-head-right">'
@@ -214,7 +215,7 @@ const SCRIPT = `(function(){
       +   '<button type="button" data-zoom-action="out" title="' + safeText(sent2T('awaitingCard.zoom.out', '縮小')) + '">−</button>'
       +   '<span class="aw2-zoom-val">100%</span>'
       +   '<button type="button" data-zoom-action="in" title="' + safeText(sent2T('awaitingCard.zoom.in', '拡大')) + '">+</button>'
-      +   '<button type="button" data-zoom-action="reset" title="' + safeText(sent2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
+      +   '<button type="button" data-zoom-action="reset" title="' + safeText(sent2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.75rem;width:auto;padding:0 8px">100%</button>'
       + '</div>'
       + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>' + safeText(sent2T('awaitingCard.openTab', '別タブで開く')) + '</button>' : '')
       + '</div>'
@@ -225,16 +226,19 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    var defaultInquiry = sent2T('awaitingCard.field.defaultInquiry', 'サービスについて');
-    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || defaultInquiry);
+    // v2.2.0: 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
+    //   (industry) で埋めていたため、フォームに入力した値と誤解されていた (GB-0-1)。
+    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || '';
+    void industry;
     var contactName = p ? (p.contactName || p.name || '') : '';
     var email = p ? (p.email || '') : '';
     var phone = p ? (p.phone || '') : '';
     var settingsLoadingPh = sent2T('awaitingCard.field.settingsLoading', '— (settings 取得中)');
 
     var fields = [
-      renderField('help', sent2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }),
-      renderField('domain', sent2T('awaitingCard.field.company', '会社名'), c.name, { valueClass: 'aw2-fld-company' }),
+      (inquiryType ? renderField('help', sent2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }) : ''),
+      // v2.2.0: 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
+      renderField('domain', sent2T('awaitingCard.field.company', '会社名'), (p && p.companyName) || '', { valueClass: 'aw2-fld-company', placeholder: settingsLoadingPh }),
       renderField('person', sent2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
       renderField('mail', sent2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),
       renderField('call', sent2T('awaitingCard.field.phone', '電話番号'), phone, { valueClass: 'aw2-fld-phone', placeholder: settingsLoadingPh })

@@ -7048,32 +7048,32 @@ ${renderStyles()}
   <div class="app-brand-meta">
     <span title="Version ${APP_VERSION}" class="app-version-chip">v${APP_VERSION}</span>
     <span class="app-build-chip" style="color:${buildMeta.fg};background:${buildMeta.bg}" title="${buildMeta.title}">${buildMeta.label}</span>
-    <button id="updateCheckBtn" type="button" title="${_t['header.updateCheck.title'] || 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
+    <button id="updateCheckBtn" type="button" title="${_t['header.updateCheck.title'] || 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.75rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
       <span id="updateCheckIcon" class="material-symbols-outlined" style="font-size:13px">sync</span>
       <span id="updateCheckLabel">${_t['header.updateCheck.label'] || 'Update'}</span>
     </button>
   <!-- Live status -->
   <div style="display:flex;align-items:center;gap:6px;margin-right:2px">
     <span class="live-dot on" id="liveDot"></span>
-    <span style="font-size:.62rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)" id="liveLabel">${_t['app.live'] || 'LIVE'}</span>
+    <span style="font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)" id="liveLabel">${_t['app.live'] || 'LIVE'}</span>
   </div>
-  <small style="font-size:.62rem;color:var(--text-3);margin-right:auto;font-family:var(--font-mono)" id="lastUpdate"></small>
+  <small style="font-size:.75rem;color:var(--text-3);margin-right:auto;font-family:var(--font-mono)" id="lastUpdate"></small>
   </div>
   <!-- AI status + mode widget -->
-  <div style="display:flex;align-items:center;gap:0;background:var(--bg-raised);border:1px solid var(--border-default);font-size:.72rem;border-radius:var(--radius-sm)">
+  <div style="display:flex;align-items:center;gap:0;background:var(--bg-raised);border:1px solid var(--border-default);font-size:.75rem;border-radius:var(--radius-sm)">
     <div id="claudeStatusWidget" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-right:1px solid var(--border-subtle)">
       <span id="claudeStatusDot" class="live-dot" style="width:7px;height:7px"></span>
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" style="flex-shrink:0;opacity:.6"><path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
       <span id="claudeStatusLabel" style="color:var(--text-2);white-space:nowrap">AI</span>
     </div>
-    <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
-    <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
-    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_t['header.queueReset.title'] || 'Clear stuck queue'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_t['header.queueReset.label'] || 'QUEUE'}</button>
+    <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
+    <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
+    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_t['header.queueReset.title'] || 'Clear stuck queue'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_t['header.queueReset.label'] || 'QUEUE'}</button>
   </div>
   <!-- Icon-only action buttons -->
   <div style="display:flex;align-items:center;gap:2px">
     <!-- v2.0.33: 言語切替トグル (ja ↔ en)。クリックで preferences.language を更新 → リロード -->
-    <button class="lang-toggle" onclick="toggleLanguage()" title="${_t['header.langToggle.title'] || 'Switch language'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.72rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
+    <button class="lang-toggle" onclick="toggleLanguage()" title="${_t['header.langToggle.title'] || 'Switch language'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.75rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
       <span class="material-symbols-outlined" style="font-size:14px;margin-right:4px">language</span>
       <span>${_t['header.langToggle.label'] || 'EN'}</span>
     </button>
@@ -7098,7 +7098,7 @@ ${renderStyles()}
 <div id="updateBanner" style="display:none;position:fixed;top:48px;left:0;right:0;z-index:49;background:#2563eb;color:#fff;padding:6px 16px;font-size:.75rem;font-weight:600;align-items:center;gap:8px;justify-content:center"></div>
 
 <!-- Cost summary chip (AI トークン消費概算 — pollCostSummary 経由で表示) -->
-<div id="costChip" title="${_t['cost.title.tooltip'] || 'AI token cost estimate'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.72rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
+<div id="costChip" title="${_t['cost.title.tooltip'] || 'AI token cost estimate'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.75rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
     <span style="display:inline-flex;align-items:center;gap:5px;font-weight:700">
       <span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">payments</span>
@@ -7108,7 +7108,7 @@ ${renderStyles()}
   </div>
   <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.today'] || 'Today'}</span><span id="costToday" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
   <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.thisMonth'] || 'This month'}</span><span id="costMonth" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
-  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.66rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_t['cost.avgPerCompany'] || 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
+  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.75rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_t['cost.avgPerCompany'] || 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
 </div>
 
 <!-- Recovery banner (前回中断バッチの復旧通知) — pollRecoveryStatus 経由で表示 -->
@@ -7118,10 +7118,10 @@ ${renderStyles()}
     <span id="recoveryBannerText">${_t['recovery.banner.text'] || 'Recovery snapshot detected from previous session'}</span>
   </span>
   <span id="recoveryBannerDetail" style="font-weight:400;opacity:.9"></span>
-  <button id="recoveryResumeBtn" onclick="resumeRecovery()" style="background:#fff;color:#ea580c;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.72rem">
+  <button id="recoveryResumeBtn" onclick="resumeRecovery()" style="background:#fff;color:#ea580c;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.75rem">
     ${_t['recovery.banner.resume'] || 'Resume'}
   </button>
-  <button id="recoveryDiscardBtn" onclick="discardRecovery()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.72rem">
+  <button id="recoveryDiscardBtn" onclick="discardRecovery()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.75rem">
     ${_t['recovery.banner.discard'] || 'Discard'}
   </button>
 </div>
@@ -7390,8 +7390,8 @@ ${renderStyles()}
   <button class="tab-btn" data-tab="live-form" title="${_lang === 'ja' ? 'AI がフォームを操作する様子を表示' : 'Watch AI fill the form live'}">
     <span class="material-symbols-outlined tab-icon">smart_toy</span>
     ${_lang === 'ja' ? '操作中' : 'AI Live'}
-    <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
-    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? '本人確認など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;align-items:center;gap:3px;background:#f59e0b;color:#3a2a00;font-size:.55rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
+    <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.75rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
+    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? '本人確認など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;align-items:center;gap:3px;background:#f59e0b;color:#3a2a00;font-size:.75rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
   </button>
   <!-- v2.0.93: セッションを終了 — 操作中タブで active session が居る時だけ表示 -->
   <button id="liveSessionEndInline" type="button" class="tab-end-btn" style="display:none" title="${_lang === 'ja' ? '稼働中の AI 操作セッションを終了' : 'End active AI operation session'}">
@@ -7401,7 +7401,7 @@ ${renderStyles()}
   <button class="tab-btn" data-tab="awaiting">
     <span class="material-symbols-outlined tab-icon">pending_actions</span>
     ${_t['tab.awaiting']}
-    <span style="background:var(--warning-container);color:var(--warning);font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:var(--radius-xl);font-family:var(--font-mono)" id="awaitingCount">0</span>
+    <span style="background:var(--warning-container);color:var(--warning);font-size:.75rem;font-weight:700;padding:1px 6px;border-radius:var(--radius-xl);font-family:var(--font-mono)" id="awaitingCount">0</span>
   </button>
   <button class="tab-btn" data-tab="sent">
     <span class="material-symbols-outlined tab-icon">mark_email_read</span>
@@ -7424,6 +7424,7 @@ ${renderStyles()}
 
   <!-- Dashboard tab: analytics-only view -->
   <div class="tab-content active" id="tab-dashboard">
+    <h1 class="sr-only">${_t['tab.dashboard'] || 'Dashboard'}</h1>
   <div id="analyticsRow" class="chart-panel" style="padding:20px 22px;display:flex;flex-direction:column;margin-bottom:0;gap:0">
     <!-- HERO: donut + ratio + live badge -->
     <div class="analytics-hero">
@@ -7598,13 +7599,15 @@ ${renderStyles()}
 
   <!-- Companies tab (inside main column) -->
   <div class="tab-content" id="tab-companies">
+    <h1 class="sr-only">${_t['tab.companies']}</h1>
     <div class="company-toolbar" style="flex-direction:column;gap:0">
       <!-- Row 1: Bulk action buttons -->
       <div class="bulk-toolbar" style="justify-content:flex-end">
+        <!-- v2.2.0: 破壊的操作 (選択を削除) は左端に離し、主要操作 (AIでフォーム入力) と隣接させない (GB-4-1) -->
+        <button class="btn btn-outline-danger btn-sm" style="margin-right:auto" onclick="bulkDeleteCompanies()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
         <button class="btn btn-outline-primary btn-sm" onclick="triggerCompanyImport()">${_t['action.importTargets'] || 'Import Excel/CSV'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openCompanyFormModal()">${_t['action.addCompany'] || 'Add Company'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="toggleAllCompanies()">${_t['action.selectAll']}</button>
-        <button class="btn btn-outline-danger btn-sm" onclick="bulkDeleteCompanies()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
         <button class="btn btn-outline-primary btn-sm" onclick="markSelectedTargets(true)">${_t['action.markTarget'] || 'Mark Target'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="markSelectedTargets(false)">${_t['action.unmarkTarget'] || 'Unmark Target'}</button>
         <button class="btn btn-primary btn-sm" onclick="prepareSelectedOutreach()">${_t['action.prepareOutreach'] || 'Prepare Outreach'}</button>
@@ -7624,19 +7627,19 @@ ${renderStyles()}
         <span class="filter-bar-divider" aria-hidden="true"></span>
         <div class="filter-field">
           <span class="ms">category</span>
-          <select id="companyTypeFilter">
+          <select id="companyTypeFilter" aria-label="${_lang === 'ja' ? '種別で絞り込み' : 'Filter by type'}">
             <option value="">${_t['companies.filter.typeAll'] || 'Type: All'}</option>
           </select>
         </div>
         <div class="filter-field">
           <span class="ms">trending_up</span>
-          <select id="companyProgressFilter">
+          <select id="companyProgressFilter" aria-label="${_lang === 'ja' ? '進捗で絞り込み' : 'Filter by progress'}">
             <option value="">${_t['companies.filter.progressAll'] || 'Progress: All'}</option>
           </select>
         </div>
         <div class="filter-field" style="flex:1;min-width:180px">
           <span class="ms">search</span>
-          <input type="text" id="q" placeholder="${_t['filter.search']}">
+          <input type="text" id="q" aria-label="${_t['filter.search']}" placeholder="${_t['filter.search']}">
         </div>
         <button id="clearFiltersBtn" class="filter-clear-btn" onclick="clearAllFilters()">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>
@@ -7646,8 +7649,8 @@ ${renderStyles()}
     </div>
     <div class="table-shell table-shell-scroll">
       <table class="main-table" id="mt">
-<colgroup><col style="width:36px"><col style="width:44px"><col><col style="width:110px"><col style="width:110px"><col style="width:52px"><col style="width:170px"><col style="width:180px"><col style="width:200px"></colgroup>
-<thead><tr><th class="checkbox-cell"><input type="checkbox" id="companySelectAll" class="form-check-input" onclick="toggleAllCompanies(this.checked)"></th><th onclick="sortTable('no')">${_t['th.no']} <span class="sort-icon" data-col="no"></span></th><th onclick="sortTable('name')">${_t['th.company']} <span class="sort-icon" data-col="name"></span></th><th onclick="sortTable('type')">${_t['th.type']} <span class="sort-icon" data-col="type"></span></th><th onclick="sortTable('progress')">${_t['th.progress']} <span class="sort-icon" data-col="progress"></span></th><th onclick="sortTable('sent')">${_t['th.sent']} <span class="sort-icon" data-col="sent"></span></th><th>${_t['th.formUrl']}</th><th>${_t['th.message']}</th><th class="action-cell">${_t['th.action']}</th></tr></thead>
+<colgroup><col style="width:36px"><col style="width:44px"><col><col style="width:96px"><col style="width:96px"><col style="width:88px"><col style="width:172px"><col style="width:180px"><col style="width:200px"></colgroup>
+<thead><tr><th class="checkbox-cell"><input type="checkbox" id="companySelectAll" aria-label="${_lang === 'ja' ? '表示中の企業をすべて選択' : 'Select all visible companies'}" class="form-check-input" onclick="toggleAllCompanies(this.checked)"></th><th onclick="sortTable('no')">${_t['th.no']} <span class="sort-icon" data-col="no"></span></th><th onclick="sortTable('name')">${_t['th.company']} <span class="sort-icon" data-col="name"></span></th><th onclick="sortTable('type')">${_t['th.type']} <span class="sort-icon" data-col="type"></span></th><th onclick="sortTable('progress')">${_t['th.progress']} <span class="sort-icon" data-col="progress"></span></th><th onclick="sortTable('sent')">${_t['th.sent']} <span class="sort-icon" data-col="sent"></span></th><th>${_t['th.formUrl']}</th><th>${_t['th.message']}</th><th class="action-cell">${_t['th.action']}</th></tr></thead>
         <tbody id="companyBody"></tbody>
       </table>
     </div>
@@ -7706,7 +7709,7 @@ ${renderStyles()}
     }
     .lfs-summary-item .lfs-summary-head {
       display: flex; align-items: center; gap: 6px;
-      font-size: .74rem; font-weight: 600;
+      font-size: .75rem; font-weight: 600;
       color: var(--on-surface, #111);
     }
     /* v2.0.95: 操作中タブは「純粋なブラウザが開いている」見た目に。
@@ -7734,7 +7737,7 @@ ${renderStyles()}
     .tab-end-btn {
       display: inline-flex; align-items: center; gap: 4px;
       background: linear-gradient(180deg, #ef4444, #dc2626);
-      color: #fff; border: none; font-size: .68rem; font-weight: 700;
+      color: #fff; border: none; font-size: .75rem; font-weight: 700;
       padding: 5px 10px; border-radius: 999px; cursor: pointer;
       margin-left: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.15);
       transition: filter .15s ease;
@@ -7747,12 +7750,13 @@ ${renderStyles()}
       width: 16px; height: 16px; margin-left: 4px;
       background: rgba(255,255,255,.18); color: inherit;
       border: none; border-radius: 50%; cursor: pointer;
-      font-size: 11px; line-height: 1; padding: 0;
+      font-size: 12px; line-height: 1; padding: 0;
       transition: background .15s ease;
     }
     .lf-session-close:hover { background: rgba(239,68,68,.85); color: #fff; }
   </style>
   <div class="tab-content lfs-bg" id="tab-live-form" style="height:calc(100vh - 92px);overflow:hidden">
+    <h1 class="sr-only">${_lang === 'ja' ? '操作中' : 'AI Live'}</h1>
     <!-- v2.0.93: ヘッダーカード撤去。状態は隠し span で保持 (script からの参照互換) -->
     <span id="liveSessionStatus" data-status="IDLE" style="display:none"></span>
     <span id="liveSessionId" style="display:none"></span>
@@ -7767,7 +7771,7 @@ ${renderStyles()}
         <span class="material-symbols-outlined" style="font-size:16px;color:#10b981">smart_toy</span>
         <span class="lfs-text" style="font-size:.85rem;font-weight:600">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
         <span style="background:#10b981;width:7px;height:7px;border-radius:50%;display:inline-block"></span>
-        <span class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
+        <span class="lfs-muted" style="font-size:.75rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
       </div>
 
       <!-- v2.0.95: 進捗/現在の操作/実行ステップ サマリは撤去 (右下 Live Monitor に集約)。
@@ -7785,9 +7789,9 @@ ${renderStyles()}
               <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="var(--on-surface,#111)" font-weight="700">0%</text>
             </svg>
             <div style="flex:1;min-width:0">
-              <div id="liveProgressStep" class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
+              <div id="liveProgressStep" class="lfs-muted" style="font-size:.75rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
               <div id="liveProgressLabel" class="lfs-strong" style="font-size:.82rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
-              <div id="liveProgressEta" class="lfs-muted" style="font-size:.68rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
+              <div id="liveProgressEta" class="lfs-muted" style="font-size:.75rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
             </div>
           </div>
         </div>
@@ -7798,7 +7802,7 @@ ${renderStyles()}
             <span>${_lang === 'ja' ? '現在の操作' : 'Current Action'}</span>
           </div>
           <div id="liveCurrentAction" class="lfs-text" style="font-size:.76rem;line-height:1.5;min-height:1.5em">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
-          <div class="lfs-muted" style="font-size:.68rem;display:grid;gap:2px">
+          <div class="lfs-muted" style="font-size:.75rem;display:grid;gap:2px">
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#9333ea;font-family:monospace">-</span></div>
             <div>${_lang === 'ja' ? 'ステータス' : 'Status'}: <span id="liveCurrentStatus" style="color:#10b981">${_lang === 'ja' ? '待機' : 'idle'}</span></div>
@@ -7810,8 +7814,8 @@ ${renderStyles()}
             <span class="material-symbols-outlined" style="font-size:14px;color:#f59e0b">checklist</span>
             <span>${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</span>
           </div>
-          <div id="liveStepsList" style="overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:160px;min-height:60px;font-size:.7rem">
-            <div class="lfs-muted" style="font-size:.7rem;padding:4px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
+          <div id="liveStepsList" style="overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:160px;min-height:60px;font-size:.75rem">
+            <div class="lfs-muted" style="font-size:.75rem;padding:4px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
           </div>
         </div>
       </div>
@@ -7826,19 +7830,23 @@ ${renderStyles()}
            外 (上) に置く必要がある。アクティブな社名 + 閉じるボタンのみの最小構成。 -->
       <div id="liveFormToolbar" style="display:none;flex-shrink:0;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
         <span id="liveFormToolbarDot" style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
-        <span id="liveFormToolbarLabel" style="font-size:.72rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
-        <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
+        <span id="liveFormToolbarLabel" style="font-size:.75rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
+        <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
           <span class="material-symbols-outlined" style="font-size:13px">check</span>${_lang === 'ja' ? '送信済みにする' : 'Mark sent'}
         </button>
-        <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.66rem;padding:3px 9px;border-radius:6px;cursor:pointer">
+        <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.75rem;padding:3px 9px;border-radius:6px;cursor:pointer">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>${_lang === 'ja' ? '閉じる' : 'Close'}
         </button>
       </div>
 
       <!-- 全幅 WebView slot -->
       <div id="liveFormViewSlot" class="lfs-view-slot">
-        <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
-          ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
+        <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
+          <div>${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}</div>
+          <!-- v2.2.0: 空状態から次の操作へ 1 クリックで進める (GB-9-3) -->
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.querySelector('.tab-btn[data-tab=&quot;companies&quot;]').click()">
+            ${_lang === 'ja' ? '企業一覧で対象を選んで開始する' : 'Pick companies to start'}
+          </button>
         </div>
       </div>
     </div>
@@ -8035,7 +8043,7 @@ ${renderStyles()}
             const sessionIdEl = document.getElementById('liveSessionId');
             const liveStatusEl = document.getElementById('liveSessionStatus');
             if (list.length === 0) {
-              bar.innerHTML = '<span style="color:#5b6675;font-size:.7rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
+              bar.innerHTML = '<span style="color:#5b6675;font-size:.75rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
               if (empty) empty.style.display = 'flex';
               if (sessionIdEl) sessionIdEl.textContent = '${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}';
               if (liveStatusEl) { liveStatusEl.textContent = 'IDLE'; liveStatusEl.style.background = '#5b6675'; }
@@ -8135,17 +8143,17 @@ ${renderStyles()}
               const cls = isActive ? 'lfs-active-bg' : 'lfs-row-bg lfs-text';
               const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
               const isVirtual = String(s.id||'').startsWith('virtual:');
-              const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
-              const captchaBadge = s.captchaDetected ? '<span title="${_lang === 'ja' ? '本人確認が必要 — 人手対応' : 'Verification required'}" style="display:inline-flex;align-items:center;background:#f59e0b;color:#3a2a00;font-size:.55rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:800">${_lang === 'ja' ? '要対応' : 'action'}</span>' : '';
+              const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.75rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
+              const captchaBadge = s.captchaDetected ? '<span title="${_lang === 'ja' ? '本人確認が必要 — 人手対応' : 'Verification required'}" style="display:inline-flex;align-items:center;background:#f59e0b;color:#3a2a00;font-size:.75rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:800">${_lang === 'ja' ? '要対応' : 'action'}</span>' : '';
               const nameStr = (s.companyName || '').toString().slice(0, 14);
               const escName = nameStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const fullName = (s.companyName || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const titleAttr = 'No.' + (s.companyNo||'?') + ' ' + fullName + ' (' + (s.status||'') + ')';
               return '<span data-sid="' + s.id + '" class="lf-session-chip-wrap" style="display:inline-flex;align-items:center">' +
-                '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 10px;border-radius:999px 0 0 999px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);border-right:none;max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
+                '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.75rem;padding:5px 10px;border-radius:999px 0 0 999px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);border-right:none;max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
                   '<span style="font-weight:700">No.' + (s.companyNo||'?') + '</span>' +
                   (escName ? ' <span style="opacity:.85">' + escName + '</span>' : '') +
-                  ' <span style="opacity:.65;font-size:.62rem">· ' + (s.status||'') + '</span>' +
+                  ' <span style="opacity:.65;font-size:.75rem">· ' + (s.status||'') + '</span>' +
                   captchaBadge + virtualBadge +
                 '</button>' +
                 '<button data-close-sid="' + s.id + '" class="lf-session-close ' + cls + '" title="${_lang === 'ja' ? 'このセッションを閉じる' : 'Close this session'}" style="border-radius:0 999px 999px 0;border:1px solid var(--outline-variant,#d8dee5);border-left:none;width:22px;height:auto;align-self:stretch">×</button>' +
@@ -8449,13 +8457,13 @@ ${renderStyles()}
             const rowClass = state === 'running' ? 'lfs-row-bg-active' : 'lfs-row-bg';
             const opacity = state === 'pending' ? '.55' : '1';
 
-            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:.72rem;opacity:' + opacity + '">' +
-              '<span style="width:20px;height:20px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:' + dotTextColor + ';font-weight:700;font-size:.62rem;flex-shrink:0">' + dotIcon + '</span>' +
+            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:.75rem;opacity:' + opacity + '">' +
+              '<span style="width:20px;height:20px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:' + dotTextColor + ';font-weight:700;font-size:.75rem;flex-shrink:0">' + dotIcon + '</span>' +
               '<span class="lfs-text" style="flex:1;font-weight:' + (state === 'running' ? '600' : '500') + '">' + step.label +
-                (detail ? '<span class="lfs-muted" style="font-weight:400;font-size:.65rem;margin-left:6px">— ' + detail.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' : '') +
+                (detail ? '<span class="lfs-muted" style="font-weight:400;font-size:.75rem;margin-left:6px">— ' + detail.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' : '') +
               '</span>' +
-              (ts ? '<span class="lfs-muted" style="font-family:monospace;font-size:.62rem;flex-shrink:0">' + ts + '</span>' : '') +
-              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.58rem;padding:2px 7px;border-radius:4px;flex-shrink:0;border:1px solid var(--outline-variant,#d8dee5)">' + statusText + '</span>' +
+              (ts ? '<span class="lfs-muted" style="font-family:monospace;font-size:.75rem;flex-shrink:0">' + ts + '</span>' : '') +
+              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.75rem;padding:2px 7px;border-radius:4px;flex-shrink:0;border:1px solid var(--outline-variant,#d8dee5)">' + statusText + '</span>' +
               '</div>';
           });
           el.innerHTML = items.join('');
@@ -8466,13 +8474,13 @@ ${renderStyles()}
           const el = document.getElementById('liveThoughts');
           if (!el) return;
           if (events.length === 0) {
-            el.innerHTML = '<div style="color:#5b6675;font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>';
+            el.innerHTML = '<div style="color:#5b6675;font-size:.75rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>';
             return;
           }
           el.innerHTML = events.slice(-10).reverse().map((e) => {
             const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
             const text = (e.step || e.action || '').toString().slice(0, 200);
-            return '<div style="display:flex;gap:8px;font-size:.72rem;align-items:start"><span class="lfs-muted" style="font-family:monospace;flex-shrink:0">' + ts + '</span>' +
+            return '<div style="display:flex;gap:8px;font-size:.75rem;align-items:start"><span class="lfs-muted" style="font-family:monospace;flex-shrink:0">' + ts + '</span>' +
               '<span style="color:#10b981;flex-shrink:0">●</span>' +
               '<span class="lfs-text" style="flex:1">' + text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
               '</div>';
@@ -8495,7 +8503,7 @@ ${renderStyles()}
               }
             }
             if (shots.length === 0) {
-              el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
+              el.innerHTML = '<div style="color:#5b6675;font-size:.75rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
               return;
             }
             // v2.0.89: 旧 (~v0.88) は inline onclick / onerror に escape された
@@ -8507,7 +8515,7 @@ ${renderStyles()}
               const safeUrl = String(s.url || '').replace(/"/g, '&quot;');
               return '<div class="lf-shot-thumb" data-url="' + safeUrl + '" style="flex-shrink:0;width:140px;cursor:pointer">' +
                 '<img data-shot-img="1" src="' + safeUrl + '?t=' + Date.now() + '" style="width:140px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #2a3441;background:#0a0d12">' +
-                '<div style="font-size:.62rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
+                '<div style="font-size:.75rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
             }).join('');
             el.querySelectorAll('.lf-shot-thumb').forEach(div => {
               div.addEventListener('click', () => {
@@ -8635,6 +8643,7 @@ ${renderStyles()}
 
   <!-- Awaiting tab -->
   <div class="tab-content" id="tab-awaiting">
+    <h1 class="sr-only">${_t['tab.awaiting']}</h1>
     <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid var(--primary);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="material-symbols-outlined" style="font-size:16px;color:var(--primary)">pending_actions</span>
@@ -8644,7 +8653,8 @@ ${renderStyles()}
         <button class="btn btn-sm btn-outline-primary" onclick="toggleAllAwaiting()">${_t['action.selectAll']}</button>
         <button class="btn btn-sm btn-success" onclick="bulkApprove('sent')">${_t['action.bulkSent']}</button>
         <button class="btn btn-sm btn-outline-danger" onclick="bulkSkipWithFeedback()">${_t['action.bulkSkip']}</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteAwaiting()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
+        <!-- v2.2.0: 破壊的操作 (削除) は他ボタンから離して右端に置く (GB-4-1) -->
+        <button class="btn btn-sm btn-outline-danger" style="margin-left:16px" onclick="bulkDeleteAwaiting()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
       </div>
     </div>
     <div id="awaitingList" style="padding:16px;background:var(--bg-base)"></div>
@@ -8652,16 +8662,17 @@ ${renderStyles()}
 
   <!-- Sent tab -->
   <div class="tab-content" id="tab-sent">
+    <h1 class="sr-only">${_t['tab.sent']}</h1>
     <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid #059669;padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div style="display:flex;align-items:center;gap:8px;min-width:0">
         <span class="material-symbols-outlined" style="font-size:16px;color:#059669">mark_email_read</span>
         <div style="display:flex;flex-direction:column;gap:2px">
           <strong style="font-size:.76rem;color:var(--on-surface)">${_t['sent.panelTitle'] || 'Sent log'}</strong>
-          <span style="font-size:.66rem;color:var(--outline)">${_t['sent.panelHint'] || 'Filter by company, type, message body, or form URL.'}</span>
+          <span style="font-size:.75rem;color:var(--outline)">${_t['sent.panelHint'] || 'Filter by company, type, message body, or form URL.'}</span>
         </div>
       </div>
-      <input type="text" id="sentSearch" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || 'Search company, type, message, or URL...'}">
-      <select id="sentTypeFilter" class="form-control-sm" style="width:180px;max-width:100%">
+      <input type="text" id="sentSearch" aria-label="${_t['sent.search'] || 'Search company, type, message, or URL...'}" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || 'Search company, type, message, or URL...'}">
+      <select id="sentTypeFilter" aria-label="${_lang === 'ja' ? '種別で絞り込み' : 'Filter by type'}" class="form-control-sm" style="width:180px;max-width:100%">
         <option value="">${_t['sent.filter.typeAll'] || 'Type: All'}</option>
       </select>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -8669,13 +8680,14 @@ ${renderStyles()}
         <button class="fb-sent fb" data-sf="1">${_t['sent.firstOnly']}</button>
         <button class="fb-sent fb" data-sf="2+">${_t['sent.multipleOnly']}</button>
       </div>
-      <small style="margin-left:auto;font-family:var(--font-mono);font-size:.68rem;color:var(--outline)" id="sentCount">0 items</small>
+      <small style="margin-left:auto;font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="sentCount">0 items</small>
     </div>
     <div id="sentList" style="padding:16px;background:var(--bg-base)"></div>
   </div>
 
   <!-- List Builder tab — full UI (criteria chip-inputs + 4-stage progress + result table + sidebar) -->
   <div class="tab-content" id="tab-list-builder">
+    <h1 class="sr-only">${_t['tab.listBuilder'] || 'List Builder'}</h1>
     <!-- 上部のページヘッダ + 4 stats カードはユーザ要望で廃止。
          代わりに小さなアクションバーに「営業 NG 企業を見る」ボタンを置き、
          過去に「営業お断り」「採用専用」等で skip された会社を確認できるようにする。 -->
@@ -8769,51 +8781,51 @@ ${renderStyles()}
           </div>
           <div class="lb2-criteria-grid" id="lb2CriteriaGrid">
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">work</span>${_t['lb.criteria.industry'] || 'Industry'}</label>
+              <label class="lb2-field-label" for="lb2Chip-industries"><span class="material-symbols-outlined">work</span>${_t['lb.criteria.industry'] || 'Industry'}</label>
               <div class="lb2-chip-input" data-lb2-chip="industries">
-                <input type="text" placeholder="${_t['lb.criteria.industry.placeholder'] || 'e.g. SaaS / press Enter'}" autocomplete="off">
+                <input type="text" id="lb2Chip-industries" placeholder="${_t['lb.criteria.industry.placeholder'] || 'e.g. SaaS / press Enter'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">place</span>${_t['lb.criteria.region'] || 'Region'}</label>
+              <label class="lb2-field-label" for="lb2Chip-regions"><span class="material-symbols-outlined">place</span>${_t['lb.criteria.region'] || 'Region'}</label>
               <div class="lb2-chip-input" data-lb2-chip="regions">
-                <input type="text" placeholder="${_t['lb.criteria.region.placeholder'] || 'e.g. Tokyo, Osaka'}" autocomplete="off">
+                <input type="text" id="lb2Chip-regions" placeholder="${_t['lb.criteria.region.placeholder'] || 'e.g. Tokyo, Osaka'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">groups</span>${_t['lb.criteria.employees'] || 'Employee size'}</label>
+              <label class="lb2-field-label" for="lb2Chip-employeeSize"><span class="material-symbols-outlined">groups</span>${_t['lb.criteria.employees'] || 'Employee size'}</label>
               <div class="lb2-chip-input" data-lb2-chip="employeeSize">
-                <input type="text" placeholder="${_t['lb.criteria.employees.placeholder'] || 'e.g. 50-500'}" autocomplete="off">
+                <input type="text" id="lb2Chip-employeeSize" placeholder="${_t['lb.criteria.employees.placeholder'] || 'e.g. 50-500'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">monitoring</span>${_t['lb.criteria.revenue'] || 'Revenue'}</label>
+              <label class="lb2-field-label" for="lb2Chip-revenue"><span class="material-symbols-outlined">monitoring</span>${_t['lb.criteria.revenue'] || 'Revenue'}</label>
               <div class="lb2-chip-input" data-lb2-chip="revenue">
-                <input type="text" placeholder="${_t['lb.criteria.revenue.placeholder'] || 'e.g. 1B+ JPY'}" autocomplete="off">
+                <input type="text" id="lb2Chip-revenue" placeholder="${_t['lb.criteria.revenue.placeholder'] || 'e.g. 1B+ JPY'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">badge</span>${_t['lb.criteria.dept'] || 'Dept / role'}</label>
+              <label class="lb2-field-label" for="lb2Chip-departments"><span class="material-symbols-outlined">badge</span>${_t['lb.criteria.dept'] || 'Dept / role'}</label>
               <div class="lb2-chip-input" data-lb2-chip="departments">
-                <input type="text" placeholder="${_t['lb.criteria.dept.placeholder'] || 'e.g. Sales Ops, IT'}" autocomplete="off">
+                <input type="text" id="lb2Chip-departments" placeholder="${_t['lb.criteria.dept.placeholder'] || 'e.g. Sales Ops, IT'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">tag</span>${_t['lb.criteria.keywords'] || 'Keywords'}</label>
+              <label class="lb2-field-label" for="lb2Chip-keywords"><span class="material-symbols-outlined">tag</span>${_t['lb.criteria.keywords'] || 'Keywords'}</label>
               <div class="lb2-chip-input" data-lb2-chip="keywords">
-                <input type="text" placeholder="${_t['lb.criteria.keywords.placeholder'] || 'e.g. automation, DX'}" autocomplete="off">
+                <input type="text" id="lb2Chip-keywords" placeholder="${_t['lb.criteria.keywords.placeholder'] || 'e.g. automation, DX'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">block</span>${_t['lb.criteria.exclude'] || 'Exclude'}</label>
+              <label class="lb2-field-label" for="lb2Chip-excludes"><span class="material-symbols-outlined">block</span>${_t['lb.criteria.exclude'] || 'Exclude'}</label>
               <div class="lb2-chip-input" data-lb2-chip="excludes">
-                <input type="text" placeholder="${_t['lb.criteria.exclude.placeholder'] || 'e.g. recruit-only'}" autocomplete="off">
+                <input type="text" id="lb2Chip-excludes" placeholder="${_t['lb.criteria.exclude.placeholder'] || 'e.g. recruit-only'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">database</span>${_t['lb.criteria.sources'] || 'Sources'}</label>
+              <label class="lb2-field-label" for="lb2Chip-sources"><span class="material-symbols-outlined">database</span>${_t['lb.criteria.sources'] || 'Sources'}</label>
               <div class="lb2-chip-input" data-lb2-chip="sources">
-                <input type="text" placeholder="${_t['lb.criteria.sources.placeholder'] || 'e.g. company site, DB'}" autocomplete="off">
+                <input type="text" id="lb2Chip-sources" placeholder="${_t['lb.criteria.sources.placeholder'] || 'e.g. company site, DB'}" autocomplete="off">
               </div>
             </div>
           </div>
@@ -8901,8 +8913,8 @@ ${renderStyles()}
           </div>
           <div class="lb2-result-search">
             <span class="material-symbols-outlined lb2-result-search-icon">search</span>
-            <input type="text" id="lb2FilterText" placeholder="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" class="lb2-result-search-input">
-            <select id="lb2FilterStatus" class="lb2-mini-select lb2-result-search-status">
+            <input type="text" id="lb2FilterText" aria-label="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" placeholder="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" class="lb2-result-search-input">
+            <select id="lb2FilterStatus" aria-label="${_lang === 'ja' ? 'ステータスで絞り込み' : 'Filter by status'}" class="lb2-mini-select lb2-result-search-status">
               <option value="">${_t['lb.result.filter.allStatus'] || 'All status'}</option>
               <option value="unique">${_t['lb.result.filter.unique'] || 'New'}</option>
               <option value="needs_review">${_t['lb.result.filter.review'] || 'Review'}</option>
@@ -9021,6 +9033,7 @@ ${renderStyles()}
   </div>
   <!-- CLI Activity tab -->
   <div class="tab-content" id="tab-logs">
+    <h1 class="sr-only">${_t['tab.logs']}</h1>
     <!-- Embedded interactive terminal -->
     <div id="cliTerminalCard" class="cli-term-card">
       <div class="cli-term-head">
@@ -9086,8 +9099,8 @@ ${renderStyles()}
     <div style="background:#fff;border:1px solid var(--outline-variant);margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant)">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.live.title'] || 'Live CLI'}</span>
-          <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliStreamLastEvent">—</span>
+          <span style="font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.live.title'] || 'Live CLI'}</span>
+          <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="cliStreamLastEvent">—</span>
         </div>
       </div>
       <div id="cliThinkingRow" style="display:none;align-items:center;gap:8px;padding:10px 16px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.16)">
@@ -9100,10 +9113,10 @@ ${renderStyles()}
     <div style="background:#fff;border:1px solid var(--outline-variant)">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant);flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.actionLog']}</span>
-          <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliLastEvent">—</span>
+          <span style="font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.actionLog']}</span>
+          <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="cliLastEvent">—</span>
         </div>
-        <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="logCount">0 items</span>
+        <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="logCount">0 items</span>
       </div>
       <!-- v2.1.0: 操作ログのタブ(フィルタ)。件数バッジ付き。クライアント側で絞り込む。 -->
       <div class="filter-pills" id="logFilterPills" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--outline-variant)">
@@ -9122,6 +9135,7 @@ ${renderStyles()}
 
   <!-- Settings tab -->
   <div class="tab-content" id="tab-settings">
+    <h1 class="sr-only">${_t['tab.settings']}</h1>
     <div class="settings-layout">
       <div class="settings-sidebar">
         <button class="settings-sidebar-btn active" data-section="companyProfile"><span class="settings-sidebar-label">${_t['settings.companyProfile']}</span><span class="settings-sidebar-status" id="settingsSidebarStatus-companyProfile"></span></button>
@@ -9140,7 +9154,7 @@ ${renderStyles()}
             </div>
             <div class="settings-setup-overview">
               <div class="settings-setup-progress-track"><span id="settingsSetupProgressBar"></span></div>
-              <div class="settings-setup-progress-label" id="settingsSetupProgressLabel" style="font-size:.72rem">0 / 5</div>
+              <div class="settings-setup-progress-label" id="settingsSetupProgressLabel" style="font-size:.75rem">0 / 5</div>
               <div class="settings-setup-progress-note" id="settingsSetupProgressNote"></div>
             </div>
           </div>
@@ -10000,16 +10014,16 @@ ${renderStyles()}
     <span id="monitorToastDot" style="width:8px;height:8px;border-radius:50%;background:var(--primary);flex-shrink:0;margin-top:3px"></span>
     <div style="min-width:0;flex:1">
       <div id="monitorToastCompany" style="font-size:.75rem;font-weight:700;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
-      <div id="monitorToastStep" style="font-size:.68rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
+      <div id="monitorToastStep" style="font-size:.75rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
     </div>
-    <span style="font-size:.6rem;color:var(--text-3);font-family:var(--font-mono);flex-shrink:0" id="monitorToastTime">--:--</span>
+    <span style="font-size:.75rem;color:var(--text-3);font-family:var(--font-mono);flex-shrink:0" id="monitorToastTime">--:--</span>
   </div>
 </div>
 
 <!-- Floating toggle button -->
-<button id="monitorFab" onclick="toggleMonitorPanel()" style="position:fixed;bottom:24px;right:24px;z-index:9991;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#1e293b);color:#eeefeb;border:none;cursor:pointer;box-shadow:var(--shadow-modal);display:flex;align-items:center;justify-content:center;transition:all .25s var(--ease-out-expo)" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
-  <span id="monitorDot" style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:#9a9a96;transition:background .3s;border:2px solid #1a1a1a"></span>
-  <span id="monitorFabBadge" style="display:none;position:absolute;top:0;right:0;min-width:18px;height:18px;background:var(--error);color:#fff;font-size:.6rem;font-weight:800;border-radius:9px;padding:0 5px;line-height:18px;text-align:center;border:2px solid #fff;font-family:var(--font-mono)">0</span>
+<button id="monitorFab" type="button" aria-label="${_lang === 'ja' ? '進捗モニターを開く' : 'Open progress monitor'}" title="${_lang === 'ja' ? '進捗モニターを開く' : 'Open progress monitor'}" onclick="toggleMonitorPanel()" style="position:fixed;bottom:24px;right:24px;z-index:9991;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#1e293b);color:#eeefeb;border:none;cursor:pointer;box-shadow:var(--shadow-modal);display:flex;align-items:center;justify-content:center;transition:all .25s var(--ease-out-expo)" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+  <span id="monitorDot" style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:var(--text-3);transition:background .3s;border:2px solid #1a1a1a"></span>
+  <span id="monitorFabBadge" style="display:none;position:absolute;top:0;right:0;min-width:18px;height:18px;background:var(--error);color:#fff;font-size:.75rem;font-weight:800;border-radius:9px;padding:0 5px;line-height:18px;text-align:center;border:2px solid #fff;font-family:var(--font-mono)">0</span>
   <span class="material-symbols-outlined" style="font-size:22px">chat</span>
 </button>
 
@@ -10018,8 +10032,8 @@ ${renderStyles()}
   <!-- Header -->
   <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:linear-gradient(135deg,#1a1a1a 0%,#1e293b 100%);user-select:none;flex-shrink:0">
     <span class="material-symbols-outlined" style="font-size:16px;color:#eeefeb">monitoring</span>
-    <span style="font-size:.72rem;font-weight:700;color:#eeefeb;flex:1">Live Activity</span>
-    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:#9a9a96;font-size:.56rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_t['monitor.idle'] || 'Idle'}</div>
+    <span style="font-size:.75rem;font-weight:700;color:#eeefeb;flex:1">Live Activity</span>
+    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:var(--text-3);font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_t['monitor.idle'] || 'Idle'}</div>
     <button id="liveMonitorToggleBtn" onclick="toggleMonitorPanel()" style="display:inline-flex;align-items:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#eeefeb;font-size:14px;padding:3px;border-radius:6px;cursor:pointer;transition:all .15s;line-height:1" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.08)'">✕</button>
   </div>
 
@@ -10030,16 +10044,16 @@ ${renderStyles()}
       <div style="display:flex;align-items:center;gap:8px">
         <div style="min-width:0;flex:1">
           <div id="monitorCompany" style="font-size:.78rem;font-weight:700;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
-          <div id="monitorStep" style="font-size:.68rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
+          <div id="monitorStep" style="font-size:.75rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
         </div>
-        <div id="monitorUpdatedAt" style="font-size:.58rem;font-family:var(--font-mono);color:var(--text-3);white-space:nowrap;flex-shrink:0">-</div>
+        <div id="monitorUpdatedAt" style="font-size:.75rem;font-family:var(--font-mono);color:var(--text-3);white-space:nowrap;flex-shrink:0">-</div>
       </div>
     </div>
 
     <!-- Thinking indicator -->
     <div id="monitorThinkingRow" style="display:none;align-items:center;gap:8px;padding:6px 14px;background:linear-gradient(90deg,rgba(99,102,241,.06),transparent);border-bottom:1px solid rgba(99,102,241,.1);flex-shrink:0">
       <span class="think-spin"></span>
-      <span id="monitorThinkingText" style="font-size:.68rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">思考中...</span>
+      <span id="monitorThinkingText" style="font-size:.75rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">思考中...</span>
     </div>
     <div id="monitorActiveSummary" style="display:none">-</div>
 
@@ -10049,8 +10063,8 @@ ${renderStyles()}
     <!-- Collapsible footer: URL + Screenshot -->
     <div id="monitorFooter" style="border-top:1px solid var(--border-subtle);background:var(--bg-surface);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 14px">
-        <a id="monitorCurrentUrl" href="#" target="_blank" style="flex:1;font-size:.62rem;color:var(--primary);font-family:var(--font-mono);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</a>
-        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.58rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_t['monitor.screenshot.short'] || 'SS ↗'}</a>
+        <a id="monitorCurrentUrl" href="#" target="_blank" style="flex:1;font-size:.75rem;color:var(--primary);font-family:var(--font-mono);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</a>
+        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.75rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_t['monitor.screenshot.short'] || 'SS ↗'}</a>
       </div>
       <div id="monitorScreenshotWrap" style="display:none;margin:0 14px 8px;max-height:100px;overflow:auto;overscroll-behavior:contain;border:1px dashed var(--border-default);border-radius:var(--radius-sm);background:var(--bg-deep)"></div>
     </div>
