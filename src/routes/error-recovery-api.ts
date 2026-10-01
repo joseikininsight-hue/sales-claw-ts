@@ -3,7 +3,7 @@
 // action-log の error エントリを原因別にグルーピングして返す + 一括リトライ。
 //
 //   GET  /api/errors/grouped       原因別 (CAPTCHA / フォームなし / タイムアウト / MCP / その他)
-//   POST /api/error/retry          { companyNos: [...] } → /api/ai-form-fill 相当を内部呼び出し
+//   POST /api/error/retry          { companyNos: [...] } → /api/ai-form-fill と同じ経路 (Phase A → キュー) を内部呼び出し
 
 import type { IncomingMessage, ServerResponse } from 'http';
 
@@ -43,6 +43,11 @@ export interface ErrorRecoveryRouteContext {
   getClaudePty?: () => unknown;
   getManagedAiAutoSendSafe: () => boolean;
   appendDiagnosticEvent?: (event: string, payload: Record<string, unknown>) => void;
+  /**
+   * /api/ai-form-fill の本体 (Phase A 再実行 + 重複キューガード + キュー投入)。
+   * 渡された場合は retry をこの経路に委譲し、res への応答もこちらが行う。
+   */
+  runAiFormFill?: (body: Record<string, unknown>, res: ServerResponse) => Promise<void>;
 }
 
 export type ErrorRecoveryDispatcher = (req: IncomingMessage, res: ServerResponse, pathname: string) => Promise<boolean>;
@@ -116,6 +121,7 @@ function createErrorRecoveryRoutes(ctx: ErrorRecoveryRouteContext): ErrorRecover
     getClaudePty,
     getManagedAiAutoSendSafe,
     appendDiagnosticEvent,
+    runAiFormFill,
   } = ctx;
 
   function resolveActiveProvider(explicitProvider: string | undefined): string {
@@ -168,6 +174,19 @@ function createErrorRecoveryRoutes(ctx: ErrorRecoveryRouteContext): ErrorRecover
       }
       if (companyNos.length > 50) {
         jsonResponse(res, 400, { ok: false, error: 'companyNos is too large; max 50 per retry' });
+        return;
+      }
+      if (typeof runAiFormFill === 'function') {
+        // 前回の Phase A 結果 (siteExcerpt / messagePrompt) を持たないまま Phase B に
+        // 直行すると CLI が「siteExcerpt 空 → error」で即失敗するため、通常の
+        // AI フォーム入力と同じく Phase A からやり直す。
+        if (typeof appendDiagnosticEvent === 'function') {
+          appendDiagnosticEvent('error_retry_via_ai_form_fill', { companyNos });
+        }
+        await runAiFormFill({
+          companyNos,
+          ...(typeof body.provider === 'string' ? { provider: body.provider } : {}),
+        }, res);
         return;
       }
       const found = findCompaniesByNos(companyNos);

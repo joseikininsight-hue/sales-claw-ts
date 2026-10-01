@@ -7,13 +7,13 @@
 
 const SCHEMA = {
   name: 'browser_navigate',
-  description: 'Navigate the active form session to a URL. If sessionId is omitted, a new session is created (companyNo recommended for tab labeling).',
+  description: 'Navigate a form session to a URL. Pass sessionId to reuse an existing session; otherwise a new session is created and companyNo is REQUIRED (screenshots are saved as ss-{companyNo}-*.png).',
   inputSchema: {
     type: 'object',
     properties: {
       url: { type: 'string', description: 'Target URL (https://). SSRF guard applied.' },
       sessionId: { type: 'string', description: 'Existing session ID. If omitted, a new session is created.' },
-      companyNo: { type: 'number', description: 'Company number for new session creation (used in screenshot filenames and tab label). Ignored if sessionId is provided.' },
+      companyNo: { type: 'number', description: 'Company No. Required when sessionId is omitted (used in screenshot filenames ss-{companyNo}-*.png and the tab label). Ignored if sessionId is provided.' },
       waitUntil: {
         type: 'string',
         enum: ['load', 'domcontentloaded', 'networkidle'],

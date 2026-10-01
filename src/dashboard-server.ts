@@ -1122,7 +1122,9 @@ function snapshotManagedAiBatchesForRecovery() {
     batches: [] as any[],
   };
   if (controller.activeBatch && Array.isArray(controller.activeBatch.companies) && controller.activeBatch.companies.length > 0) {
-    const progress = getManagedAiBatchProgressSnapshot(controller.activeBatch.companyNos || []);
+    const progress = getManagedAiBatchProgressSnapshot(controller.activeBatch.companyNos || [], {
+      sinceMs: controller.activeBatch.startedAt,
+    });
     const terminalNos = new Set((progress.statuses || [])
       .filter((status: any) => status && status.terminal)
       .map((status: any) => Number(status.companyNo)));
@@ -1190,14 +1192,36 @@ function appendManagedAiPtyLog(providerId, chunk, kind = 'output') {
   ptyLog.appendManagedAiPtyLog(providerId, chunk, kind, { maxBytes: MANAGED_AI_PTY_LOG_MAX_BYTES });
 }
 
-function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
+const MANAGED_AI_BATCH_TERMINAL_STATES = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error', 'confirm_reached']);
+
+function getManagedAiBatchProgressSnapshot(companyNos: any[] = [], options: { sinceMs?: number } = {}) {
   const keySet = new Set((companyNos || []).map((value: any) => String(value)));
   const latestLogByCompany = new Map<any, any>();
   const latestMonitorByCompany = new Map<any, any>();
+  // v2.2.0: バッチ開始 (sinceMs) より前に書かれた terminal ログ / monitor は
+  //   「前回の試行の結果」なので今回のバッチの完了判定に使わない。
+  //   旧: エラー再試行した会社は直前の 'error' ログが最新のままなので、投入直後の
+  //     最初の tick で batch 完了扱い → 次バッチが CLI 作業中に dispatch され、
+  //     2 社以上なら「半数 error」判定で PTY 再起動まで走っていた。
+  //   バッチ開始前の非 terminal ログ (Phase A の message_draft 等) は従来通り使う。
+  const sinceMs = Number(options.sinceMs) || 0;
+  const isBeforeBatch = (entry: any, ...fields: string[]) => {
+    if (!sinceMs) return false;
+    for (const field of fields) {
+      const ts = parseEventTimestampMs(entry && entry[field]);
+      if (ts) return ts < sinceMs;
+    }
+    return false;
+  };
   const logs = getAllLogs();
   logs.forEach((entry: any) => {
     const key = String(entry.companyNo || entry.no || '');
     if (!keySet.has(key)) return;
+    if (isBeforeBatch(entry, 'timestamp', 'date', 'time')
+      && MANAGED_AI_BATCH_TERMINAL_STATES.has(String(entry.action || ''))) {
+      latestLogByCompany.delete(key);
+      return;
+    }
     latestLogByCompany.set(key, entry);
   });
   const monitorState = readMonitorState();
@@ -1205,6 +1229,11 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
   monitorEvents.forEach((entry: any) => {
     const key = String(entry.companyNo || '');
     if (!keySet.has(key)) return;
+    if (isBeforeBatch(entry, 'updatedAt', 'timestamp', 'time')
+      && MANAGED_AI_BATCH_TERMINAL_STATES.has(String(entry.status || ''))) {
+      latestMonitorByCompany.delete(key);
+      return;
+    }
     latestMonitorByCompany.set(key, entry);
   });
 
@@ -1218,7 +1247,7 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
   //     進ませ、UI 側で「確認画面到達 - 手動レビュー推奨」を出す。
   //   注: 1319 行目の terminalStates (live-monitor cleanup 用) はこちらには
   //     入れない。confirm_reached の active event は 20 分以上残しておきたい。
-  const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error', 'confirm_reached']);
+  const terminalStates = MANAGED_AI_BATCH_TERMINAL_STATES;
   let terminalCount = 0;
   let latestActivityAt = 0;
   const statuses: any[] = [];
@@ -1798,10 +1827,16 @@ function runPollerTickBody(activeController: any) {
     activeController.pendingSinceMs = 0;
     activeController.queueStuckNotified = false;
 
-    const snapshot = getManagedAiBatchProgressSnapshot(activeController.activeBatch.companyNos);
+    const snapshot = getManagedAiBatchProgressSnapshot(activeController.activeBatch.companyNos, {
+      sinceMs: activeController.activeBatch.startedAt,
+    });
     if (snapshot.latestActivityAt && snapshot.latestActivityAt > activeController.activeBatch.lastProgressAt) {
       activeController.activeBatch.lastProgressAt = snapshot.latestActivityAt;
       activeController.activeBatch.lastProgressReason = 'action-log';
+      // v2.2.0: 進捗が再開したら停滞通知を再武装する。旧実装は 1 バッチにつき 1 回しか
+      //   stall 判定しなかったため、自動タイムアウト後に別の社が止まると永久に拾えなかった。
+      activeController.activeBatch.stallNotified = false;
+      activeController.activeBatch.softWarnNotified = false;
     }
 
     if (snapshot.terminalCount >= snapshot.totalCount && snapshot.totalCount > 0) {
@@ -3307,7 +3342,8 @@ function estimateTextTokens(text) {
   return Math.max(1, Math.ceil(String(text || '').length / 4));
 }
 
-const MANAGED_AI_CONTRACT_VERSION = 1;
+// v2.2.0: 2 — 内蔵モードのセッションルール / 承認待ちモードのボタン制限を反映
+const MANAGED_AI_CONTRACT_VERSION = 2;
 
 function trimOneLineText(value, maxLength = 160) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -3407,7 +3443,21 @@ function buildCompactApproachPayload(objective = '', guardrails = '') {
   return payload;
 }
 
-function buildTabManagementContractLines() {
+function buildTabManagementContractLines(formFillMode = getFormFillMode()) {
+  // v2.2.0: internal モード (内蔵 WebContentsView) では Playwright 時代のタブ契約
+  //   (baselineTabs / workingTabs / finalFormTab / タブを閉じる) は不要。CLAUDE.md の
+  //   Session lifecycle contract と同じ「1 社 = 1 sessionId」ルールだけを渡す。
+  //   旧契約を送り続けると、存在しない Chromium タブの管理に CLI がターンを浪費し、
+  //   サーバーが自動で閉じるセッションを「残す」指示とも矛盾していた。
+  if (formFillMode !== 'playwright') {
+    return [
+      'SALES_CLAW_SESSION_RULES',
+      '- 1 社 = 1 セッション (sessionId)。新規セッションは browser_navigate({url, companyNo}) か browser_tabs({action:"new", url, companyNo}) で開き、companyNo を必ず渡す (ss-{No}-*.png の命名に使われる。省略するとエラー)',
+      '- その会社の browser_* 操作はすべて同じ sessionId で行う。他社のセッションを navigate で上書きしない',
+      '- awaiting_approval のセッションは人間確認用にサーバーが残す。submitted / skipped / error のセッションはサーバーが自動で閉じる (タブを手動で閉じる作業は不要)',
+      '- awaiting_approval / submitted の details には sentMessage (または sentMessageFile)、screenshot、formUrl (実際に入力したフォームの URL) を含める',
+    ];
+  }
   return [
     'SALES_CLAW_TAB_CONTRACT',
     '- 開始時に browser_tabs で既存タブを記録し baselineTabs とする',
@@ -3446,22 +3496,24 @@ function buildManagedAiSessionContract(providerId = getManagedAiProvider(), opti
           '- ブラウザ操作は内蔵ブラウザ MCP (browser_* ツール) のみ使用。別の Web 取得 MCP は使わない',
           '- 各社のタブは browser_tabs({action:"new", url, companyNo}) で開く。window.open は使わない (内蔵ブラウザでは追従しない)',
         ]),
-    '- 既存タブを navigate で上書きしない',
+    ...(getFormFillMode() === 'playwright' ? ['- 既存タブを navigate で上書きしない'] : []),
     '- CAPTCHA / reCAPTCHA / hCaptcha / Turnstile / ロボチェッカーの画像チャレンジは解かない',
     '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',
     '- visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は browser_click で 1 回だけ試行可。画像チャレンジが出たら諦めて awaiting_approval',
     '- CAPTCHA を理由に error にするのは「フォーム自体が表示されない」「CAPTCHA より前に進めない (Cloudflare 等のページゲート)」場合だけ',
     '- 営業NG / 対象外は skipped',
-    '- site_analysis が不十分 (サイト本文不足 / URL未設定 / 取得失敗) の会社はフォーム入力せず error/skipped',
+    '- urlMissing=false なのにサイト本文が取得できていない会社はフォーム入力せず error (urlMissing=true は batch_rules の WebSearch 手順に従う)',
     '- awaiting_approval はフォーム入力済み + ss-{No}-input.png 作成済み + sentMessage 付きの場合だけ許可',
-    '- form_fill → confirm_reached → awaiting_approval / submitted の順で記録',
+    '- form_fill (全項目入力後) → confirm_reached (ss-{No}-input.png 撮影後。確認画面が無いフォームでも記録する) → awaiting_approval / submitted の順で記録。form_fill / confirm_reached が無いと API が 422 で拒否する',
     '- 入力項目と本文の社員数・設立年・資本金などは設定にある値だけ使う。推測しない',
-    '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になってから送信ボタンを押す。送信/確認ボタンは browser_snapshot の buttons 配列 (selector+text, 最有力が先頭) から選んで browser_click する',
+    autoSendSafe
+      ? '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になってから送信ボタンを押す。送信/確認ボタンは browser_snapshot の buttons 配列 (selector+text, 最有力が先頭) から選んで browser_click する'
+      : '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になるまで直してから ss-{No}-input.png を撮る。ボタンは確認画面へ進むもの (browser_snapshot の buttons 配列から選ぶ) 以外は押さない',
     autoSendSafe
       ? '- ★ sendPolicy=safe-auto-send: 全項目の入力に成功し、必須の同意チェックボックスも入れ、確認画面に到達できたら、ためらわず送信ボタン (「送信」「確認」「送信する」「Submit」「同意して送信」等) を browser_click して submitted まで完了させる。送信を止めて awaiting_approval にしてよいのは次の4つだけ: (1) 操作が必要な画像/チェック型 CAPTCHA が残る、(2) 設定に無い値を要求する必須項目があり埋められない、(3) 営業NG/対象外フォーム → skipped、(4) 送信ボタンを押しても確認画面/完了画面に進めない。これ以外の「念のため」「不確実だから」を理由に止めてはいけない'
-      : '- 送信は行わず awaiting_approval で止める',
-    '- submitted まで進めたら必ず ss-{No}-sent.png を残し、その会社のタブ (セッション) は閉じる',
-    '- awaiting_approval / error / skipped は入力済みタブを残す。送れなかったタブは残す',
+      : '- 送信は行わず awaiting_approval で止める。押してよいのは「確認」「次へ」「入力内容を確認」等の確認画面へ進むボタンだけで、「送信」「送信する」「Submit」「Send」「同意して送信」は押さない',
+    '- submitted まで進めたら必ず ss-{No}-sent.png を残す',
+    '- awaiting_approval のセッションは残る (人間が確認・送信する)。error / skipped のセッションはサーバーが閉じる',
     '- 同じセッションではこの契約を再説明しない。以後の batch payload だけ実行する',
   ].join('\n');
 }
@@ -4974,6 +5026,27 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
   };
 }
 
+// Phase A 1 社あたりの上限時間。内部ではサイト解析 60s + LLM 解析 120s +
+// 文面生成 60s + フォーム URL 探索 (最大 16 fetch) が直列に走り得るため 8 分を既定にする。
+const PHASE_A_WORKER_TIMEOUT_DEFAULT_MS = 8 * 60 * 1000;
+function getPhaseAWorkerTimeoutMs() {
+  const fromEnv = Number(process.env.SALES_CLAW_PHASE_A_TIMEOUT_MS);
+  return Number.isFinite(fromEnv) && fromEnv >= 30 * 1000 ? fromEnv : PHASE_A_WORKER_TIMEOUT_DEFAULT_MS;
+}
+
+function killPhaseAChildTree(child) {
+  if (!child || child.exitCode !== null) return;
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      // parallel-analysis は claude -p を孫プロセスとして spawn するのでツリーごと止める
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch (_) { /* best-effort */ }
+}
+
 async function runParallelAnalysisWorker(company, nodeExecutable) {
   const { spawn } = require('child_process');
   const startedAtMs = Date.now();
@@ -5032,6 +5105,17 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
     activePhaseAChildProcesses.add(child);
     let stdout = '';
     let stderr = '';
+    // v2.2.0: 1 社の Phase A がハング (page.goto / claude -p の応答待ち等) すると
+    //   /api/ai-form-fill 全体が返らなくなるため、上限時間で子プロセスごと打ち切る。
+    let timedOut = false;
+    const timeoutMs = getPhaseAWorkerTimeoutMs();
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      killPhaseAChildTree(child);
+    }, timeoutMs);
+    if (typeof timeoutTimer.unref === 'function') timeoutTimer.unref();
+    child.on('close', () => clearTimeout(timeoutTimer));
+    child.on('error', () => clearTimeout(timeoutTimer));
 
     child.stdout.on('data', (chunk) => {
       stdout += String(chunk || '');
@@ -5053,6 +5137,19 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
     });
     child.on('close', (exitCode) => {
       activePhaseAChildProcesses.delete(child);
+      if (timedOut) {
+        resolve({
+          ok: false,
+          companyNo: company.no,
+          companyName: company.companyName || company.name || '',
+          elapsedMs: Date.now() - startedAtMs,
+          error: `企業分析 (Phase A) が ${Math.round(timeoutMs / 1000)} 秒以内に完了しなかったため打ち切りました (タイムアウト)`,
+          timedOut: true,
+          stdout,
+          stderr,
+        });
+        return;
+      }
       const parsed = extractPromptJsonLine(stdout);
       if (parsed && parsed.ok) {
         resolve({
@@ -5229,6 +5326,35 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
     } else {
       failures.push(result);
     }
+  });
+
+  // v2.2.0: Phase A で失敗した社 (subprocess crash / timeout / 認証失効で中断) は
+  //   subprocess 側が terminal ログを書かないことがあり、site_analysis / message_draft
+  //   のまま「処理中」に見え続けていた。バッチ開始以降に terminal ログが無い社は
+  //   ここで error を記録し、エラータブから再試行できるようにする。
+  results.forEach((result: any, idx: number) => {
+    if (result && (result.ok || (result.skipped === true && result.skipKind !== 'claude_auth_failed'))) return;
+    const company = companies[idx];
+    if (!company || company.no == null) return;
+    try {
+      if (companyHasTerminalLogSince(company.no, batchStartedAtMs)) return;
+      const companyName = company.companyName || company.name || '';
+      const reason = result && result.skipKind === 'claude_auth_failed'
+        ? 'Claude 認証失効 / レート上限のため企業分析 (Phase A) を中断しました。/login 後に再試行してください'
+        : `企業分析 (Phase A) 失敗: ${trimOneLineText((result && result.error) || 'parallel-analysis failed', 200)}`;
+      logAction(company.no, companyName, 'error', {
+        source: 'phase-a',
+        reason,
+        timedOut: !!(result && result.timedOut),
+      });
+      finishLiveMonitor(company.no, {
+        companyNo: company.no,
+        companyName,
+        status: 'error',
+        step: reason,
+        currentUrl: company.formUrl || company.url || '',
+      });
+    } catch (_) { /* ログ記録失敗で Phase A 結果の返却を止めない */ }
   });
 
   const elapsedMs = Date.now() - batchStartedAtMs;
@@ -5451,6 +5577,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     approachPayload,
     '',
     'batch_rules:',
+    // 並列ヘッドレス経路は session contract を経由しないため batch payload にも含める。
     ...buildTabManagementContractLines(),
     ...batchRuleLines,
     '',
@@ -5555,11 +5682,11 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   //          実機 prompt 中央値 13K chars → 10.7K chars 目標 (Phase B 全体 ~10% トークン削減)
   const curlTemplate = `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${SALES_CLAW_SESSION}" -d '<JSON>' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`;
   const messageLines = isFirstBatchInSession ? [
-    `Sales Claw batch payload。${provider.cliLabel} + MCP Playwright で実行。前回会話は引き継がず、この batch のみ実行。`,
+    `Sales Claw batch payload。${provider.cliLabel} + ブラウザ自動化 MCP (browser_* ツール) で実行。前回会話は引き継がず、この batch のみ実行。`,
     'Phase A は backend 完了済み (再分析・再生成・settings 更新はしない)。',
-    'urlMissing=true → WebSearch で「会社名 公式サイト」検索 → 公式ドメイン特定 → サイト確認 → 本文生成 → フォーム入力。公式サイト不明なら error。',
+    'urlMissing=true → batch_rules の WebSearch 手順で公式ドメイン特定 → サイト確認 → 本文生成 → フォーム入力。公式サイト不明なら error。',
     'urlMissing=false かつ siteExcerpt 空 / 取得失敗 → 本文推測せず error。',
-    '本文は companies_jsonl の messageCore を基準に、sender_json の署名・送信停止案内・住所(ある場合)で補完。社員数・設立年・資本金など sender_json に無い値は推測しない。',
+    '本文は companies_jsonl の messagePrompt で最終化し (messageDraft はフォールバック)、sender_json の署名・送信停止案内・住所(ある場合)で補完。社員数・設立年・資本金など sender_json に無い値は推測しない。',
     autoSendSafe
       ? 'CAPTCHA / 手動必須項目 / 営業NG / 不確実以外は自動送信 → ss-{No}-sent.png → submitted。送信不要は ss-{No}-input.png → awaiting_approval。'
       : '送信せず ss-{No}-input.png → awaiting_approval で停止。',
@@ -5568,9 +5695,11 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '```',
     curlTemplate,
     '```',
-    '<JSON> 例 (action 別 details はこれだけ差し替える):',
-    `  awaiting_approval: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由>","sentMessage":"<入力本文全文>","screenshot":"ss-<No>-input.png","tabKept":true}}`,
-    `  submitted:         {"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<入力本文全文>","screenshot":"ss-<No>-sent.png"}}`,
+    '<JSON> 例 (action 別 details はこれだけ差し替える。1 社あたり form_fill → confirm_reached → awaiting_approval/submitted の順):',
+    `  form_fill:         {"no":<No>,"name":"<会社名>","action":"form_fill","details":{"formUrl":"<入力したフォームURL>","filledFields":["会社名","氏名","メール","電話","本文"]}}`,
+    `  confirm_reached:   {"no":<No>,"name":"<会社名>","action":"confirm_reached","details":{"formUrl":"<入力したフォームURL>","screenshot":"ss-<No>-input.png"}}`,
+    `  awaiting_approval: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由>","sentMessage":"<入力本文全文>","screenshot":"ss-<No>-input.png","formUrl":"<入力したフォームURL>"}}`,
+    `  submitted:         {"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<入力本文全文>","screenshot":"ss-<No>-sent.png","formUrl":"<入力したフォームURL>"}}`,
     `  skipped:           {"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}`,
     `  error:             {"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}`,
     '会社名は JSON エスケープ ("/\\)。SALES_CLAW_SESSION / SALES_CLAW_DASHBOARD_URL は PTY 起動時に env 注入済み。',
@@ -5581,7 +5710,7 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '    Step 1: Write tool で UTF-8 (BOM 無し) のテキストファイルを作成',
     '        例: Write file_path=C:\\\\Users\\\\<user>\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt content=<本文全文>',
     '    Step 2: details に "sentMessageFile":"<absolute path>" を指定 (sentMessage は省略可)',
-    '    例: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"sentMessageFile":"C:\\\\Users\\\\xxx\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt","screenshot":"ss-<No>-input.png","tabKept":true,"reason":"<理由>","finalFormTab":"<実際のフォームURL>"}}',
+    '    例: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"sentMessageFile":"C:\\\\Users\\\\xxx\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt","screenshot":"ss-<No>-input.png","reason":"<理由>","formUrl":"<実際のフォームURL>"}}',
     '    → サーバが %TEMP% / OS tmp / Sales Claw data dir 配下から本文を読み、UTF-8 文字化け無しで sentMessage 記録。',
     '★★ サーバは sentMessage に `?` を 3 文字以上連続検出すると 422 で reject する。リトライ時は sentMessageFile を使うこと。',
     '',
@@ -11190,6 +11319,7 @@ function getErrorRecoveryApiDispatch() {
       getClaudePty: () => claudePty,
       getManagedAiAutoSendSafe,
       appendDiagnosticEvent,
+      runAiFormFill: (body, res) => getAiFormFillApiDispatch().runWithBody(body, res),
     });
   }
   return _errorRecoveryApiDispatch;

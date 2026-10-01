@@ -89,8 +89,21 @@ module.exports = function createAiFormFillRoutes(ctx) {
 
   // POST /api/ai-form-fill — queue work into the selected AI automation runtime
   async function handleAiFormFill(req, res) {
+    let data: any;
     try {
-      const data: any = await parseJsonBody(req);
+      data = await parseJsonBody(req);
+    } catch (e) {
+      jsonResponse(res, 400, { ok: false, error: e.message });
+      return;
+    }
+    await runAiFormFill(data, res);
+  }
+
+  // Phase A → Phase B キュー投入の本体。/api/error/retry からも同じ経路で呼ぶ
+  // (Phase A を飛ばすと siteExcerpt / messagePrompt が空のまま CLI に渡り、
+  //  プロンプト規約で error に落ちるため)。
+  async function runAiFormFill(data: any, res) {
+    try {
       const companyNos = Array.isArray(data && data.companyNos) ? data.companyNos : [];
       const providerId = resolveActiveProvider(data && data.provider);
       if (companyNos.length === 0) {
@@ -393,12 +406,21 @@ module.exports = function createAiFormFillRoutes(ctx) {
         ...result,
         phaseA: {
           successCount: phaseA.successes.length,
+          skippedCount: phaseASkipped.length,
           failureCount: phaseA.failures.length,
           elapsedMs: phaseA.elapsedMs,
-          failures: phaseA.failures.map((entry: any) => ({
-            companyNo: entry.companyNo,
+          // v2.2.0: 一部成功時もスキップ理由を返す (旧: 全件失敗時しか返さず、
+          //   営業お断り / URL 未設定 で落ちた社がオペレーターに見えなかった)
+          skipped: phaseASkipped.map((entry: any) => ({
+            companyNo: entry.no,
             companyName: entry.companyName,
-            error: entry.error,
+            reason: entry.reason,
+            skipKind: entry.skipKind || null,
+          })),
+          failures: phaseA.failures.map((entry: any) => ({
+            companyNo: entry && entry.companyNo,
+            companyName: entry && entry.companyName,
+            error: entry && entry.error,
           })),
         },
       });
@@ -417,11 +439,12 @@ module.exports = function createAiFormFillRoutes(ctx) {
    * @param {string} pathname - URL.pathname (? 以降削除済み)
    * @returns {Promise<boolean>}
    */
-  return async function dispatch(req, res, pathname) {
+  async function dispatch(req, res, pathname) {
     if (pathname === '/api/ai-form-fill' && req.method === 'POST') {
       await handleAiFormFill(req, res);
       return true;
     }
     return false;
-  };
+  }
+  return Object.assign(dispatch, { runWithBody: runAiFormFill });
 };

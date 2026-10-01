@@ -121,6 +121,20 @@ module.exports = function createSimpleApiRoutes(ctx) {
     }
   }
 
+  // v2.2.0: AI 最終送信 (ai-final-submit) の submitted は、承認済み本文を CLI に
+  //   curl で再タイプさせず、直近の awaiting_approval ログの sentMessage を引き継ぐ。
+  //   (長文の再タイプは CP932 文字化け / エスケープ失敗で 422 ループの原因だった)
+  function findApprovedSentMessage(no) {
+    const logs = getLogsForCompany(no);
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+      if (logs[i].action !== 'awaiting_approval') continue;
+      const d = parseDetailsMaybe(logs[i].details);
+      const msg = typeof d.sentMessage === 'string' ? d.sentMessage.trim() : '';
+      if (msg) return msg;
+    }
+    return '';
+  }
+
   function getLogsForCompany(no) {
     try {
       return getAllLogs().filter((log: any) => String(log.companyNo) === String(no));
@@ -422,6 +436,9 @@ module.exports = function createSimpleApiRoutes(ctx) {
         const name = String(data.name || '').slice(0, MAX_NAME_LEN).replace(/[\x00-\x1f\x7f]/g, ' ');
         const detailsRaw = data.details;
         let details;
+        // truncate 前の sanitize 済みオブジェクト。長文本文で JSON 文字列が
+        // MAX_DETAILS_LEN で切れても screenshot / formUrl 等を失わないよう保持する。
+        let sanitizedDetailsObj: Record<string, any> | null = null;
         if (typeof detailsRaw === 'string') {
           details = detailsRaw.slice(0, MAX_DETAILS_LEN).replace(/[\x00-\x1f\x7f]/g, ' ');
         } else if (detailsRaw && typeof detailsRaw === 'object') {
@@ -437,7 +454,8 @@ module.exports = function createSimpleApiRoutes(ctx) {
             }
             return val;
           };
-          details = JSON.stringify(sanitize(detailsRaw)).slice(0, MAX_DETAILS_LEN);
+          sanitizedDetailsObj = sanitize(detailsRaw);
+          details = JSON.stringify(sanitizedDetailsObj).slice(0, MAX_DETAILS_LEN);
         } else {
           details = '';
         }
@@ -537,6 +555,10 @@ module.exports = function createSimpleApiRoutes(ctx) {
               }
             }
           }
+          if (!sentMsg && action === 'submitted' && detailsRaw && typeof detailsRaw === 'object'
+            && detailsRaw.source === 'ai-final-submit') {
+            sentMsg = findApprovedSentMessage(no);
+          }
           if (!sentMsg) {
             rejectLog(422, {
               ok: false,
@@ -632,11 +654,15 @@ module.exports = function createSimpleApiRoutes(ctx) {
         if ((action === 'submitted' || action === 'awaiting_approval') && sentMsg) {
           const bodyForLog = sentMsg.slice(0, MAX_DETAILS_LEN).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ' ');
           let detailsObj: Record<string, any>;
-          try {
-            const parsed = (typeof details === 'string' && details) ? JSON.parse(details) : null;
-            detailsObj = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
-          } catch (_) {
-            detailsObj = {};
+          if (sanitizedDetailsObj && typeof sanitizedDetailsObj === 'object' && !Array.isArray(sanitizedDetailsObj)) {
+            detailsObj = { ...sanitizedDetailsObj };
+          } else {
+            try {
+              const parsed = (typeof details === 'string' && details) ? JSON.parse(details) : null;
+              detailsObj = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (_) {
+              detailsObj = {};
+            }
           }
           detailsObj.sentMessage = bodyForLog;
           // 本文を含む最終 JSON は truncate しない (途中切断で JSON が壊れるのを防ぐ)。

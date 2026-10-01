@@ -79,6 +79,18 @@ async function ensureAttached(ctx: DispatcherContext, sessionId: string) {
 /**
  * すべての IPC op を `ipcServer.on(op, handler)` に登録する。
  */
+function requireCompanyNoForNewSession(companyNo: unknown, toolLabel: string): number {
+  const n = Number(companyNo);
+  if (companyNo == null || !Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      `${toolLabel}: companyNo is required when opening a new form session ` +
+      '(screenshots are saved as ss-{companyNo}-input.png and checked by /api/log-action). ' +
+      `Retry with { url, companyNo: <the company's No> }, or pass the existing sessionId.`,
+    );
+  }
+  return n;
+}
+
 export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): void {
   const register = (op: string, fn: IpcHandler) => ipcServer.on(op, fn);
 
@@ -98,12 +110,11 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
       await ctx.formSessionManager._waitForLoad(p.sessionId, 15000);
       sessionId = p.sessionId;
     } else {
-      // 新規セッション。companyNo 未指定なら 0 (warning ログを出して呼び出し側に注意喚起)。
-      const companyNo = p.companyNo ?? 0;
-      if (companyNo === 0) {
-        // eslint-disable-next-line no-console
-        console.warn('[form-mcp-dispatcher] browser_navigate called without companyNo; screenshots will be ss-0-*.png');
-      }
+      // 新規セッション。v2.2.0: companyNo を必須にする。
+      //   旧: 未指定でも ss-0-*.png (tabs new では ss-undefined-*.png) で作成し続けたため、
+      //     awaiting_approval の screenshot 存在チェックが 422 になり CLI が再試行ループに
+      //     入っていた。作成時点で明示エラーを返し、CLI に即座に引数を直させる。
+      const companyNo = requireCompanyNoForNewSession(p.companyNo, 'browser_navigate');
       sessionId = await ctx.formSessionManager.createSession(p.url, companyNo);
       // v2.0.82: 作成完了後に dock を呼ぶ (failure は warn のみ、navigate result は OK 返す)
       try {
@@ -324,7 +335,8 @@ export function registerHandlers(ipcServer: IpcServer, ctx: DispatcherContext): 
       return { tabs };
     }
     if (p.action === 'new') {
-      const sessionId = await ctx.formSessionManager.createSession(p.url!, p.companyNo!);
+      const companyNo = requireCompanyNoForNewSession(p.companyNo, 'browser_tabs({action:"new"})');
+      const sessionId = await ctx.formSessionManager.createSession(p.url!, companyNo);
       return { sessionId };
     }
     if (p.action === 'close') {

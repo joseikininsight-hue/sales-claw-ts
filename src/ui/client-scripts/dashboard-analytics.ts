@@ -497,7 +497,11 @@ function renderErrorRecoveryGroups(data){
   }
   host.innerHTML = groups.slice(0, 6).map((g) => {
     const nos = (g.companies || []).map((c) => c.no).filter(Boolean).join(',');
-    const action = '<button class="analytics-sub-action" style="white-space:nowrap" onclick="retryErrorGroup(\\'' + esc(g.key) + '\\')">再試行</button>';
+    // 営業NG / 対象外 と Web フォームなし は再試行しても結果が変わらないのでボタンを出さない
+    const retryable = g.key !== 'unsupported' && g.key !== 'no_form';
+    const action = retryable
+      ? '<button class="analytics-sub-action" style="white-space:nowrap" onclick="retryErrorGroup(\\'' + esc(g.key) + '\\')">再試行</button>'
+      : '';
     return renderMiniRow(g.label + ' (' + g.count + ')', nos ? 'No: ' + nos : '', g.key === 'captcha' || g.key === 'unsupported' ? 'warn' : 'bad', action);
   }).join('');
 }
@@ -519,7 +523,8 @@ async function retryErrorGroup(key){
   const group = (window._errorRecoveryGroups || []).find((g) => g.key === key);
   const companyNos = group && Array.isArray(group.companies) ? group.companies.map((c) => c.no).filter(Boolean) : [];
   if (!companyNos.length) return;
-  if (!confirm((group.label || key) + ' の ' + companyNos.length + ' 件を再試行しますか？')) return;
+  if (!confirm((group.label || key) + ' の ' + companyNos.length + ' 件を再試行しますか？\\n(企業分析からやり直してフォーム入力キューに追加します)')) return;
+  if (typeof showToast === 'function') showToast('再試行: 企業分析を実行中です… (' + companyNos.length + ' 件)', 'info');
   try {
     const res = await fetch('/api/error/retry', {
       method: 'POST',
