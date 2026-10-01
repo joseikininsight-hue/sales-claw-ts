@@ -40,7 +40,6 @@ const { getLiveMonitorSummary } = require('../live-monitor');
  * @param {function} ctx.getManagedAiAutoSendSafe - () → boolean
  * @param {function} ctx.getManagedAiReservedCompanyNos - () → Set<number>
  * @param {function} ctx.cleanupStaleManagedAiMonitorEvents - (thresholdMs) → void
- * @param {function} ctx.getActiveHeadlessRun - () → run | null
  *
  * @param {function} ctx.getManagedAiBatchController - () → managedAiBatchController | null
  * @param {function} ctx.setManagedAiBatchActive - (value) → void (managedAiBatchController.activeBatch = value と同等)
@@ -65,7 +64,6 @@ module.exports = function createAiFormFillRoutes(ctx) {
     getManagedAiAutoSendSafe,
     getManagedAiReservedCompanyNos,
     cleanupStaleManagedAiMonitorEvents,
-    getActiveHeadlessRun,
     getManagedAiBatchController,
     setManagedAiBatchActive,
     clearManagedAiBatchPending,
@@ -76,25 +74,14 @@ module.exports = function createAiFormFillRoutes(ctx) {
   /**
    * provider 解決の優先順位 (active session first):
    *   1. 現在 PTY が走っている provider (= getManagedAiProvider)
-   *   2. headless run の provider
-   *   3. 明示指定された data.provider
-   *   4. settings 上の選択 (= getSelectedAiProvider)
-   *
-   * ユーザーの mental model は「いま動いてる AI に投げる」。launcher で
-   * Codex を起動したのに settings 既定が Claude のままだと、UI が
-   * `provider: 'claude'` を送って ensureClaudeAutomationReady で
-   * 「現在の管理セッションは Codex です」というエラーになる。
-   * 実 PTY を最優先にすることでこの ergonomic mismatch を吸収する。
-   * 明示指定 (explicitProvider) は PTY が無い時のフォールバックに退ける。
+   *   2. 明示指定された data.provider
+   *   3. settings 上の選択 (= getSelectedAiProvider)
+   * Claude Code のみサポートのため、いずれも最終的に 'claude' へ正規化される。
    */
   function resolveActiveProvider(explicitProvider) {
     const activePty = getClaudePty && getClaudePty();
     if (activePty && typeof getManagedAiProvider === 'function') {
       return normalizeProviderId(getManagedAiProvider());
-    }
-    const headless = getActiveHeadlessRun && getActiveHeadlessRun();
-    if (headless && headless.provider) {
-      return normalizeProviderId(headless.provider);
     }
     if (explicitProvider) return normalizeProviderId(explicitProvider);
     return normalizeProviderId(getSelectedAiProvider());
@@ -140,7 +127,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const claudePty = getClaudePty();
       const managedAiRecoveryTimer = getManagedAiRecoveryTimer();
       const managedAiBatchController = getManagedAiBatchController();
-      const ptyActuallyRunning = !!(claudePty || getActiveHeadlessRun());
+      const ptyActuallyRunning = !!claudePty;
       if (!ptyActuallyRunning) {
         // PTYが停止中かつリカバリタイマーもない → activeBatch + pending は確実に古い。
         // v2.0.10: pending も一緒にドレインする。

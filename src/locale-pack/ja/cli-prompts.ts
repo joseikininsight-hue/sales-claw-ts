@@ -1,7 +1,7 @@
 // CLI Prompt 用 batch_rules (日本語)
 //
 // dashboard-server.ts の buildClaudeFormFillPrompt 内 batch_rules セクションを
-// locale 別に抽出したもの。CLI (Claude/Codex/Gemini) に対する MCP Playwright
+// locale 別に抽出したもの。Claude Code CLI に対する MCP Playwright
 // 自動化指示をまとめる。日本語企業を相手にする際の現状文言をそのまま保持し、
 // 日本語ユーザーの挙動が変わらないようにする。
 

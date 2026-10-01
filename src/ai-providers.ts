@@ -16,39 +16,10 @@ const PROVIDERS = {
       en: 'Claude works well with auto / bypassPermissions. Use auto for normal operations.',
     },
   },
-  codex: {
-    id: 'codex',
-    displayName: 'Codex',
-    cliLabel: 'Codex CLI',
-    installPackage: '@openai/codex',
-    executableNames: ['codex.exe', 'codex.cmd', 'codex'],
-    // フォーム入力タスクは GPT-5.5 級の高知能を必要としない。
-    // Codex はモデル省略時に "gpt-5.5 xhigh" を選ぶが、それは Codex 0.128+ でしか
-    // 動かない。0.118 以下のユーザでも安定して動かせて、トークン効率も良い
-    // gpt-5-codex を既定にする (Claude が sonnet/haiku を使い分けるのと同じ思想)。
-    defaultModel: 'gpt-5-codex',
-    minRecommendedCliVersion: '0.128.0',
-    defaultMode: 'auto',
-    autoModeNote: {
-      ja: 'Codex は no-prompt auto で動かせます。default / acceptEdits は手動確認向けです。なお Codex 本体の MCP 権限ルールにより、Playwright 操作で一度だけ確認が出る場合があります。',
-      en: 'Codex supports no-prompt auto. Use default / acceptEdits for manual confirmation flows. Codex may still show a one-time MCP permission dialog for Playwright actions.',
-    },
-  },
-  gemini: {
-    id: 'gemini',
-    displayName: 'Gemini',
-    cliLabel: 'Gemini CLI',
-    installPackage: '@google/gemini-cli',
-    executableNames: ['gemini.exe', 'gemini.cmd', 'gemini'],
-    defaultModel: '',
-    defaultMode: 'auto',
-    autoModeNote: {
-      ja: 'Gemini は auto が auto_edit 相当です。browser / MCP 操作では止まることがあるため、詰まる場合は bypassPermissions を使ってください。yolo でも Gemini 側の確認が残る場合があります。',
-      en: 'Gemini maps auto to auto_edit. Browser / MCP flows may still pause, so use bypassPermissions if needed. Gemini can still keep its own confirmations even in yolo.',
-    },
-  },
 };
 
+// Claude Code CLI のみをサポートする (v2.2.0 で Codex / Gemini 対応を削除)。
+// 旧設定の aiProvider: 'codex' / 'gemini' などは全て 'claude' に正規化される。
 function normalizeProviderId(value) {
   const key = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return PROVIDERS[key] ? key : 'claude';
@@ -100,22 +71,9 @@ function getExecutableFallbackCandidates(providerId) {
   return Array.from(new Set(candidates.filter(Boolean).map((entry: any) => path.resolve(entry))));
 }
 
-function getAuthFiles(providerId) {
-  const userHome = os.homedir();
-  switch (normalizeProviderId(providerId)) {
-    case 'gemini':
-      return [
-        path.join(userHome, '.gemini', 'oauth_creds.json'),
-        path.join(userHome, '.gemini', 'google_accounts.json'),
-      ];
-    case 'codex':
-      return [
-        path.join(userHome, '.codex', 'auth.json'),
-      ];
-    case 'claude':
-    default:
-      return [];
-  }
+// Claude は `claude auth status` で判定するため、ファイルベースの認証検出は持たない。
+function getAuthFiles(_providerId) {
+  return [];
 }
 
 function hasAnyAuthFile(providerId) {
@@ -137,30 +95,6 @@ function buildLaunchArgs(providerId, mode = 'default', options: Record<string, u
     return flags;
   }
 
-  if (provider.id === 'codex') {
-    if (currentMode === 'auto') {
-      flags.push('-a', 'never', '-s', 'danger-full-access');
-    } else if (currentMode === 'bypassPermissions') {
-      flags.push('--dangerously-bypass-approvals-and-sandbox');
-    } else {
-      flags.push('-a', 'on-request', '-s', 'workspace-write');
-    }
-    if (model) flags.push('-m', model);
-    return flags;
-  }
-
-  if (provider.id === 'gemini') {
-    if (currentMode === 'bypassPermissions') {
-      flags.push('--approval-mode', 'yolo');
-    } else if (currentMode === 'acceptEdits' || currentMode === 'auto') {
-      flags.push('--approval-mode', 'auto_edit');
-    } else {
-      flags.push('--approval-mode', 'default');
-    }
-    if (model) flags.push('-m', model);
-    return flags;
-  }
-
   return flags;
 }
 
@@ -170,32 +104,6 @@ function buildHeadlessArgs(providerId, mode = 'auto', options: Record<string, un
   const model = typeof options.model === 'string' ? options.model.trim() : '';
   const cwd = typeof options.cwd === 'string' && options.cwd ? options.cwd : process.cwd();
   const prompt = typeof options.prompt === 'string' ? options.prompt : '';
-
-  if (provider.id === 'codex') {
-    const flags = ['exec'];
-    // Windows headless automation is unreliable with Codex interactive automation,
-    // so queued runs always use the no-prompt path.
-    flags.push('--dangerously-bypass-approvals-and-sandbox');
-    if (model) flags.push('-m', model);
-    flags.push('--json', '-C', cwd, prompt || '-');
-    return {
-      promptViaStdin: !prompt,
-      args: flags,
-      effectiveMode: currentMode === 'bypassPermissions' ? 'bypassPermissions' : 'danger-full-access',
-    };
-  }
-
-  if (provider.id === 'gemini') {
-    const flags = ['-p', prompt || 'Execute the attached stdin instructions now. Do the actual work and do not stop at a summary.', '-o', 'text'];
-    if (model) flags.push('-m', model);
-    // Gemini automation should not stop for approvals during queued runs.
-    flags.push('--approval-mode', 'yolo');
-    return {
-      promptViaStdin: true,
-      args: flags,
-      effectiveMode: currentMode === 'bypassPermissions' ? 'bypassPermissions' : 'yolo',
-    };
-  }
 
   if (provider.id === 'claude') {
     // Claude headless: `claude -p "<prompt>"` で出力を STDOUT に流して即終了する。

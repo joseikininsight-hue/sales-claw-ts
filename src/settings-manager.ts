@@ -204,8 +204,6 @@ const DEFAULT_SETTINGS = {
     aiProvider: 'claude',
     aiModels: {
       claude: 'claude-sonnet-4-6',
-      codex: '',
-      gemini: '',
     },
     claudeModel: 'claude-sonnet-4-6',
     // ログ
@@ -828,7 +826,7 @@ function getIdealCustomer() {
       : 800,
     // Phase A-1 feature flag.
     // ON にすると Phase A の業態判定をキーワード辞書から CLI ヘッドレス
-    // 解析に切替える (Claude/Codex/Gemini を 1社あたり 5-30s 呼び出す)。
+    // 解析に切替える (Claude CLI を 1社あたり 5-30s 呼び出す)。
     // 既定 OFF (CLI quota を消費するため)。
     useLLMAnalyzer: raw.useLLMAnalyzer === true,
     // Phase B feature flag.
@@ -929,17 +927,15 @@ function normalizeSettings(input) {
   }
 
   const prefs = settings.preferences;
-  const aiProvider = typeof prefs.aiProvider === 'string' && prefs.aiProvider.trim()
-    ? prefs.aiProvider.trim().toLowerCase()
-    : 'claude';
-  prefs.aiProvider = ['claude', 'codex', 'gemini'].includes(aiProvider) ? aiProvider : 'claude';
+  // v2.2.0: Claude Code CLI のみサポート。旧設定の 'codex' / 'gemini' は 'claude' へ移行する。
+  prefs.aiProvider = 'claude';
 
   const aiModels = prefs.aiModels && typeof prefs.aiModels === 'object' && !Array.isArray(prefs.aiModels)
     ? { ...prefs.aiModels }
     : {};
   aiModels.claude = typeof aiModels.claude === 'string' ? aiModels.claude : '';
-  aiModels.codex = typeof aiModels.codex === 'string' ? aiModels.codex : '';
-  aiModels.gemini = typeof aiModels.gemini === 'string' ? aiModels.gemini : '';
+  delete aiModels.codex;
+  delete aiModels.gemini;
 
   if (!aiModels.claude && typeof prefs.claudeModel === 'string' && prefs.claudeModel.trim()) {
     aiModels.claude = prefs.claudeModel.trim();
@@ -1046,16 +1042,16 @@ function getFormFillTimeout() {
 }
 
 /**
- * 現在の AI プロバイダ ID（'claude' / 'codex' / 'gemini'）を返す。
+ * 現在の AI プロバイダ ID を返す。Claude Code CLI のみサポートのため常に 'claude'。
  * @returns {string} プロバイダ ID
  */
 function getAiProvider() {
-  return (getSection('preferences').aiProvider || 'claude').trim() || 'claude';
+  return 'claude';
 }
 
 /**
  * 各 AI プロバイダのモデル名マップを取得する。
- * @returns {{ claude?: string, codex?: string, gemini?: string }} モデル名マップ
+ * @returns {{ claude?: string }} モデル名マップ
  */
 function getAiModels() {
   return { ...(getSection('preferences').aiModels || {}) };
@@ -1063,7 +1059,7 @@ function getAiModels() {
 
 /**
  * 指定プロバイダのモデル名を取得する。
- * @param {string} [providerId] - プロバイダ ID（'claude' / 'codex' / 'gemini'、デフォルト 'claude'）
+ * @param {string} [providerId] - プロバイダ ID（デフォルト 'claude'）
  * @returns {string} モデル名（未設定時は空文字）
  */
 function getAiModel(providerId = 'claude') {
@@ -1084,7 +1080,7 @@ function getAiModel(providerId = 'claude') {
  *   3. 各プロバイダのデフォルト
  *
  * @param {string} phase - 'site-analysis' | 'message-generation'
- * @param {string} [providerId] - 'claude' | 'codex' | 'gemini'
+ * @param {string} [providerId] - 'claude'
  * @returns {string} モデル名 (未設定時は phase の既定)
  */
 function getAiModelForPhase(phase: string, providerId: string = 'claude') {
@@ -1106,13 +1102,9 @@ function getAiModelForPhase(phase: string, providerId: string = 'claude') {
   // 3. 各プロバイダのデフォルト
   if (phaseKey === 'site-analysis') {
     if (providerKey === 'claude') return 'claude-haiku-4-5';  // Phase A: 単価 1/10 で十分
-    if (providerKey === 'codex') return '';   // codex はデフォルト任せ
-    if (providerKey === 'gemini') return 'gemini-2.5-flash';
   }
   if (phaseKey === 'message-generation') {
     if (providerKey === 'claude') return 'claude-sonnet-4-6'; // Phase B: 文章品質重視
-    if (providerKey === 'codex') return '';
-    if (providerKey === 'gemini') return 'gemini-2.5-pro';
   }
   return '';
 }

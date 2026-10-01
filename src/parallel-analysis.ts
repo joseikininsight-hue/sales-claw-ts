@@ -20,13 +20,9 @@ const { resolveDataPath } = require('./data-paths');
  * 同じパス規約。parallel-analysis.cjs は独立した Node プロセスなので、
  * dashboard-server の関数を直接 require できず、同じロジックを再実装する。
  */
-function resolveProviderHomeDir(providerId: string): string {
-  const safe = typeof providerId === 'string' && providerId.trim()
-    ? providerId.trim().toLowerCase()
-    : 'claude';
-  // dashboard-server の normalizeProviderId と同じ allowlist
-  const normalized = ['claude', 'codex', 'gemini'].includes(safe) ? safe : 'claude';
-  return resolveDataPath(path.join('provider-homes', normalized));
+function resolveProviderHomeDir(_providerId: string): string {
+  // dashboard-server の normalizeProviderId と同じく Claude のみ
+  return resolveDataPath(path.join('provider-homes', 'claude'));
 }
 
 /**
@@ -109,7 +105,7 @@ function isUrlMissingGateSkip(analysis, gateResult) {
  */
 
 /**
- * CLI 実行ファイル (claude/codex/gemini) を PATH から探す。
+ * Claude CLI 実行ファイルを PATH から探す。
  * Sales Claw のメインプロセスとは違って、parallel-analysis.cjs は別プロセス
  * で動いているので resolveClaudeExecutable には頼れない。`where`/`which` で
  * 見つける。見つからなければ null。
@@ -128,7 +124,6 @@ const TRUSTED_CLI_PATH_PATTERNS = [
   /\\\.local\\bin\\/i,                   // claude self-update install dir
   /\\sales-claw\\runtime\\/i,            // toolchain
   /\\\.sales-claw\\tools\\/i,
-  /\\AppData\\Local\\OpenAI\\Codex\\bin\\/i,
   /\/usr\/local\/bin\//,
   /\/opt\/homebrew\/bin\//,
   /\/home\/[^/]+\/\.local\/bin\//,
@@ -145,15 +140,15 @@ function isTrustedCliPath(p) {
 }
 
 /**
- * claude/codex/gemini の実行可能ファイルを where/which で探し、allowlist で検証する。
- * @param {string} providerId 'claude' | 'codex' | 'gemini'
+ * claude の実行可能ファイルを where/which で探し、allowlist で検証する。
+ * @param {string} _providerId 'claude'
  * @returns {Promise<string|null>} 信頼できる実行ファイルパス、見つからなければ null
  */
-async function resolveCliExecutable(providerId) {
+async function resolveCliExecutable(_providerId) {
   const { execFile } = require('child_process');
   const { promisify } = require('util');
   const execFileP = promisify(execFile);
-  const cmdName = providerId === 'codex' ? 'codex' : providerId === 'gemini' ? 'gemini' : 'claude';
+  const cmdName = 'claude';
   try {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     const { stdout } = await execFileP(cmd, [cmdName], { timeout: 3000 });

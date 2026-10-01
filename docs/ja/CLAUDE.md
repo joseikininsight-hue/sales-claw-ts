@@ -137,7 +137,7 @@ http://127.0.0.1:3765/onboarding?fresh=1   # 進捗をクリアして最初か�
 2. 自社情報 (companyProfile)
 3. 自社の強み (valuePropositions.strengths) — プリセット 8 種 + カスタム
 4. ターゲットリスト (Excel/CSV、スキップ可)
-5. AI 連携 (Claude / Codex / Gemini ログイン状態確認)
+5. AI 連携 (Claude Code CLI ログイン状態確認)
 
 **完了条件:** `data/settings.json` に `_onboardedAt: <ISO>` が書き込まれ、
 以降のアクセスは通常ダッシュボードに直接遷移する。

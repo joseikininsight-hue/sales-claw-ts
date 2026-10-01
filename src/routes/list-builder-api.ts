@@ -362,7 +362,7 @@ module.exports = function createListBuilderRoutes(ctx) {
   }
 
   // POST /api/list-builder/cli-run
-  // 起動中の Claude/Codex/Gemini CLI に headless モードで「企業を探して JSON で
+  // 起動中の Claude Code CLI に headless モードで「企業を探して JSON で
   // 返して」と依頼するシンプルな経路。SerpApi / 法人番号 API 不要。
   async function handleCliRun(req, res) {
     if (!cliAgentCtx) {
@@ -375,7 +375,7 @@ module.exports = function createListBuilderRoutes(ctx) {
     }
     const query = String(body && body.query || '').trim();
     const limit = Math.max(1, Math.min(Number(body && body.limit) || 30, cliAgent.MAX_LIMIT));
-    const provider = ['claude', 'codex', 'gemini'].includes(body && body.provider) ? body.provider : 'claude';
+    const provider = 'claude';
     if (!query) { jsonResponse(res, 400, { ok: false, error: 'query_required' }); return; }
 
     let run;

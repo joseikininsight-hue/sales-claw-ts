@@ -3,7 +3,7 @@
 /**
  * CLI Activity タブ内蔵ターミナル + 認証エラー時のアシスト UI。
  *
- * - Claude / Codex / Gemini ボタンクリックで POST /api/launch-ai
+ * - Claude ボタンクリックで POST /api/launch-ai
  * - 既存 WebSocket (/terminal) に接続し、PTY 出力を xterm.js に流す
  * - 「Please run /login」「API Error: 401」など認証失敗パターンを検出して
  *   親切な案内バナーを自動表示し、「/login を実行」ボタンで自動入力する
@@ -23,8 +23,6 @@ const STYLE = [
   '.cli-term-launch{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;font-size:.74rem;font-weight:700;border:1px solid var(--border-default);border-radius:var(--radius-md)!important;background:var(--bg-card);color:var(--text-1);cursor:pointer;transition:all .15s var(--ease-out-expo)}',
   '.cli-term-launch:hover{background:var(--bg-raised);border-color:var(--border-strong);transform:translateY(-1px);box-shadow:var(--shadow-xs)}',
   '.cli-term-launch.claude:hover{border-color:#CC785C;background:#fff7f3}',
-  '.cli-term-launch.codex:hover{border-color:#10a37f;background:#f0fdf8}',
-  '.cli-term-launch.gemini:hover{border-color:#4285F4;background:#f0f4ff}',
   '.cli-term-launch[disabled]{opacity:.5;cursor:not-allowed!important;pointer-events:none}',
   '.cli-term-launch.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:var(--shadow-cta)}',
   '.cli-term-launch-icon{width:16px;height:16px;flex-shrink:0}',
@@ -116,9 +114,7 @@ const SCRIPT = `(function(){
   var LAUNCH_REQUEST_TIMEOUT_MS = 200000;
 
   var PROVIDER_LABELS = {
-    claude: 'Claude',
-    codex:  'Codex',
-    gemini: 'Gemini'
+    claude: 'Claude'
   };
 
   function ensureTerm() {

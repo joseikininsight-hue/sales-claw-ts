@@ -22,7 +22,7 @@ Sales Claw に関するよくある質問。具体的なバグ・症状につい
 ### Sales Claw とは何ですか?
 
 Sales Claw は **Web 問い合わせフォームを通じた B2B アウトリーチを自動化**
-するデスクトップツールです。Claude / Codex / Gemini CLI が各ターゲット企業
+するデスクトップツールです。Claude Code CLI が各ターゲット企業
 の Web サイトを分析し、パーソナライズされたメッセージを起草し、企業の問い
 合わせフォームに入力します。最終的な送信判断は、ローカルの Electron
 ダッシュボードを介して人間が行う human-in-the-loop 設計です。
@@ -39,8 +39,7 @@ prompt は bilingual で、英語ロケールパックも一級サポートで�
 
 外部に出るのは以下のみ:
 
-- ユーザーが選んだ LLM プロバイダ (Anthropic / OpenAI / Google) — 分析と
-  メッセージ生成
+- Anthropic (Claude Code CLI 経由) — 分析とメッセージ生成
 - ターゲット企業の Web サイト (分析とフォーム送信)
 - GitHub Releases (自動更新チェック)
 - 任意: SerpApi / 国税庁法人番号 API / gBizINFO / EDINET (API キーを設定
@@ -50,14 +49,12 @@ prompt は bilingual で、英語ロケールパックも一級サポートで�
 
 Sales Claw 自体は **MIT ライセンスの OSS — 無料** です。
 
-AI を動かすには以下のいずれかが必要です:
+AI (Claude Code CLI) を動かすには以下のいずれかが必要です:
 
 | オプション | コスト |
 |---|---|
 | Claude.ai サブスクリプション (Pro / Team / Enterprise) | サブスクリプション料 |
 | Anthropic API キー | 従量課金 |
-| OpenAI Codex (ChatGPT Pro または API キー) | サブスクリプション / 従量 |
-| Google Gemini (サブスクまたは API キー) | サブスクリプション / 従量 |
 
 ダッシュボード左下の **AI コスト見積** chip で日次・月次の利用額が表示
 されるので、突然の高額請求を防げます。
@@ -104,25 +101,21 @@ Electron 3 プラットフォーム全部:
 
 ### Claude Code CLI が必要ですか?
 
-**はい — Claude Code CLI / Codex CLI / Gemini CLI のいずれかは必須** です。
-これらが実際にフォーム解析・メッセージ生成・フォーム入力を駆動するエンジン
-です。Sales Claw はその周りのオーケストレータ + ダッシュボードとして
-動作します。
+**はい、必須です。** Claude Code CLI が実際にフォーム解析・メッセージ生成・
+フォーム入力を駆動するエンジンです。Sales Claw はその周りのオーケストレータ
++ ダッシュボードとして動作します。
 
-デフォルトで最もよくテストされているプロバイダは Claude Code CLI です。
+対応している AI プロバイダは Claude Code CLI のみです (Codex CLI / Gemini
+CLI のサポートは終了しました)。
 
 ### API キーは必要ですか?
 
-AI プロバイダ次第:
+Claude Code CLI の認証方法次第:
 
-| プロバイダ認証 | API キー必要? |
+| 認証方法 | API キー必要? |
 |---|---|
 | Claude.ai サブスクリプション (Pro / Team / Enterprise) | **不要** — OAuth ログインで OK |
 | Anthropic API キー | **必要** — `ANTHROPIC_API_KEY` |
-| Codex via ChatGPT サブスクリプション | **不要** — OAuth |
-| Codex via OpenAI API キー | **必要** — `OPENAI_API_KEY` |
-| Gemini via サブスク | **不要** — OAuth |
-| Gemini via API キー | **必要** — `GEMINI_API_KEY` |
 
 Claude.ai サブスクリプションのみ使う場合は API キー不要、Anthropic から
 従量課金されることもありません。
@@ -154,7 +147,7 @@ claude mcp add --scope user playwright \
 2. 自社プロフィール (`companyProfile`)
 3. 自社の強み (`valuePropositions.strengths`)
 4. ターゲットリストアップロード (Excel / CSV — スキップ可)
-5. AI 連携 (Claude / Codex / Gemini ログイン確認)
+5. AI 連携 (Claude Code CLI ログイン確認)
 
 手動で再開:
 

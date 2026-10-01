@@ -2,8 +2,9 @@
 
 > English version: [AGENTS.md](../../AGENTS.md)
 >
-> このファイルは Codex CLI / Gemini CLI 等の **`AGENTS.md` を読む AI エージェント向け**の
-> エントリーポイントです。
+> このファイルは **`AGENTS.md` を読む AI コーディングエージェント向け**の
+> エントリーポイントです (開発ツール向けであり、Sales Claw が実行時に駆動する
+> AI は Claude Code CLI のみです)。
 >
 > **本体の運用ルール・ワークフロー・MCP 使用契約は [`CLAUDE.md`](../../CLAUDE.md) に
 > 一本化されています。** こちらを参照してください。

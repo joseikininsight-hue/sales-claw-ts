@@ -293,7 +293,7 @@ http://127.0.0.1:3765/onboarding?fresh=1   # clear progress, restart from step 1
 2. Company profile (`companyProfile`)
 3. Your strengths (`valuePropositions.strengths`) — 8 presets + custom
 4. Target list (Excel / CSV, can be skipped)
-5. AI integration (Claude / Codex / Gemini login status check)
+5. AI integration (Claude Code CLI login status check)
 
 **Completion criterion:** `data/settings.json` gains an `_onboardedAt: <ISO>`
 field, after which subsequent visits go directly to the normal dashboard.

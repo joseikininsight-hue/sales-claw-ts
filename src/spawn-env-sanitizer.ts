@@ -3,7 +3,7 @@
 /**
  * Spawn Env Sanitizer
  * ───────────────────
- * Claude / Codex / Gemini の CLI を子プロセスで起動する際に渡す env を
+ * Claude Code CLI を子プロセスで起動する際に渡す env を
  * 「subscription (定額枠) 認証に乗る」状態に整形する。
  *
  * 背景:
@@ -52,9 +52,8 @@ import * as path from 'path';
  * `claude -p` は subscription credit ではなく API key / Bedrock / Vertex
  * の従量課金経路を取ってしまう。
  *
- * Codex / Gemini 系の credential も同じ理由で削除対象に入れている
- * (それぞれ subscription 認証経路を別途持っているため、API key を
- * 残しておくと従量課金にフォールバックする)。
+ * OpenAI / Google AI 系の API key も、子プロセス (CLI / MCP / スクリプト) へ
+ * 不要な従量課金 credential を渡さないための防御として削除対象に残している。
  */
 export const BILLING_LEAK_ENV_KEYS = [
   // Anthropic 直接
@@ -83,19 +82,19 @@ export const BILLING_LEAK_ENV_KEYS = [
   'GOOGLE_CLOUD_PROJECT',
   'GCLOUD_PROJECT',
 
-  // Codex / OpenAI 系 — Codex CLI の従量課金経路
+  // OpenAI 系 — 他社 AI の従量課金 credential (子プロセスに渡さない)
   'OPENAI_API_KEY',
   'OPENAI_BASE_URL',
   'OPENAI_ORG_ID',
 
-  // Gemini 系 — gemini CLI の API key 認証
+  // Google AI 系 — 他社 AI の従量課金 credential (子プロセスに渡さない)
   'GEMINI_API_KEY',
   'GOOGLE_API_KEY',
 ] as const;
 
 export type SpawnEnvSanitizerOptions = {
   /**
-   * プロバイダ ID。'claude' | 'codex' | 'gemini'。
+   * プロバイダ ID ('claude')。
    * 主に provider-home の選択用。
    */
   providerId?: string;

@@ -4,8 +4,8 @@
 
 This guide walks you from "downloaded the installer" to "first message
 awaiting human approval" in about 15 minutes. It covers all three supported
-platforms (Windows / macOS / Linux) and all three supported AI CLIs
-(Claude Code / Codex / Gemini).
+platforms (Windows / macOS / Linux) and the setup of the Claude Code CLI,
+the AI engine that Sales Claw drives.
 
 If you are already familiar with Node.js and just want a one-liner, jump to
 [Section 5: First Outreach](#5-first-outreach-5-minutes).
@@ -17,7 +17,7 @@ If you are already familiar with Node.js and just want a one-liner, jump to
 1. [System Requirements](#1-system-requirements)
 2. [Installation](#2-installation)
 3. [First Launch](#3-first-launch)
-4. [AI Provider Setup](#4-ai-provider-setup)
+4. [Claude Code CLI Setup](#4-claude-code-cli-setup)
 5. [First Outreach (5 minutes)](#5-first-outreach-5-minutes)
 6. [Bilingual Setup (v2.0.37+)](#6-bilingual-setup-v2037)
 7. [Auto-Update](#7-auto-update)
@@ -44,13 +44,10 @@ If you are already familiar with Node.js and just want a one-liner, jump to
 | Component | Required for | Minimum version |
 |-----------|--------------|-----------------|
 | **Node.js** | Building from source only (the installer bundles its own runtime) | 20.0.0 |
-| **Claude Code CLI** | Default AI driver | 2.0.0 |
-| **Codex CLI** | Alternate AI driver | 0.128.0 (gpt-5.5 support) |
-| **Gemini CLI** | Alternate AI driver | 0.5.0 |
+| **Claude Code CLI** | AI driver (required) | 2.0.0 |
 | **Git** | Source builds + `npm run preflight` | 2.30+ |
 
-You only need **one** of the three CLIs, not all three. Claude Code is the
-default and the most thoroughly tested.
+The **Claude Code CLI** is the only supported AI driver.
 
 ### Browser
 
@@ -226,11 +223,11 @@ Either:
   in the repo), or
 - Skip and add companies manually later from the dashboard.
 
-#### Step 5: AI provider
+#### Step 5: AI integration
 
-Pick **one** of Claude / Codex / Gemini. The wizard checks whether the CLI
-is installed and logged in, and prints a fix-it command if it isn't.
-See [Section 4](#4-ai-provider-setup) for the provider-specific details.
+The wizard checks whether the Claude Code CLI is installed and logged in,
+and prints a fix-it command if it isn't. See
+[Section 4](#4-claude-code-cli-setup) for details.
 
 When all five steps are complete, `data/settings.json` gets an
 `_onboardedAt: "<ISO timestamp>"` field and you land on the normal
@@ -253,14 +250,15 @@ Need help? See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) /
 
 ---
 
-## 4. AI Provider Setup
+## 4. Claude Code CLI Setup
 
-You only need to set up the provider you selected in Onboarding Step 5.
-You can switch providers later from **Settings → AI provider**.
+Sales Claw drives the Claude Code CLI for company analysis, message
+generation, and form filling. Onboarding Step 5 checks this setup for you.
 
-### 4.1 Claude Code CLI (recommended)
+> The `aiProvider` setting is now always `"claude"`. Legacy values from
+> older versions (`"codex"` / `"gemini"`) are treated as `"claude"`.
 
-#### Install
+### 4.1 Install
 
 ```bash
 # Global install via npm
@@ -274,7 +272,7 @@ claude --version
 Minimum supported version: **2.0.0** (older versions had a Windows
 `cmd.exe` quoting bug; see CLAUDE.md → Known traps).
 
-#### Login
+### 4.2 Login
 
 Two options:
 
@@ -313,7 +311,7 @@ claude auth status --json
 # → { "loggedIn": true, "account": "your@email", ... }
 ```
 
-#### MCP Playwright
+### 4.3 MCP Playwright
 
 Sales Claw needs the Playwright MCP server so the CLI can drive a real
 browser. **Sales Claw auto-registers it on first launch** by running:
@@ -343,7 +341,7 @@ If you see `playwright: ✗ Failed to connect`, the most common cause is a
 stale Node version. See
 [TROUBLESHOOTING.md → Category 1](./TROUBLESHOOTING.md).
 
-#### Troubleshooting Claude Code
+### 4.4 Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
@@ -351,116 +349,6 @@ stale Node version. See
 | `claude: command not found` (after npm i -g) | Add npm global bin to `$PATH`: `npm config get prefix` |
 | Login browser never opens | Run `claude --print-login-url` and open the URL manually |
 | `auto mode unavailable for this model` | Launch via `bypassPermissions` (see CLAUDE.md → Workflow Step 0) |
-
-### 4.2 Codex CLI
-
-#### Install
-
-```bash
-npm install -g @openai/codex
-
-# Verify
-codex --version
-# → codex 0.128.x or newer
-```
-
-Minimum supported version: **0.128.0** (gpt-5.5 model support is required
-for Sales Claw's Phase A.5 message generation).
-
-#### Login
-
-Codex authenticates via API key only (there is no OAuth subscription mode
-yet):
-
-```bash
-# Linux / macOS
-export OPENAI_API_KEY=sk-...
-
-# Windows (PowerShell, persistent)
-setx OPENAI_API_KEY "sk-..."
-```
-
-You can also enter the key from the Sales Claw dashboard:
-**Settings → AI provider → Codex → API key**. The value is stored in your
-OS keyring (Windows Credential Manager / macOS Keychain / libsecret on
-Linux), not in `settings.json`.
-
-#### MCP Playwright
-
-Sales Claw auto-registers Playwright at first launch:
-
-```bash
-codex mcp add playwright -- node /path/to/playwright-mcp-wrapper.cjs
-```
-
-Verify:
-
-```bash
-codex mcp list
-# → playwright: connected
-```
-
-#### Run from Sales Claw
-
-```bash
-# Verify Codex is wired up
-codex exec -m gpt-5.5 -s workspace-write "echo hello"
-```
-
-If that prints `hello`, Sales Claw can drive Codex.
-
-### 4.3 Gemini CLI
-
-#### Install
-
-```bash
-npm install -g @google/gemini-cli
-
-# Verify
-gemini --version
-# → gemini-cli 0.5.x
-```
-
-#### Login
-
-Two options:
-
-**Option A — Google account OAuth (recommended):**
-
-```bash
-gemini auth login
-# Opens a browser window for Google login
-```
-
-**Option B — API key:**
-
-```bash
-# Linux / macOS
-export GEMINI_API_KEY=...
-
-# Windows (PowerShell, persistent)
-setx GEMINI_API_KEY "..."
-```
-
-Verify:
-
-```bash
-gemini auth status
-# → Authenticated as your@gmail.com
-```
-
-#### MCP Playwright
-
-Sales Claw auto-registers Playwright:
-
-```bash
-gemini mcp add playwright -- node /path/to/playwright-mcp-wrapper.cjs
-```
-
-Verify with `gemini mcp list`.
-
-> Gemini's MCP support is newer than Claude/Codex; if you hit issues, fall
-> back to Claude Code for now.
 
 Need help? See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) /
 [FAQ.md](./FAQ.md) / [SUPPORT.md](./SUPPORT.md).
@@ -669,14 +557,11 @@ cd ..
 rm -rf sales-claw-ts  # Removes the repo itself
 ```
 
-CLI providers (Claude / Codex / Gemini) and their MCP registrations
-**remain installed**, since they are independent of Sales Claw. Remove
-them separately if desired:
+The Claude Code CLI and its MCP registrations **remain installed**, since
+they are independent of Sales Claw. Remove them separately if desired:
 
 ```bash
 npm uninstall -g @anthropic-ai/claude-code
-npm uninstall -g @openai/codex
-npm uninstall -g @google/gemini-cli
 ```
 
 Need help? See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) /

@@ -83,9 +83,6 @@ module.exports = function createAiRuntimeRoutes(ctx) {
     cancelManagedAiLaunch,
     launchClaudeInExternalTerminal,
     stopManagedClaudePty,
-    stopHeadlessAiRun,
-    getActiveHeadlessRun,
-    getHeadlessAiRun,
     getManagedAiProvider,
     getClaudePty,
     getClaudeProcess,
@@ -281,17 +278,12 @@ module.exports = function createAiRuntimeRoutes(ctx) {
     if (typeof cancelManagedAiLaunch === 'function') {
       cancelManagedAiLaunch('stop-api');
     }
-    const headlessRun = typeof getHeadlessAiRun === 'function' ? getHeadlessAiRun() : null;
     const managedPty = typeof getClaudePty === 'function' ? getClaudePty() : null;
-    const providerId = headlessRun
-      ? headlessRun.provider
-      : managedPty && typeof getManagedAiProvider === 'function'
-        ? getManagedAiProvider()
-        : normalizeProviderId(body.provider || getSelectedAiProvider());
+    const providerId = managedPty && typeof getManagedAiProvider === 'function'
+      ? getManagedAiProvider()
+      : normalizeProviderId(body.provider || getSelectedAiProvider());
     const provider = getProvider(providerId);
-    const stopped = getActiveHeadlessRun(providerId)
-      ? await stopHeadlessAiRun(providerId)
-      : await stopManagedClaudePty({ suppressAutoRecovery: true });
+    const stopped = await stopManagedClaudePty({ suppressAutoRecovery: true });
     if (!stopped.ok) {
       jsonResponse(res, 500, stopped);
       return;

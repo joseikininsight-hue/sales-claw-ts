@@ -89,8 +89,6 @@ const THEME_CSS = `
 [data-theme="dark"] .chart-panel{background:var(--bg-card);border-color:var(--border-subtle)}
 [data-theme="dark"] .launch-provider-card{background:var(--bg-raised);border-color:var(--border-default)}
 [data-theme="dark"] .launch-provider-card.selected.claude{background:linear-gradient(145deg,rgba(204,120,92,.15),var(--bg-raised))}
-[data-theme="dark"] .launch-provider-card.selected.codex{background:linear-gradient(145deg,rgba(16,163,127,.15),var(--bg-raised))}
-[data-theme="dark"] .launch-provider-card.selected.gemini{background:linear-gradient(145deg,rgba(66,133,244,.15),var(--bg-raised))}
 [data-theme="dark"] .list-manager{background:var(--bg-surface)}
 [data-theme="dark"] .list-manager .list-item{background:var(--bg-raised);border-color:var(--border-subtle)}
 [data-theme="dark"] .obj-list-item{background:var(--bg-surface)}
@@ -417,14 +415,6 @@ body.perf-mode .hud-scanline::before{animation:none!important}
 .launch-provider-card.selected.claude .lp-check{display:flex;background:#CC785C}
 [data-theme="dark"] .launch-provider-card.selected.claude{border-color:#E8935A;background:linear-gradient(145deg,rgba(204,120,92,.20),rgba(0,0,0,0))}
 [data-theme="dark"] .launch-provider-card.selected.claude .lp-icon{background:linear-gradient(135deg,rgba(232,147,90,.32),rgba(204,120,92,.18))}
-.launch-provider-card.selected.codex{border-color:#10a37f;background:linear-gradient(145deg,rgba(16,163,127,.07),rgba(255,255,255,0))}
-.launch-provider-card.selected.codex .lp-icon{background:linear-gradient(135deg,rgba(16,163,127,.16),rgba(16,163,127,.06))}
-.launch-provider-card.selected.codex .lp-check{display:flex;background:#10a37f}
-[data-theme="dark"] .launch-provider-card.selected.codex{background:linear-gradient(145deg,rgba(16,163,127,.18),rgba(0,0,0,0))}
-.launch-provider-card.selected.gemini{border-color:#4285F4;background:linear-gradient(145deg,rgba(66,133,244,.07),rgba(255,255,255,0))}
-.launch-provider-card.selected.gemini .lp-icon{background:linear-gradient(135deg,rgba(66,133,244,.16),rgba(66,133,244,.06))}
-.launch-provider-card.selected.gemini .lp-check{display:flex;background:#4285F4}
-[data-theme="dark"] .launch-provider-card.selected.gemini{background:linear-gradient(145deg,rgba(66,133,244,.18),rgba(0,0,0,0))}
 
 /* Mode cards */
 .launch-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}

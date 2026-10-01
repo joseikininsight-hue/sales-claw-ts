@@ -22,7 +22,7 @@ description, see [README.md](./README.md).
 ### What is Sales Claw?
 
 Sales Claw is a desktop tool that automates **B2B outreach via web contact
-forms**. The Claude / Codex / Gemini CLIs analyze each target company's
+forms**. The Claude Code CLI analyzes each target company's
 website, draft a personalized message, and fill out the company's contact
 form. A local Electron dashboard keeps the human in the loop for the final
 send decision.
@@ -39,8 +39,7 @@ maintainers do not receive, store, or view any of your data. See
 
 The only outbound calls are:
 
-- Your chosen LLM provider (Anthropic / OpenAI / Google) for analysis +
-  message generation.
+- Anthropic (via the Claude Code CLI) for analysis + message generation.
 - The target company's website (analysis + form submission).
 - GitHub Releases (auto-update check).
 - Optional: SerpApi, Japan NTA Corporate Number API, gBizINFO, EDINET (only
@@ -50,14 +49,12 @@ The only outbound calls are:
 
 Sales Claw itself is **MIT-licensed open source — free**.
 
-You will need one of the following to power the AI:
+You will need one of the following to power the AI (Claude Code CLI):
 
 | Option | Cost |
 |---|---|
 | Claude.ai subscription (Pro / Team / Enterprise) | Subscription rates |
 | Anthropic API key | Pay-per-token |
-| OpenAI Codex (ChatGPT Pro or API key) | Subscription / pay-per-token |
-| Google Gemini (subscription or API key) | Subscription / pay-per-token |
 
 The dashboard's **AI cost estimate** chip (bottom-left) shows daily / monthly
 spend so you don't get surprise bills.
@@ -104,24 +101,21 @@ it. Full layout: [PRIVACY.md](./PRIVACY.md).
 
 ### Do I need the Claude Code CLI?
 
-**Yes — at least one of**: Claude Code CLI, Codex CLI, or Gemini CLI. They
-are the engines that actually drive form analysis / generation / filling.
-Sales Claw acts as the orchestrator + dashboard around them.
+**Yes.** The Claude Code CLI is the engine that actually drives form
+analysis / generation / filling. Sales Claw acts as the orchestrator +
+dashboard around it.
 
-The default and most-tested provider is the Claude Code CLI.
+The Claude Code CLI is the only supported AI provider; Codex CLI and Gemini
+CLI are no longer supported.
 
 ### Do I need an API key?
 
-It depends on your AI provider:
+It depends on how you authenticate the Claude Code CLI:
 
-| Provider auth | API key needed? |
+| Authentication | API key needed? |
 |---|---|
 | Claude.ai subscription (Pro / Team / Enterprise) | **No** — OAuth login is enough |
 | Anthropic API key | **Yes** — set `ANTHROPIC_API_KEY` |
-| Codex via ChatGPT subscription | **No** — OAuth login |
-| Codex via OpenAI API key | **Yes** — set `OPENAI_API_KEY` |
-| Gemini via subscription | **No** — OAuth |
-| Gemini via API key | **Yes** — `GEMINI_API_KEY` |
 
 If you use only your Claude.ai subscription, no API key is required and
 you'll never be billed per-token by Anthropic.
@@ -153,7 +147,7 @@ auto-redirected to the **5-step onboarding wizard**:
 2. Company profile (`companyProfile`)
 3. Your strengths (`valuePropositions.strengths`)
 4. Target list upload (Excel / CSV — can be skipped)
-5. AI integration (Claude / Codex / Gemini login check)
+5. AI integration (Claude Code CLI login check)
 
 To re-open it manually:
 

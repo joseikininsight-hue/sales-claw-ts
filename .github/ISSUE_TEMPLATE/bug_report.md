@@ -28,7 +28,7 @@ assignees: ''
 - Sales Claw バージョン: <!-- 例: 2.0.0 -->
 - OS: <!-- 例: Windows 11 / macOS 15.0 / Ubuntu 22.04 -->
 - Node.js (開発時のみ): <!-- node --version -->
-- AI プロバイダ: <!-- claude / codex / gemini -->
+- Claude Code CLI バージョン: <!-- claude --version -->
 
 ## ログ / Logs
 <!-- 関連するログがあれば貼ってください。 -->

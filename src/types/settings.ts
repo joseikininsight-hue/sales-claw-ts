@@ -193,12 +193,10 @@ export interface MessageTemplates {
 
 export type EmailProvider = 'outlook' | 'gmail' | 'other';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-export type AiProvider = 'claude' | 'codex' | 'gemini';
+export type AiProvider = 'claude';
 
 export interface AiModels {
   claude: string;
-  codex: string;
-  gemini: string;
 }
 
 export interface Preferences {

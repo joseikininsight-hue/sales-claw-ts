@@ -88,7 +88,7 @@ const renderProviderIconFixScript = (...a: any[]) => require('./ui/client-script
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
 /**
- * CLI (Claude/Codex/Gemini) の managed PTY 用の作業ディレクトリ。
+ * Claude Code CLI の managed PTY 用の作業ディレクトリ。
  *
  * 問題: PROJECT_ROOT は packaged Electron では `C:\Program Files\Sales Claw\
  * resources\app\` となり read-only。CLI が cwd 配下にスクラッチファイルを
@@ -172,7 +172,6 @@ let standaloneDashboardLockHooksInstalled = false;
 let claudePty: any = null;
 let claudeProcessMode = 'default';
 let claudeProcess: any = null;
-let headlessAiRun: any = null;
 let activeAiProvider = normalizeProviderId(typeof settings.getAiProvider === 'function' ? settings.getAiProvider() : 'claude');
 let managedAiAutoSendSafe = !!(typeof settings.getAutoSendEligibleForms === 'function' ? settings.getAutoSendEligibleForms() : false);
 const aiInstallState = Object.fromEntries(listProviders().map((provider: any) => [provider.id, 'idle']));
@@ -442,8 +441,6 @@ const MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS = 3500;
 
 const MANAGED_AI_READY_DELAY_MS = {
   claude: 1500,
-  codex: 12000,
-  gemini: 25000,
 };
 
 const MANAGED_AI_MIN_READY_AGE_MS = {
@@ -453,14 +450,10 @@ const MANAGED_AI_MIN_READY_AGE_MS = {
   // タイマー fallback の 1500ms だったので、1200ms 下限なら従来より遅くならず、
   // かつ「プロンプトが実際に描画された」確認を上乗せできる。
   claude: 1200,
-  codex: 24000,
-  gemini: 25000,
 };
 
 const MANAGED_AI_ENTER_DELAY_MS = {
   claude: 250,
-  codex: 900,
-  gemini: 1000,
 };
 
 // WebSocket server for PTY I/O
@@ -974,63 +967,19 @@ function getProviderModeLabel(providerId, mode, lang = 'ja') {
       auto: isJa ? '完全自動' : 'Auto',
       bypassPermissions: isJa ? '権限スキップ' : 'Bypass permissions',
     },
-    codex: {
-      default: isJa ? 'on-request' : 'On-request',
-      acceptEdits: isJa ? 'on-request（手動監視）' : 'On-request (manual)',
-      auto: isJa ? 'no-prompt auto' : 'No-prompt auto',
-      bypassPermissions: isJa ? 'danger bypass' : 'Danger bypass',
-      'danger-full-access': isJa ? 'danger bypass' : 'Danger bypass',
-    },
-    gemini: {
-      default: isJa ? 'default approvals' : 'Default approvals',
-      acceptEdits: isJa ? 'auto_edit（手動監視）' : 'auto_edit (manual)',
-      auto: 'auto_edit',
-      auto_edit: 'auto_edit',
-      bypassPermissions: 'yolo',
-      yolo: 'yolo',
-      'headless-yolo': 'yolo',
-    },
   };
   const labels = byProvider[provider] || byProvider.claude;
   return labels[currentMode] || currentMode || (isJa ? '未設定' : 'Unknown');
 }
 
-function getProviderRecommendedModesText(providerId, lang = 'ja') {
-  const provider = normalizeProviderId(providerId);
-  if (provider === 'codex') {
-    return lang === 'ja'
-      ? 'no-prompt auto（auto）または danger bypass（bypassPermissions）'
-      : 'no-prompt auto (auto) or danger bypass (bypassPermissions)';
-  }
-  if (provider === 'gemini') {
-    return lang === 'ja'
-      ? 'auto_edit（auto）または yolo（bypassPermissions）'
-      : 'auto_edit (auto) or yolo (bypassPermissions)';
-  }
+function getProviderRecommendedModesText(_providerId, lang = 'ja') {
   return lang === 'ja'
     ? 'auto または bypassPermissions'
     : 'auto or bypassPermissions';
 }
 
-function getProviderApprovalCaveat(providerId, lang = 'ja') {
-  const provider = normalizeProviderId(providerId);
+function getProviderApprovalCaveat(_providerId, lang = 'ja') {
   const isJa = lang === 'ja';
-  if (provider === 'codex') {
-    return {
-      tone: 'warn',
-      message: isJa
-        ? "Codex は bypassPermissions でも起動フラグ自体は正しく付きますが、Playwright MCP の操作種別ごとに Codex 本体の許可ダイアログが一度だけ出る場合があります。これは Sales Claw 側の起動ミスではなく Codex 側の権限ルールです。表示されたら「Yes, and don't ask again」を選ぶと次回から抑制できます。"
-        : 'Codex still receives the bypass flags correctly, but Codex itself may show a one-time permission dialog for Playwright MCP action types. This is a Codex-side permission rule, not a Sales Claw launch failure. Choose "Yes, and don\'t ask again" to suppress it next time.',
-    };
-  }
-  if (provider === 'gemini') {
-    return {
-      tone: 'warn',
-      message: isJa
-        ? 'Gemini は yolo でも browser / MCP 系の確認が残る場合があります。Sales Claw 側では最強の approval-mode を渡していますが、Gemini 側の安全確認は完全には消せないことがあります。'
-        : 'Gemini may still pause for browser / MCP confirmations even in yolo mode. Sales Claw passes the strongest approval mode available, but Gemini can still keep its own safety checks.',
-    };
-  }
   return {
     tone: 'ok',
     message: isJa
@@ -1047,7 +996,7 @@ function getProviderLaunchExamples(providerId) {
   };
 }
 
-// "codex-cli 0.118.0" / "1.2.3-beta" / "v0.4" 等から [major, minor, patch] を抽出する。
+// "2.1.0 (Claude Code)" / "1.2.3-beta" / "v0.4" 等から [major, minor, patch] を抽出する。
 // 取れない場合は null を返す。
 function parseSemverLike(value) {
   const match = String(value || '').match(/(\d+)\.(\d+)(?:\.(\d+))?/);
@@ -1095,8 +1044,6 @@ function getManagedAiMinReadyAge(providerId) {
 
 function getManagedAiSubmitSequence(providerId) {
   switch (normalizeProviderId(providerId)) {
-    case 'codex':
-      return ['\t', '\r'];
     case 'claude':
       // Claude の UI は >49 行のペーストに対して "[Pasted text #1 +49 lines]
       // paste again to expand" バナーを出して 2 回目の Enter を待つ。
@@ -1328,7 +1275,6 @@ function getManagedAiReservedCompanyNos() {
 }
 
 function isAiRuntimeActivelyProcessing() {
-  if (getActiveHeadlessRun()) return true;
   if (claudePty) return true;
   const controller = managedAiBatchController;
   return !!(controller && (controller.activeBatch || (controller.pending && controller.pending.length > 0)));
@@ -1346,7 +1292,7 @@ function cleanupStaleManagedAiMonitorEvents(maxAgeMs = MANAGED_AI_BATCH_STALL_MS
   //   旧: PTY 生存中だと無条件 return 0 → stopManagedClaudePty が cleanup を呼んでも
   //     no-op になり、live-monitor の analyzing/active=true な古い event が残留 →
   //     再キュー時に「以下の企業は既に処理中です」エラーで弾かれる事故。
-  if (!options.force && (claudePty || getActiveHeadlessRun())) return 0;
+  if (!options.force && claudePty) return 0;
   const summary = getLiveMonitorSummary();
   const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error']);
   const now = Date.now();
@@ -1421,17 +1367,6 @@ function hasManagedAiStartupBlocker(providerId, outputText) {
   const hasVisiblePrompt = hasManagedAiReadyMarker(normalizedProviderId, tail);
   if (/Do you trust the following folders/i.test(tail)) return true;
   if (/Action Required/i.test(tail) && !hasVisiblePrompt) return true;
-  if (normalizedProviderId === 'codex'
-    && /Starting MCP servers/i.test(tail)
-    && !/MCP startup incomplete/i.test(tail)
-    && !hasVisiblePrompt) {
-    return true;
-  }
-  if (normalizedProviderId === 'gemini'
-    && /Applying trust settings/i.test(tail)
-    && !hasVisiblePrompt) {
-    return true;
-  }
   return false;
 }
 
@@ -1486,20 +1421,6 @@ function getManagedAiSessionState() {
 
 function getManagedAiReadyMarkers(providerId) {
   switch (normalizeProviderId(providerId)) {
-    case 'codex':
-      return [
-        /›\s+/,
-        /Type instructions and press Enter/i,
-        /Write tests for @filename/i,
-        /Explain this codebase/i,
-        /Implement \{feature\}/i,
-        /gpt-5\.[0-9]/i,
-      ];
-    case 'gemini':
-      return [
-        /Type your message or @path\/to\/file/i,
-        /Type your message/i,
-      ];
     case 'claude':
     default:
       // v2.1.6: Claude Code v2.x の TUI はプロンプト文字が ASCII '>' ではなく
@@ -2295,19 +2216,13 @@ async function restartManagedAiSessionForAuthRefresh(providerId = getManagedAiPr
   return { restarted: true };
 }
 
-function isHeadlessAutomationProvider(providerId) {
-  return ['codex', 'gemini'].includes(normalizeProviderId(providerId));
-}
-
-// P1-4: parallel-dispatcher が許可する provider。Claude も含む。
-// 既存の単発 headless 経路 (codex/gemini 用 startHeadlessAiAutomationRun) と
-// 並列経路 (parallel-dispatcher の runParallelBatch) を別概念として扱う。
+// P1-4: parallel-dispatcher が許可する provider (Claude のみ)。
 function isParallelDispatchProvider(providerId) {
-  return ['claude', 'codex', 'gemini'].includes(normalizeProviderId(providerId));
+  return normalizeProviderId(providerId) === 'claude';
 }
 
 function requiresManagedAiSessionForFormFill(providerId) {
-  return ['claude', 'codex', 'gemini'].includes(normalizeProviderId(providerId));
+  return normalizeProviderId(providerId) === 'claude';
 }
 
 function getAutomationModeForProvider(providerId) {
@@ -2315,12 +2230,6 @@ function getAutomationModeForProvider(providerId) {
     return claudeProcessMode;
   }
   return getProvider(providerId).defaultMode || 'auto';
-}
-
-function getActiveHeadlessRun(providerId: any = null) {
-  if (!headlessAiRun) return null;
-  if (!providerId) return headlessAiRun;
-  return normalizeProviderId(providerId) === headlessAiRun.provider ? headlessAiRun : null;
 }
 
 function getConfiguredAiModel(providerId = getSelectedAiProvider()) {
@@ -2377,117 +2286,6 @@ function invalidateAiStatusCache(providerId: any = null) {
     return;
   }
   _aiDiagnosticsCache.delete(normalizeProviderId(providerId));
-}
-
-function getCodexConfigPath() {
-  return path.join(os.homedir(), '.codex', 'config.toml');
-}
-
-function getCodexTrustProjectKeys(projectRoot = PROJECT_ROOT) {
-  const resolved = path.resolve(projectRoot);
-  const keys = [resolved];
-  if (process.platform === 'win32' && !resolved.startsWith('\\\\?\\')) {
-    keys.unshift(`\\\\?\\${resolved}`);
-  }
-  return Array.from(new Set(keys));
-}
-
-function ensureCodexWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const configPath = getCodexConfigPath();
-  const trustKeys = getCodexTrustProjectKeys(projectRoot);
-  let content = '';
-  try {
-    if (fs.existsSync(configPath)) {
-      content = fs.readFileSync(configPath, 'utf8');
-    } else {
-      ensureParentDir(configPath);
-    }
-  } catch (_) {
-    return false;
-  }
-
-  if (trustKeys.some((key: any) => content.includes(`[projects.'${key.replace(/'/g, "''")}']`))) {
-    return false;
-  }
-
-  const preferredKey = trustKeys[0];
-  const section = [
-    '',
-    `[projects.'${preferredKey.replace(/'/g, "''")}']`,
-    'trust_level = "trusted"',
-    '',
-  ].join('\n');
-
-  fs.writeFileSync(configPath, `${content.replace(/\s*$/, '')}${section}`, 'utf8');
-  return true;
-}
-
-function getGeminiTrustedFoldersPath() {
-  return path.join(os.homedir(), '.gemini', 'trustedFolders.json');
-}
-
-function getGeminiProjectsPath() {
-  return path.join(os.homedir(), '.gemini', 'projects.json');
-}
-
-function ensureGeminiWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  const trustedFoldersPath = getGeminiTrustedFoldersPath();
-  const projectsPath = getGeminiProjectsPath();
-  let changed = false;
-
-  try {
-    ensureParentDir(trustedFoldersPath);
-    const trustedFolders = readJsonFileSafe(trustedFoldersPath, {}) || {};
-    if (trustedFolders[resolvedProjectRoot] !== 'TRUST_FOLDER') {
-      trustedFolders[resolvedProjectRoot] = 'TRUST_FOLDER';
-      fs.writeFileSync(trustedFoldersPath, JSON.stringify(trustedFolders, null, 2), 'utf8');
-      changed = true;
-    }
-  } catch (_) {
-    return false;
-  }
-
-  try {
-    ensureParentDir(projectsPath);
-    const projectName = path.basename(resolvedProjectRoot) || 'project';
-    const projectsState = readJsonFileSafe(projectsPath, { projects: {} }) || { projects: {} };
-    projectsState.projects = projectsState.projects || {};
-    const lowerKey = resolvedProjectRoot.toLowerCase();
-    if (!projectsState.projects[lowerKey]) {
-      projectsState.projects[lowerKey] = projectName;
-      fs.writeFileSync(projectsPath, JSON.stringify(projectsState, null, 2), 'utf8');
-      changed = true;
-    }
-  } catch (_) {
-    return changed;
-  }
-
-  return changed;
-}
-
-function isCodexWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const configPath = getCodexConfigPath();
-  if (!fs.existsSync(configPath)) return false;
-  try {
-    const content = fs.readFileSync(configPath, 'utf8');
-    return getCodexTrustProjectKeys(projectRoot).some((key: any) => content.includes(`[projects.'${key.replace(/'/g, "''")}']`));
-  } catch (_) {
-    return false;
-  }
-}
-
-function isGeminiWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  try {
-    const trustedFolders = readJsonFileSafe(getGeminiTrustedFoldersPath(), {}) || {};
-    const projectsState = readJsonFileSafe(getGeminiProjectsPath(), { projects: {} }) || { projects: {} };
-    const projectKeys = Object.keys(projectsState.projects || {});
-    return trustedFolders[resolvedProjectRoot] === 'TRUST_FOLDER'
-      && projectKeys.includes(resolvedProjectRoot.toLowerCase());
-  } catch (_) {
-    return false;
-  }
 }
 
 function copyFileIfExists(sourcePath, targetPath) {
@@ -2670,64 +2468,6 @@ function prepareClaudeManagedHome(projectRoot = PROJECT_ROOT) {
   return managedHome;
 }
 
-function prepareGeminiManagedHome(projectRoot = PROJECT_ROOT) {
-  const realHome = os.homedir();
-  const managedHome = getManagedProviderHome('gemini');
-  const managedGeminiDir = path.join(managedHome, '.gemini');
-  const managedAppDataRoaming = path.join(managedHome, 'AppData', 'Roaming');
-  const managedAppDataLocal = path.join(managedHome, 'AppData', 'Local');
-  const managedTempDir = path.join(managedHome, 'tmp');
-  fs.mkdirSync(managedGeminiDir, { recursive: true });
-  fs.mkdirSync(managedAppDataRoaming, { recursive: true });
-  fs.mkdirSync(managedAppDataLocal, { recursive: true });
-  fs.mkdirSync(managedTempDir, { recursive: true });
-
-  copyFileIfExists(path.join(realHome, '.gemini', 'oauth_creds.json'), path.join(managedGeminiDir, 'oauth_creds.json'));
-  copyFileIfExists(path.join(realHome, '.gemini', 'google_accounts.json'), path.join(managedGeminiDir, 'google_accounts.json'));
-  copyFileIfExists(path.join(realHome, '.gemini', 'GEMINI.md'), path.join(managedGeminiDir, 'GEMINI.md'));
-  const realSettings = readJsonFileSafe(path.join(realHome, '.gemini', 'settings.json'), {}) || {};
-  const playwrightMcp = localToolchain.getPlaywrightMcpCommandSpec();
-  const managedSettings = {
-    ...realSettings,
-    mcpServers: {
-      ...((realSettings && realSettings.mcpServers) || {}),
-      playwright: {
-        command: playwrightMcp.command,
-        args: playwrightMcp.args,
-        env: playwrightMcp.env,
-      },
-    },
-    security: {
-      ...(realSettings.security || {}),
-      folderTrust: {
-        ...((realSettings.security && realSettings.security.folderTrust) || {}),
-        enabled: false,
-      },
-    },
-    general: {
-      ...(realSettings.general || {}),
-      sessionRetention: {
-        ...((realSettings.general && realSettings.general.sessionRetention) || {}),
-        enabled: false,
-      },
-    },
-  };
-  fs.writeFileSync(path.join(managedGeminiDir, 'settings.json'), JSON.stringify(managedSettings, null, 2), 'utf8');
-
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  const projectName = path.basename(resolvedProjectRoot) || 'project';
-  fs.writeFileSync(path.join(managedGeminiDir, 'projects.json'), JSON.stringify({
-    projects: {
-      [resolvedProjectRoot.toLowerCase()]: projectName,
-    },
-  }, null, 2), 'utf8');
-  fs.writeFileSync(path.join(managedGeminiDir, 'trustedFolders.json'), JSON.stringify({
-    [resolvedProjectRoot]: 'TRUST_FOLDER',
-  }, null, 2), 'utf8');
-
-  return managedHome;
-}
-
 function buildManagedProviderEnv(providerId) {
   const normalizedProviderId = normalizeProviderId(providerId);
   // 1.2.91: SALES_CLAW_SESSION env を必ず注入。Phase B prompt 内の curl コマンドが
@@ -2800,30 +2540,7 @@ function buildManagedProviderEnv(providerId) {
       CLAUDE_CONFIG_DIR: path.join(managedHome, '.claude'),
     };
   }
-  if (normalizedProviderId !== 'gemini') {
-    return baseEnv;
-  }
-
-  const managedHome = prepareGeminiManagedHome(PROJECT_ROOT);
-  const parsed = path.parse(managedHome);
-  const appDataRoaming = path.join(managedHome, 'AppData', 'Roaming');
-  const appDataLocal = path.join(managedHome, 'AppData', 'Local');
-  const managedTempDir = path.join(managedHome, 'tmp');
-  return {
-    ...baseEnv,
-    HOME: managedHome,
-    USERPROFILE: managedHome,
-    HOMEDRIVE: parsed.root.replace(/\\$/, ''),
-    HOMEPATH: managedHome.slice(parsed.root.length - 1),
-    APPDATA: appDataRoaming,
-    LOCALAPPDATA: appDataLocal,
-    TEMP: managedTempDir,
-    TMP: managedTempDir,
-    XDG_CONFIG_HOME: managedHome,
-    XDG_CACHE_HOME: path.join(managedHome, '.cache'),
-    XDG_STATE_HOME: path.join(managedHome, '.state'),
-    GEMINI_CLI_TRUSTED_FOLDERS_PATH: path.join(managedHome, '.gemini', 'trustedFolders.json'),
-  };
+  return baseEnv;
 }
 
 function buildCliCommandSpec(executable, args: any[] = []) {
@@ -2964,20 +2681,13 @@ async function runProviderCliCommand(providerId, args: any[] = [], options: Reco
 
 async function ensureProviderPlaywrightMcp(providerId, options: Record<string, any> = {}) {
   const normalized = normalizeProviderId(providerId);
-  if (!['claude', 'codex', 'gemini'].includes(normalized)) {
-    return { ok: true, required: false };
-  }
 
   const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
   const playwrightMcp = localToolchain.getPlaywrightMcpCommandSpec();
-  const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
+  const listArgs = ['mcp', 'list'];
   // claude の remove は scope を明示しないと「user scope」の登録が残ったまま、
   // 直後の add が "already exists in user config" で失敗する。
-  const removeArgs = normalized === 'gemini'
-    ? ['--debug', 'mcp', 'remove', 'playwright']
-    : normalized === 'claude'
-      ? ['mcp', 'remove', '--scope', 'user', 'playwright']
-      : ['mcp', 'remove', 'playwright'];
+  const removeArgs = ['mcp', 'remove', '--scope', 'user', 'playwright'];
 
   // v2.1.0 Bug fix (2026-05-26): formFill.mode === 'internal' なら
   // Playwright MCP は登録しない (登録済なら remove)。
@@ -3053,40 +2763,28 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
   if (registeredButValid) {
     return { ok: true, required: true, configured: true };
   }
-  // 各 CLI で `mcp add` の引数形式が違う:
-  //   codex  : `codex mcp add playwright -- <command> <args...>`
-  //   gemini : `gemini mcp add playwright <command> <args...>`
-  //   claude : `claude mcp add --scope user [-e KEY=val ...] playwright -- <command> <args...>`
-  //            (--scope user で全プロジェクトで使える user-scope 登録にする。
-  //             local-scope = この cwd のみで有効、を回避)
-  let addArgs;
-  if (normalized === 'codex') {
-    addArgs = ['mcp', 'add', 'playwright', '--', playwrightMcp.command, ...playwrightMcp.args];
-  } else if (normalized === 'claude') {
-    // claude mcp add の引数順:
-    //   `mcp add --scope user <name> [-e KEY=VAL ...] -- <command> <args>`
-    // ★ 重要: -e は variadic option なので、name の前に置くと name 文字列を
-    //   env として吸い込んでしまう (claude が "Invalid environment variable
-    //   format: playwright" と返す)。name を先に配置することで variadic を
-    //   安全に確定させる。
-    const envFlags: any[] = [];
-    if (playwrightMcp.env) {
-      for (const [k, v] of Object.entries(playwrightMcp.env)) {
-        envFlags.push('-e', `${k}=${v}`);
-      }
+  // `claude mcp add --scope user playwright [-e KEY=val ...] -- <command> <args...>`
+  //   (--scope user で全プロジェクトで使える user-scope 登録にする。
+  //    local-scope = この cwd のみで有効、を回避)
+  // ★ 重要: -e は variadic option なので、name の前に置くと name 文字列を
+  //   env として吸い込んでしまう (claude が "Invalid environment variable
+  //   format: playwright" と返す)。name を先に配置することで variadic を
+  //   安全に確定させる。
+  const envFlags: any[] = [];
+  if (playwrightMcp.env) {
+    for (const [k, v] of Object.entries(playwrightMcp.env)) {
+      envFlags.push('-e', `${k}=${v}`);
     }
-    addArgs = [
-      'mcp', 'add',
-      '--scope', 'user',
-      'playwright',
-      ...envFlags,
-      '--',
-      playwrightMcp.command,
-      ...playwrightMcp.args,
-    ];
-  } else {
-    addArgs = ['--debug', 'mcp', 'add', 'playwright', playwrightMcp.command, ...playwrightMcp.args];
   }
+  const addArgs = [
+    'mcp', 'add',
+    '--scope', 'user',
+    'playwright',
+    ...envFlags,
+    '--',
+    playwrightMcp.command,
+    ...playwrightMcp.args,
+  ];
 
   const { isAlreadyExistsError } = require('./mcp-idempotency');
 
@@ -3136,24 +2834,17 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
 
 /**
  * 内製 sales-claw-form MCP server (Electron 内 WebContentsView を CDP 制御)
- * の Claude/Codex/Gemini への登録を ensure する。
+ * の Claude Code CLI への登録を ensure する。
  *
  * IPC pipe path は `_internalFormMcpIpcPipePath` グローバル変数経由で参照
  * (electron-main 側で IPC server start 後にセットする)。
  */
 async function ensureProviderInternalFormMcp(providerId, options: Record<string, any> = {}) {
   const normalized = normalizeProviderId(providerId);
-  if (!['claude', 'codex', 'gemini'].includes(normalized)) {
-    return { ok: true, required: false };
-  }
   const mode = getFormFillMode();
   const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
-  const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
-  const removeArgs = normalized === 'gemini'
-    ? ['--debug', 'mcp', 'remove', 'sales-claw-form']
-    : normalized === 'claude'
-      ? ['mcp', 'remove', '--scope', 'user', 'sales-claw-form']
-      : ['mcp', 'remove', 'sales-claw-form'];
+  const listArgs = ['mcp', 'list'];
+  const removeArgs = ['mcp', 'remove', '--scope', 'user', 'sales-claw-form'];
 
   // playwright モードなら 内製は登録しない (古い登録があれば cleanup)
   // v2.0.76: internal モードも buildManagedClaudeMcpServers が 'playwright' 名で
@@ -3200,19 +2891,12 @@ async function ensureProviderInternalFormMcp(providerId, options: Record<string,
   }
 
   // mcp add の引数
-  let addArgs;
   const envFlags: string[] = [];
   // IPC pipe path を env として渡す (env が無いと MCP server は connection 失敗で起動)
   if (_internalFormMcpIpcPipePath) {
     envFlags.push('-e', `SALES_CLAW_FORM_IPC_PIPE=${_internalFormMcpIpcPipePath}`);
   }
-  if (normalized === 'codex') {
-    addArgs = ['mcp', 'add', 'sales-claw-form', '--', nodeBin, shimPath];
-  } else if (normalized === 'claude') {
-    addArgs = ['mcp', 'add', '--scope', 'user', 'sales-claw-form', ...envFlags, '--', nodeBin, shimPath];
-  } else {
-    addArgs = ['--debug', 'mcp', 'add', 'sales-claw-form', nodeBin, shimPath];
-  }
+  const addArgs = ['mcp', 'add', '--scope', 'user', 'sales-claw-form', ...envFlags, '--', nodeBin, shimPath];
 
   const { isAlreadyExistsError } = require('./mcp-idempotency');
   const add: any = await runProviderCliCommand(normalized, addArgs, { timeout: 30000, env: cliOptions.env });
@@ -4212,22 +3896,6 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
   };
 }
 
-function getHeadlessRunStatus(providerId = getSelectedAiProvider()) {
-  const run = getActiveHeadlessRun(providerId);
-  if (!run) return null;
-  return {
-    provider: run.provider,
-    providerLabel: getProviderDisplayName(run.provider),
-    running: true,
-    managed: false,
-    headless: true,
-    mode: run.mode,
-    promptFile: run.promptFile,
-    runLogFile: run.logFile,
-    startedAt: run.startedAt,
-  };
-}
-
 function createHeadlessAiLogFile(providerId: string, slotIdx?: number) {
   ensureDataDir();
   // Slot 単位で別ファイルにする (P1-4 並列実行で 3 本同時起動するため
@@ -4253,49 +3921,6 @@ function appendHeadlessAiLog(filePath, stream, text) {
     const line = `[${new Date().toISOString()}] [${stream}] ${String(text)}`;
     logWriter.appendLine(filePath, line, { maxBytes: HEADLESS_AI_LOG_MAX_BYTES });
   } catch (_) {}
-}
-
-async function stopHeadlessAiRun(providerId: any = null) {
-  const run = getActiveHeadlessRun(providerId);
-  if (!run) {
-    return { ok: true, stopped: false, method: 'noop' };
-  }
-
-  const child = run.child;
-  const pid = child && Number.isFinite(child.pid) ? child.pid : null;
-  let stopped = false;
-
-  if (pid && process.platform === 'win32') {
-    const result: any = await execCommand(`taskkill /PID ${pid} /T /F`, { timeout: 5000 });
-    stopped = !result.error;
-  } else if (child && typeof child.kill === 'function') {
-    try {
-      stopped = child.kill('SIGTERM');
-    } catch (_) {
-      stopped = false;
-    }
-  }
-
-  await new Promise<any>((resolve) => setTimeout(resolve, 500));
-  if (headlessAiRun === run) {
-    headlessAiRun = null;
-    invalidateAiStatusCache(run.provider);
-  }
-
-  return {
-    ok: true,
-    stopped: !!stopped,
-    method: process.platform === 'win32' ? 'taskkill' : 'kill',
-    provider: run.provider,
-  };
-}
-
-function companyHasLogSince(companyNo, startedAtMs) {
-  return getAllLogs().some((entry: any) => {
-    if (String(entry.companyNo) !== String(companyNo)) return false;
-    const timestampMs = Date.parse(entry.timestamp || '');
-    return Number.isFinite(timestampMs) && timestampMs >= startedAtMs;
-  });
 }
 
 function companyHasTerminalLogSince(companyNo, startedAtMs) {
@@ -4342,191 +3967,6 @@ function markParallelCompaniesFailed(companies, reason, meta: Record<string, any
       }
     } catch (_) { /* session 掃除は best-effort */ }
   });
-}
-
-function deriveHeadlessFailureReason(run, exitCode, signal) {
-  const providerLabel = getProviderDisplayName(run.provider);
-  const text = String(run.recentOutput || '');
-  if (/usage limit/i.test(text)) {
-    return `${providerLabel} の利用上限に達しており、今回の自動実行を開始できませんでした。`;
-  }
-  if (/CreateProcessAsUserW failed: 5/i.test(text) || /windows sandbox/i.test(text)) {
-    return `${providerLabel} の Windows sandbox 実行で shell が失敗しました。headless no-approval 実行でもローカルコマンドを開始できていません。`;
-  }
-  if (/user cancelled MCP tool call/i.test(text)) {
-    return `${providerLabel} が MCP Playwright の操作をキャンセルしました。権限・実行モード・provider 側の自動実行設定を確認してください。`;
-  }
-  if (/Not enough arguments following: p/i.test(text)) {
-    return `${providerLabel} の headless prompt 引数が不正でした。`;
-  }
-  return exitCode === 0
-    ? `${providerLabel} headless automation finished without processing the queued company.`
-    : `${providerLabel} headless automation exited early (code=${exitCode}, signal=${signal || 'none'}).`;
-}
-
-function markHeadlessAutomationFailure(run, exitCode, signal) {
-  const providerLabel = getProviderDisplayName(run.provider);
-  const reason = deriveHeadlessFailureReason(run, exitCode, signal);
-
-  (run.companies || []).forEach((company: any) => {
-    if (companyHasLogSince(company.no, run.startedAtMs)) return;
-    logAction(company.no, company.companyName || company.name || '', 'error', {
-      source: `${run.provider}-headless`,
-      action: 'error',
-      detail: reason,
-      promptFile: run.promptFile,
-      runLogFile: run.logFile,
-      provider: run.provider,
-      exitCode,
-      signal: signal || null,
-    });
-    finishLiveMonitor(company.no, {
-      source: `${run.provider}-headless`,
-      companyNo: company.no,
-      companyName: company.companyName || company.name || '',
-      status: 'error',
-      step: providerLabel + ' headless automation failed',
-      currentUrl: company.formUrl || company.url || '',
-    });
-  });
-}
-
-async function startHeadlessAiAutomationRun(companies, providerId = getSelectedAiProvider()) {
-  const normalizedProviderId = normalizeProviderId(providerId);
-  if (!isHeadlessAutomationProvider(normalizedProviderId)) {
-    throw new Error(`${getProviderDisplayName(normalizedProviderId)} does not support headless automation routing.`);
-  }
-  if (headlessAiRun) {
-    throw new Error(`${getProviderDisplayName(headlessAiRun.provider)} の headless automation がまだ実行中です。完了を待つか停止してください。`);
-  }
-
-  const provider = getProvider(normalizedProviderId);
-  const sender = settings.getSender();
-  const promptText = buildClaudeFormFillPrompt(companies, sender, normalizedProviderId);
-  const promptFile = writeWorkspaceClaudeFormFillPromptFile(companies, promptText, normalizedProviderId);
-  const model = getClaudeAutomationModel(normalizedProviderId);
-  // v2.1.0: ブラウザ自動化 MCP はモードで異なる (internal=内蔵 / playwright=外部)。
-  //   tool 名 (browser_*) は両モードでミラーされるため特定 MCP を名指ししない。
-  const kickoffPrompt = [
-    `次の指示ファイルを読んで、その内容を実行してください: ${promptFile}`,
-    `必ず ${provider.cliLabel} と利用可能なブラウザ自動化 MCP (browser_* ツール) を使って進めてください。`,
-    'リポジトリ内の direct worker / 独自 JS automation は使わないでください。',
-    '送信は行わず、確認待ちまでで止め、フォームタブは閉じないでください。',
-  ].join('\n');
-  const invocationPrompt = normalizedProviderId === 'gemini'
-    ? '以下に stdin で渡す Sales Claw automation instructions を、その場で実行してください。要約だけで終わらず、実際にツールを呼び出して処理してください。'
-    : '';
-  const stdinPrompt = normalizedProviderId === 'gemini' ? promptText : promptText;
-  const automationMode = getAutomationModeForProvider(normalizedProviderId);
-  const headlessSpec = buildHeadlessArgs(normalizedProviderId, automationMode, {
-    model,
-    cwd: PROJECT_ROOT,
-    prompt: invocationPrompt,
-  });
-  const executable: any = await resolveClaudeExecutable(normalizedProviderId);
-  if (process.platform === 'win32' && executable === provider.id) {
-    throw new Error(`${provider.cliLabel} が未インストールです。ダッシュボードの「AI CLI を準備」ボタンでセットアップしてください。`);
-  }
-  const spawnSpec = buildCliCommandSpec(executable, headlessSpec.args);
-  const logFile = createHeadlessAiLogFile(normalizedProviderId);
-  const { spawn } = require('child_process');
-  const child = spawn(spawnSpec.command, spawnSpec.args, {
-    cwd: PROJECT_ROOT,
-    env: buildManagedProviderEnv(normalizedProviderId),
-    windowsHide: true,
-    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments === true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  const run = {
-    provider: normalizedProviderId,
-    mode: `headless-${headlessSpec.effectiveMode}`,
-    child,
-    promptFile,
-    logFile,
-    companies: companies.map((company: any) => ({ ...company })),
-    startedAt: new Date().toISOString(),
-    startedAtMs: Date.now(),
-    recentOutput: '',
-  };
-  headlessAiRun = run;
-  invalidateAiStatusCache(normalizedProviderId);
-
-  const targets = companies.map((company: any) => ({
-    companyNo: company.no,
-    companyName: company.companyName || company.name || '',
-  }));
-  setTargets(targets, true);
-
-  companies.forEach((company: any) => {
-    updateLiveMonitor(company.no, {
-      source: `${provider.id}-headless`,
-      companyNo: company.no,
-      companyName: company.companyName || company.name || '',
-      status: 'queued',
-      step: `${provider.displayName} headless CLI に作業指示を送信`,
-      currentUrl: company.formUrl || company.url || '',
-    });
-  });
-
-  emitClaudeAutomationLog(`[AIフォーム入力開始] ${companies.length}社の処理を ${provider.displayName} headless CLI に依頼しました。\n`, 'system', normalizedProviderId);
-  emitClaudeAutomationLog(`[Prompt file] ${promptFile}\n`, 'system', normalizedProviderId);
-  emitClaudeAutomationLog(`[Run log] ${logFile}\n`, 'system', normalizedProviderId);
-  appendHeadlessAiLog(logFile, 'system', `[start] provider=${normalizedProviderId} mode=${run.mode} promptFile=${promptFile}\n`);
-
-  child.stdout.on('data', (chunk) => {
-    run.recentOutput = `${run.recentOutput || ''}${String(chunk)}`.slice(-12000);
-    appendHeadlessAiLog(logFile, 'stdout', chunk);
-    emitClaudeAutomationLog(String(chunk), 'stdout', normalizedProviderId);
-  });
-  child.stderr.on('data', (chunk) => {
-    run.recentOutput = `${run.recentOutput || ''}${String(chunk)}`.slice(-12000);
-    appendHeadlessAiLog(logFile, 'stderr', chunk);
-    emitClaudeAutomationLog(String(chunk), 'stderr', normalizedProviderId);
-  });
-  child.on('error', (error) => {
-    appendHeadlessAiLog(logFile, 'error', `${error.message}\n`);
-    appendDiagnosticEvent('headless_ai_spawn_error', {
-      provider: normalizedProviderId,
-      error: error.message,
-      promptFile,
-      runLogFile: logFile,
-    });
-  });
-  child.on('exit', (exitCode, signal) => {
-    appendHeadlessAiLog(logFile, 'system', `[exit] code=${exitCode} signal=${signal || 'none'}\n`);
-    emitClaudeAutomationLog(`\n[${provider.displayName} headless exit code=${exitCode} signal=${signal || 'none'}]\n`, 'system', normalizedProviderId);
-    if (headlessAiRun === run) {
-      headlessAiRun = null;
-    }
-    if (exitCode !== 0 || (run.companies || []).some((company: any) => !companyHasLogSince(company.no, run.startedAtMs))) {
-      markHeadlessAutomationFailure(run, exitCode, signal);
-    }
-    appendDiagnosticEvent('headless_ai_exit', {
-      provider: normalizedProviderId,
-      exitCode,
-      signal: signal || null,
-      promptFile,
-      runLogFile: logFile,
-    });
-    invalidateAiStatusCache(normalizedProviderId);
-    notifyClients({ type: 'claude-exit', code: exitCode, provider: normalizedProviderId, time: Date.now() });
-  });
-
-  if (headlessSpec.promptViaStdin && child.stdin) {
-    child.stdin.write(stdinPrompt);
-    child.stdin.end();
-  }
-
-  return {
-    ok: true,
-    count: companies.length,
-    provider: normalizedProviderId,
-    providerLabel: provider.displayName,
-    mode: run.mode,
-    promptFile,
-    runLogFile: logFile,
-  };
 }
 
 function getScreenshotArtifacts(companyNo, options: Record<string, any> = {}) {
@@ -5098,53 +4538,12 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
   });
 
   if (candidates[0]) {
-    let chosen = candidates[0];
-    // Codex 専用: node.js wrapper チェーン (cmd → codex.cmd → node → codex.js → spawn(rust, stdio:'inherit'))
-    // を経由すると Electron + node-pty の ConPTY 状態が最深 spawn 'inherit' で TTY を失い
-    // Rust 側 isatty(stdin) が false → "stdin is not a terminal" で即終了する。
-    // wrapper を 1 段にするため、可能なら Rust .exe (codex.exe) を直接起動する。
-    if (provider.id === 'codex') {
-      const rustExe = resolveCodexRustExecutable(chosen);
-      if (rustExe) chosen = rustExe;
-    }
+    const chosen = candidates[0];
     _aiExecutablePath[cacheKey] = chosen;
     return chosen;
   }
 
   return provider.id;
-}
-
-function resolveCodexRustExecutable(wrapperPath) {
-  if (!wrapperPath || process.platform !== 'win32') return null;
-  try {
-    const wrapperDir = path.dirname(wrapperPath);
-    // Codex の Rust バイナリは codex CLI のバージョン/インストール経路で複数の場所に存在しうる:
-    //   A. npm global flat (codex 0.118 nested):
-    //      <npmDir>/codex.cmd → <npmDir>/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   B. npm global flat (codex 0.128+ flat):
-    //      <npmDir>/codex.cmd → <npmDir>/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   C. Sales Claw managed toolchain:
-    //      <toolchain>/node_modules/.bin/codex.cmd → <toolchain>/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   D. Codex 0.118 toolchain (nested):
-    //      <toolchain>/node_modules/.bin/codex.cmd → <toolchain>/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/...
-    const triple = 'x86_64-pc-windows-msvc';
-    const tail = path.join('@openai', 'codex-win32-x64', 'vendor', triple, 'codex', 'codex.exe');
-    const searchRoots = [
-      // (A) npm global, nested codex 0.118
-      path.join(wrapperDir, 'node_modules', '@openai', 'codex', 'node_modules'),
-      // (B) npm global, flat 0.128+
-      path.join(wrapperDir, 'node_modules'),
-      // (C) toolchain .bin → 1 つ上の node_modules
-      path.join(wrapperDir, '..'),
-      // (D) toolchain .bin → 0.118 の入れ子構造
-      path.join(wrapperDir, '..', '@openai', 'codex', 'node_modules'),
-    ];
-    for (const root of searchRoots) {
-      const candidate = path.join(root, tail);
-      if (fs.existsSync(candidate)) return path.resolve(candidate);
-    }
-  } catch (_) { /* fall through */ }
-  return null;
 }
 
 async function resolveNodeExecutable() {
@@ -5181,70 +4580,39 @@ async function probeClaudeAuthStatus(providerId = getSelectedAiProvider()) {
     };
   }
 
-  if (provider.id === 'claude') {
-    const result: any = await runProviderCliCommand(provider.id, ['auth', 'status', '--json'], {
-      timeout: 8000,
-      env: buildManagedProviderEnv(provider.id),
-    });
-    if (!result.ok) {
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: false,
-        error: String(result.stderr || result.stdout || result.error?.message || 'Claude auth status failed.').trim(),
-      };
-    }
-
-    try {
-      const parsed = JSON.parse(String(result.stdout || '{}'));
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: !!parsed.loggedIn,
-        authMethod: parsed.authMethod || null,
-        email: parsed.email || null,
-        orgName: parsed.orgName || null,
-        subscriptionType: parsed.subscriptionType || null,
-        error: parsed.loggedIn ? null : 'Claude CLI is not authenticated.',
-      };
-    } catch (error) {
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: false,
-        error: String(result.stdout || result.stderr || error.message || 'Could not parse Claude auth status.').trim(),
-      };
-    }
-  }
-
-  if (provider.id === 'codex') {
-    const result: any = await runProviderCliCommand(provider.id, ['login', 'status'], {
-      timeout: 8000,
-      env: buildManagedProviderEnv(provider.id),
-    });
-    const output = String(result.stdout || result.stderr || '').trim();
-    const loggedIn = /logged in/i.test(output) || /chatgpt/i.test(output);
+  const result: any = await runProviderCliCommand(provider.id, ['auth', 'status', '--json'], {
+    timeout: 8000,
+    env: buildManagedProviderEnv(provider.id),
+  });
+  if (!result.ok) {
     return {
       provider: provider.id,
       installed: true,
-      loggedIn,
-      authMethod: loggedIn ? 'chatgpt' : null,
-      summary: output.split(/\r?\n/)[0] || null,
-      error: loggedIn ? null : (output || 'Codex CLI is not authenticated.'),
+      loggedIn: false,
+      error: String(result.stderr || result.stdout || result.error?.message || 'Claude auth status failed.').trim(),
     };
   }
 
-  const loggedIn = hasAnyAuthFile(provider.id)
-    || !!process.env.GEMINI_API_KEY
-    || !!process.env.GOOGLE_API_KEY;
-  return {
-    provider: provider.id,
-    installed: true,
-    loggedIn,
-    authMethod: loggedIn ? 'cached_credentials' : null,
-    probeReliability: 'heuristic',
-    error: loggedIn ? null : 'Gemini CLI cached credentials were not found.',
-  };
+  try {
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    return {
+      provider: provider.id,
+      installed: true,
+      loggedIn: !!parsed.loggedIn,
+      authMethod: parsed.authMethod || null,
+      email: parsed.email || null,
+      orgName: parsed.orgName || null,
+      subscriptionType: parsed.subscriptionType || null,
+      error: parsed.loggedIn ? null : 'Claude CLI is not authenticated.',
+    };
+  } catch (error) {
+    return {
+      provider: provider.id,
+      installed: true,
+      loggedIn: false,
+      error: String(result.stdout || result.stderr || error.message || 'Could not parse Claude auth status.').trim(),
+    };
+  }
 }
 
 async function probeNpmStatus() {
@@ -5256,23 +4624,12 @@ async function probePlaywrightPackageStatus(npmStatus: any = null) {
   return localToolchain.probePlaywrightMcpStatus();
 }
 
-async function probeProviderPlaywrightSetup(providerId = getSelectedAiProvider()) {
-  const normalizedProviderId = normalizeProviderId(providerId);
-  if (!['codex', 'gemini'].includes(normalizedProviderId)) {
-    return {
-      configured: null,
-      error: null,
-      note: 'Claude validates Playwright access at launch/runtime. Codex and Gemini additionally require MCP registration.',
-    };
-  }
-  const listArgs = normalizedProviderId === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
-  const result: any = await runProviderCliCommand(normalizedProviderId, listArgs, { timeout: 20000 });
-  const output = `${String(result.stdout || '')}\n${String(result.stderr || '')}`.trim();
-  const configured = !!(result.ok && /playwright/i.test(output));
+// Claude は Playwright / 内蔵 form MCP へのアクセスを起動時・実行時に検証する。
+async function probeProviderPlaywrightSetup(_providerId = getSelectedAiProvider()) {
   return {
-    configured,
-    error: configured ? null : (output || `${getProviderDisplayName(normalizedProviderId)} MCP list did not report Playwright.`),
-    note: configured ? 'Playwright MCP is registered.' : 'Playwright MCP is not registered yet.',
+    configured: null,
+    error: null,
+    note: 'Claude validates Playwright access at launch/runtime.',
   };
 }
 
@@ -5300,20 +4657,10 @@ async function probeAiSetupDiagnostics(providerId = getSelectedAiProvider()) {
       probeProviderPlaywrightSetup(normalizedProviderId),
       probeClaudeStatus(normalizedProviderId),
     ]);
-  const workspaceTrusted = normalizedProviderId === 'codex'
-    ? {
-      configured: isCodexWorkspaceTrusted(PROJECT_ROOT),
-      note: 'Codex では trusted workspace 設定が必要です。',
-    }
-    : normalizedProviderId === 'gemini'
-      ? {
-        configured: isGeminiWorkspaceTrusted(PROJECT_ROOT),
-        note: 'Gemini では trustedFolders / projects 登録が必要です。',
-      }
-      : {
-        configured: true,
-        note: 'Claude は workspace trust の事前設定を必要としません。',
-      };
+  const workspaceTrusted = {
+    configured: true,
+    note: 'Claude は workspace trust の事前設定を必要としません。',
+  };
   return {
     provider: normalizedProviderId,
     providerLabel: provider.displayName,
@@ -5446,12 +4793,6 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
     }
   }
   } // v2.0.82: end of `if (getFormFillMode() !== 'internal')` (playwright Chromium prep block)
-  if (selectedProviderId === 'codex') {
-    ensureCodexWorkspaceTrusted(PROJECT_ROOT);
-  }
-  if (selectedProviderId === 'gemini') {
-    ensureGeminiWorkspaceTrusted(PROJECT_ROOT);
-  }
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && claudePty && managedProviderId === selectedProviderId) {
     await restartManagedAiSessionForAuthRefresh(selectedProviderId);
   }
@@ -5509,14 +4850,6 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
         autoSendSafe: managedAiAutoSendSafe,
       });
     }
-  }
-  const activeRun = getActiveHeadlessRun();
-  if (activeRun) {
-    return {
-      ok: false,
-      statusCode: 409,
-      error: `現在は ${getProviderDisplayName(activeRun.provider)} の headless automation が実行中です。確認待ちタブを残すため、完了を待つか停止してから managed セッションで実行してください。`,
-    };
   }
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && !claudePty) {
     const { withRetry } = require('./retry-helper');
@@ -5671,9 +5004,7 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
   // 削っておく (parallel-analysis.cjs から別経路で AI を呼ばれた場合の保険)。
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildSanitizedSpawnEnv, stripSanitizerMeta } = require('./spawn-env-sanitizer');
-  // provider-home: parallel-analysis.cjs から呼ばれる CLI は 'claude' を想定
-  // (settings.aiProvider が codex/gemini でも、その provider の HOME を解決する
-  // ロジックは leaf 側で持つので、ここでは claude の provider-home のみ仕込む)
+  // provider-home: parallel-analysis.cjs から呼ばれる CLI は 'claude' のみ。
   const providerHomeDir = getManagedProviderHome('claude');
   const sanitizedEnv = buildSanitizedSpawnEnv({
     providerId: 'claude',
@@ -5813,28 +5144,14 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   // LLM 解析が 90 秒タイムアウトしていた。Claude CLI の同時起動を抑えるため
   // Phase A の並列度を 2 に固定する (LLM 解析 + メッセージ生成で実質 4 並列)。
   //
-  // v2.0.48 F6: provider-aware に拡張。Claude は Pro 個人プランの厳しいレート
-  //   制限のため 2 を維持。Codex (OpenAI) と Gemini はアカウントレートが高く、
-  //   実測で 4 並列でも 429 を踏まない (codex は org tier、gemini は AI Studio
-  //   実績ベース)。env で override 可能、env 指定がなければ provider 別の既定値を使う。
-  //   100 社・Codex/Gemini で Phase A 時間が概ね半減する。
+  // Claude は Pro 個人プランの厳しいレート制限のため 2 を上限とする
+  //   (SALES_CLAW_PHASE_A_CONCURRENCY=1 で更に絞ることは可能)。
   const phaseAEnvOverride = Number(process.env.SALES_CLAW_PHASE_A_CONCURRENCY);
-  const phaseADefaultByProvider: Record<string, number> = {
-    claude: 2,
-    codex: 4,
-    gemini: 4,
-  };
-  const phaseAMaxByProvider: Record<string, number> = {
-    claude: 2,
-    codex: 6,
-    gemini: 6,
-  };
-  const phaseAProviderDefault = phaseADefaultByProvider[normalizedProviderId] ?? 2;
-  const phaseAProviderMax = phaseAMaxByProvider[normalizedProviderId] ?? 2;
+  const PHASE_A_MAX_CONCURRENCY = 2;
   const phaseAEffective = Number.isFinite(phaseAEnvOverride) && phaseAEnvOverride > 0
     ? phaseAEnvOverride
-    : phaseAProviderDefault;
-  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(phaseAProviderMax, phaseAEffective));
+    : PHASE_A_MAX_CONCURRENCY;
+  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(PHASE_A_MAX_CONCURRENCY, phaseAEffective));
   const results = new Array(companies.length);
   let nextIdx = 0;
   let phaseAAuthAbortedCount = 0;
@@ -6302,7 +5619,7 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   });
 
   emitClaudeAutomationLog(`[AIフォーム入力開始] ${companies.length}社の2フェーズ並列処理を ${provider.displayName} CLI に依頼しました。\n  フェーズA: 企業分析+メッセージ生成（並列）\n  フェーズB: フォーム入力（順次）\n  送信ポリシー: ${autoSendSafe ? '安全なフォームは自動送信' : '確認待ちで停止'}\n`, 'system', providerId);
-  // 全プロバイダーで直接テキスト送信に統一（@file参照はGemini PTYで動作しないため）
+  // プロンプトはファイル参照ではなく直接テキストで PTY に送信する
   const queuedPrompt = [
     ...(needsSessionContract ? [sessionContractText, ''] : []),
     ...messageLines,
@@ -6544,12 +5861,6 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
     claudePty = null;
   }
 
-  if (normalizedProviderId === 'codex') {
-    ensureCodexWorkspaceTrusted(PROJECT_ROOT);
-  }
-  if (normalizedProviderId === 'gemini') {
-    ensureGeminiWorkspaceTrusted(PROJECT_ROOT);
-  }
   const launchEnv = buildManagedProviderEnv(normalizedProviderId);
   const executable: any = await resolveClaudeExecutable(normalizedProviderId);
   assertManagedAiLaunchActive(launchToken, 'after-resolve-executable');
@@ -6568,9 +5879,8 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
     err.providerLabel = provider.displayName;
     throw err;
   }
-  // 古い CLI を検出 → 起動前に actionable error を投げる。
-  // Codex 0.118 は gpt-5.5 に対応していない / 2026-05-08 でサポート終了するため、
-  // 0.128+ への更新を促す (ai-providers.cjs の minRecommendedCliVersion)。
+  // 古い CLI を検出 → 起動前に actionable error を投げる
+  // (ai-providers の minRecommendedCliVersion が設定されている場合のみ)。
   if (provider.minRecommendedCliVersion) {
     try {
       const probe: any = await runProviderCliCommand(normalizedProviderId, ['--version'], {
@@ -6952,20 +6262,6 @@ function decorateAiStatus(baseStatus, selectedProviderId, runtimeProviderId, ins
 
 async function probeClaudeStatus(providerId = getSelectedAiProvider()) {
   const selectedProviderId = normalizeProviderId(providerId);
-  const activeHeadlessStatus = headlessAiRun ? getHeadlessRunStatus(headlessAiRun.provider) : null;
-  if (activeHeadlessStatus) {
-    return {
-      ...activeHeadlessStatus,
-      selectedProvider: selectedProviderId,
-      selectedProviderLabel: getProviderDisplayName(selectedProviderId),
-      autoSendSafe: getManagedAiAutoSendSafe(),
-      installed: true,
-      version: null,
-      installState: getProviderInstallState(activeHeadlessStatus.provider),
-      installError: getProviderInstallError(activeHeadlessStatus.provider),
-      installCommand: localToolchain.getProviderInstallCommand(activeHeadlessStatus.provider),
-    };
-  }
   const runtimeProviderId = claudePty ? getManagedAiProvider() : selectedProviderId;
   const provider = getProvider(runtimeProviderId);
   const installCommand = localToolchain.getProviderInstallCommand(runtimeProviderId);
@@ -7036,7 +6332,6 @@ async function probeClaudeStatus(providerId = getSelectedAiProvider()) {
       loggedIn: !!auth.loggedIn,
       authMethod: auth.authMethod || null,
       authError: auth.error || null,
-      probeReliability: auth.probeReliability || null,
       cliTooOld: !!versionWarning,
       minVersion: versionWarning ? versionWarning.minVersion : null,
       updateCommand: versionWarning ? versionWarning.updateCommand : null,
@@ -7707,22 +7002,6 @@ ${renderStyles()}
             </div>
             <div class="lp-name">Claude</div>
             <div class="lp-sub">Anthropic</div>
-          </div>
-          <div id="launchProviderCard_codex" class="launch-provider-card codex" onclick="selectLaunchProvider('codex')">
-            <div class="lp-check">✓</div>
-            <div class="lp-icon" data-provider="codex">
-              <img src="/assets/vendor/ai-icons/codex-openai.svg" width="26" height="26" alt="Codex">
-            </div>
-            <div class="lp-name">CodeX</div>
-            <div class="lp-sub">OpenAI</div>
-          </div>
-          <div id="launchProviderCard_gemini" class="launch-provider-card gemini" onclick="selectLaunchProvider('gemini')">
-            <div class="lp-check">✓</div>
-            <div class="lp-icon" data-provider="gemini">
-              <img src="/assets/vendor/ai-icons/gemini-cli.svg" width="26" height="26" alt="Gemini CLI">
-            </div>
-            <div class="lp-name">Gemini</div>
-            <div class="lp-sub">Google</div>
           </div>
         </div>
         <select id="launchProviderSelect" style="display:none">${providerSelectHtml}</select>
@@ -9393,14 +8672,6 @@ ${renderStyles()}
                   <option value="500">500</option>
                 </select>
               </label>
-              <label class="lb2-mini-field" id="lb2ProviderField">
-                <span>${_t['lb.toolbar.cli'] || 'CLI'}</span>
-                <select id="lb2Provider" class="lb2-mini-select">
-                  <option value="claude" selected>Claude Code</option>
-                  <option value="codex">Codex</option>
-                  <option value="gemini">Gemini</option>
-                </select>
-              </label>
             </div>
             <div class="lb2-form-actions">
               <button class="lb2-btn-secondary" id="lb2SaveCriteriaBtn" type="button">
@@ -9606,14 +8877,6 @@ ${renderStyles()}
             <img src="/assets/vendor/ai-icons/claude-code.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
             <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Claude')}</span>
           </button>
-          <button type="button" class="cli-term-launch codex" data-cli-launch="codex">
-            <img src="/assets/vendor/ai-icons/codex-openai.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Codex')}</span>
-          </button>
-          <button type="button" class="cli-term-launch gemini" data-cli-launch="gemini">
-            <img src="/assets/vendor/ai-icons/gemini-cli.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Gemini')}</span>
-          </button>
           <button type="button" class="cli-term-stop" data-cli-stop="1" disabled>
             <span class="material-symbols-outlined" style="font-size:14px">stop_circle</span>
             <span>${_t['cli.term.stop'] || '停止'}</span>
@@ -9654,7 +8917,7 @@ ${renderStyles()}
           <span class="material-symbols-outlined" style="font-size:36px;color:var(--text-3)">smart_toy</span>
         </div>
         <p class="cli-term-empty-title">${_t['cli.term.empty.title'] || 'AI CLI を起動してください'}</p>
-        <p class="cli-term-empty-sub">${_t['cli.term.empty.sub'] || '上の「Claude を起動」「Codex を起動」「Gemini を起動」のいずれかをクリックすると、ここに対話型ターミナルが立ち上がります。'}</p>
+        <p class="cli-term-empty-sub">${_t['cli.term.empty.sub'] || '上の「Claude を起動」をクリックすると、ここに対話型ターミナルが立ち上がります。'}</p>
         <p class="cli-term-empty-hint">${_t['cli.term.empty.hint'] || '初回はインストールが必要な場合があります。エラーが出たら自動で案内が表示されます。'}</p>
       </div>
 
@@ -10499,16 +9762,6 @@ ${renderStyles()}
             <div class="settings-group">
               <label>${_t['field.aiModelClaude']} ${settingsTag('recommended')}</label>
               <input type="text" id="pf-aiModelClaude" placeholder="claude-sonnet-4-6">
-              <div class="help-text">${_t['help.aiModel']}</div>
-            </div>
-            <div class="settings-group">
-              <label>${_t['field.aiModelCodex']}</label>
-              <input type="text" id="pf-aiModelCodex" placeholder="gpt-5-codex">
-              <div class="help-text">${_t['help.aiModel']}</div>
-            </div>
-            <div class="settings-group">
-              <label>${_t['field.aiModelGemini']}</label>
-              <input type="text" id="pf-aiModelGemini" placeholder="gemini-2.5-pro">
               <div class="help-text">${_t['help.aiModel']}</div>
             </div>
           </div>
@@ -11444,9 +10697,6 @@ ${renderProviderIconFixScript()}
     const showCriteria = mode === 'ai' || mode === 'category';
     if (grid) grid.style.display = showCriteria ? 'grid' : 'none';
     if (head) head.style.display = showCriteria ? 'flex' : 'none';
-    // CLI selector は AI モードのみ
-    const provField = $('lb2ProviderField');
-    if (provField) provField.style.display = mode === 'ai' ? 'flex' : 'none';
     // ヒント文言の切替
     const hint = $('lb2CriteriaHint');
     if (hint) {
@@ -11552,7 +10802,7 @@ ${renderProviderIconFixScript()}
       else alert(needsCriteria);
       return;
     }
-    const provider = $('lb2Provider').value || 'claude';
+    const provider = 'claude';
     showProgress(provider + (LANG === 'ja' ? ' CLI に依頼中…' : ' CLI: sending request…'));
     setStage('discovery', 8);
     try {
@@ -11746,9 +10996,6 @@ function getAiRuntimeApiDispatch() {
       cancelManagedAiLaunch,
       launchClaudeInExternalTerminal,
       stopManagedClaudePty,
-      stopHeadlessAiRun,
-      getActiveHeadlessRun,
-      getHeadlessAiRun: () => headlessAiRun,
       getManagedAiProvider,
       getClaudePty: () => claudePty,
       getClaudeProcess: () => claudeProcess,
@@ -11825,7 +11072,6 @@ function getAiFormFillApiDispatch() {
       getManagedAiAutoSendSafe,
       getManagedAiReservedCompanyNos,
       cleanupStaleManagedAiMonitorEvents,
-      getActiveHeadlessRun,
       getClaudePty: () => claudePty,
       getManagedAiBatchController: () => managedAiBatchController,
       setManagedAiBatchActive: (value) => {
@@ -11942,7 +11188,6 @@ function getErrorRecoveryApiDispatch() {
       getSelectedAiProvider,
       getManagedAiProvider,
       getClaudePty: () => claudePty,
-      getActiveHeadlessRun,
       getManagedAiAutoSendSafe,
       appendDiagnosticEvent,
     });
@@ -12137,7 +11382,7 @@ const server = http.createServer(async (req, res) => {
   //   ユーザーが「既に処理中です」エラーから抜け出すための非常脱出弁。
   if (pathname === '/api/managed-ai-batch/reset' && req.method === 'POST') {
     try {
-      if (claudePty || getActiveHeadlessRun()) {
+      if (claudePty) {
         jsonResponse(res, 409, {
           ok: false,
           error: 'AI セッションが現在稼働中のためリセットできません。停止してから再実行してください。',

@@ -7,7 +7,7 @@
  * して幅広い案件対応を担われている前提で拝見しました」みたいな嘘文を
  * 自動生成していた。
  *
- * Phase B では CLI (Claude/Codex/Gemini) を headless で呼んで、相手企業の
+ * Phase B では Claude CLI を headless で呼んで、相手企業の
  * 事実 (analyzer.evidenceQuotes) と自社情報を渡して本文を直接書かせる。
  *
  * Phase A の analyzer と同じ spawn / JSON 抽出パターンを使う。
@@ -45,7 +45,7 @@ function sanitizePromptInput(value, options: Record<string, unknown> = {}) {
  * @param {object} args.ownContext - 自社情報 (companyProfile + valuePropositions)
  * @param {object} args.idealCustomer - ICP (descriptionFreetext, dealBreakers)
  * @param {object} args.style - messageTemplates の style/tone/closingLine 等
- * @param {string} args.providerId - 'claude' | 'codex' | 'gemini'
+ * @param {string} args.providerId - 'claude'
  * @param {string} args.executablePath - CLI 絶対パス
  * @param {number} [args.timeoutMs=60000]
  *
@@ -152,7 +152,7 @@ function hardKill(child) {
   } catch (_) { /* best-effort */ }
 }
 
-// バッファ truncation 戦略: Codex --json は head 保持、その他は両端保持
+// バッファ truncation 戦略: mode='head' なら先頭保持、それ以外は両端保持
 function appendBuffer(current, chunk, mode) {
   const next = current + String(chunk || '');
   if (next.length <= MAX_BUFFER_BYTES) return next;
@@ -164,7 +164,7 @@ function appendBuffer(current, chunk, mode) {
 function runCliHeadless({ providerId, executablePath, prompt, timeoutMs, model = '', providerHomeDir = '' }) {
   return new Promise<unknown>((resolve) => {
     let args;
-    let bufferMode = 'both';
+    const bufferMode = 'both';
     const modelArg = typeof model === 'string' && model.trim() ? model.trim() : '';
     if (providerId === 'claude') {
       args = ['-p', prompt, '--dangerously-skip-permissions', '--permission-mode', 'bypassPermissions'];
@@ -172,13 +172,6 @@ function runCliHeadless({ providerId, executablePath, prompt, timeoutMs, model =
       // 2026-06-15 以降の Programmatic Credit 枠の消費を抑える効果がある
       args.push('--exclude-dynamic-system-prompt-sections');
       if (modelArg) args.push('--model', modelArg);
-    } else if (providerId === 'codex') {
-      args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', prompt];
-      if (modelArg) args.push('--model', modelArg);
-      bufferMode = 'head';
-    } else if (providerId === 'gemini') {
-      args = ['-p', prompt, '-o', 'text', '--approval-mode', 'yolo'];
-      if (modelArg) args.push('-m', modelArg);
     } else {
       resolve({ ok: false, error: `unknown providerId: ${providerId}` });
       return;
@@ -254,31 +247,10 @@ function runCliHeadless({ providerId, executablePath, prompt, timeoutMs, model =
 /**
  * CLI 出力からメッセージ本文を抽出。
  * - 余計な markdown コードブロック / 前置きをトリム
- * - codex は --json でストリーム JSON を返すので、その中の "agent_message" を組立てる
  */
 function extractMessageFromCliOutput(text) {
   if (!text || typeof text !== 'string') return '';
   let body = text.trim();
-
-  // Codex --json は line-by-line JSON。各 event の type=='item.completed' で
-  // item.item_type=='agent_message' のものに content[].text を取り出す。
-  if (body.startsWith('{') && body.includes('"item_type"')) {
-    const messages: unknown[] = [];
-    body.split(/\r?\n/).forEach((line: any) => {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('{')) return;
-      try {
-        const ev = JSON.parse(trimmed);
-        const item = ev && ev.item;
-        if (item && item.item_type === 'agent_message' && item.text) {
-          messages.push(String(item.text));
-        }
-      } catch (_) { /* skip non-JSON line */ }
-    });
-    if (messages.length > 0) {
-      body = messages.join('\n').trim();
-    }
-  }
 
   // markdown ``` ブロックで囲まれている → 中身だけ抽出
   const mdMatch = body.match(/```(?:[a-z]*\s*\n)?([\s\S]+?)\n?```/);

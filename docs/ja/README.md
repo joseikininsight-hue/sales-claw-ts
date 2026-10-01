@@ -8,7 +8,7 @@
 > English version: [README.md](../../README.md)
 
 **Web 問い合わせフォーム経由の B2B 営業アプローチを自動化するツール。**
-Sales Claw は Claude Code CLI (または Codex / Gemini) を駆動して、
+Sales Claw は Claude Code CLI を駆動して、
 ターゲット企業の Web サイトを分析し、企業ごとにパーソナライズした
 メッセージを作成し、問い合わせフォームに自動入力します。最終的な
 送信判断はローカルの Electron ダッシュボードで人間が行う
@@ -79,11 +79,9 @@ human-in-the-loop 設計です。
   ごとに GitHub Releases をポーリングし、新版を静かにダウンロード →
   「再起動で更新」を表示。
 
-### 対応 AI CLI (セッションごとに切替可能)
+### 対応 AI CLI
 
-- Claude Code CLI 2.0+ (推奨)
-- Codex CLI 0.128+
-- Gemini CLI 0.1+
+- Claude Code CLI 2.0+
 
 ---
 
@@ -94,9 +92,9 @@ human-in-the-loop 設計です。
 | OS | Windows 10 / 11、macOS 13+、Ubuntu 22.04+ | Windows 11 |
 | メモリ | 4 GB | 8 GB |
 | ディスク | 1 GB 空き | 2 GB 空き |
-| ネットワーク | AI プロバイダーと GitHub への HTTPS 出方向 | 同左 |
+| ネットワーク | Anthropic と GitHub への HTTPS 出方向 | 同左 |
 | **Node.js** | 20+ *(ソースからビルドする場合のみ)* | 20 LTS |
-| **AI CLI** | Claude / Codex / Gemini のいずれか | Claude Code CLI 2.0+ |
+| **AI CLI** | Claude Code CLI 2.0+ | 最新の Claude Code CLI |
 
 パッケージ済み Electron インストーラには Node ランタイムが同梱されて
 います。エンドユーザーは Node.js を別途インストールする**必要はありません**。
@@ -137,8 +135,8 @@ Applications にドラッグ、Linux は AppImage を `chmod +x` してダブル
 3. **自社の強み** — プリセット 8 種から 1〜2 個 (またはカスタム追加)。
    メッセージのパーソナライズを駆動するギャップ分析プロンプトに使われます。
 4. **ターゲットリスト** — Excel / CSV ファイルをドロップ (スキップ可)。
-5. **AI 連携** — Claude / Codex / Gemini のいずれかがインストール済み &
-   ログイン済みであることを確認。
+5. **AI 連携** — Claude Code CLI がインストール済み & ログイン済みで
+   あることを確認。
 
 完了すると `data/settings.json` に `_onboardedAt` タイムスタンプが
 書き込まれ、以降は通常ダッシュボードへ直接遷移します。再実行は
@@ -147,7 +145,7 @@ Applications にドラッグ、Linux は AppImage を `chmod +x` してダブル
 ### 4. AI フォーム入力を起動
 
 **企業一覧** タブで対象を選択し、**AI フォーム入力** をクリック。
-Sales Claw が Claude / Codex / Gemini の managed PTY を起動し、以下を
+Sales Claw が Claude Code の managed PTY を起動し、以下を
 実行します:
 
 - **Phase A** (並列・ブラウザ未使用): 各社の Web サイト分析・メッセージ
@@ -193,7 +191,7 @@ Sales Claw v2.0.37 では日本語 / 英語のロケールパックが以下の�
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│      Claude / Codex / Gemini CLI (managed PTY)           │
+│             Claude Code CLI (managed PTY)                │
 │   Phase A: 並列分析  ·  Phase B: フォーム入力ドライバー  │
 └─────────────┬─────────────────────────────┬──────────────┘
               │                             │
@@ -296,11 +294,11 @@ Sales Claw は **best-effort のセーフティレール**を提供します:
 - [FAQ.md](../../FAQ.md) — よくある質問 *(準備中)*
 - [SUPPORT.md](../../SUPPORT.md) — サポート・バグ報告窓口
 - [PRIVACY.md](../../PRIVACY.md) — Sales Claw がローカル保存する
-  データと、AI プロバイダーに送信されるデータの一覧
+  データと、AI プロバイダー (Anthropic) に送信されるデータの一覧
 
 ### AI エージェント・開発者向け
 
-- [CLAUDE.md](../../CLAUDE.md) — Claude / Codex / Gemini CLI が
+- [CLAUDE.md](../../CLAUDE.md) — Claude Code CLI が
   system prompt として読む運用契約 (英語)
 - [docs/ja/CLAUDE.md](./CLAUDE.md) — 同・日本語版
 - [AGENTS.md](../../AGENTS.md) — エージェントオーケストレーション

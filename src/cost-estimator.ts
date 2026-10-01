@@ -25,7 +25,7 @@ export const PRICING: Record<PriceKey, PriceTable> = {
   'claude-sonnet': { input: 3.0, output: 15.0 },
   'claude-haiku': { input: 1.0, output: 5.0 },
   'claude-opus': { input: 15.0, output: 75.0 },
-  // Codex / Gemini は self-managed なので Claude 価格をデフォルトに
+  // モデル名が判別できない場合は Sonnet 価格をデフォルトに
   'default': { input: 3.0, output: 15.0 },
 };
 

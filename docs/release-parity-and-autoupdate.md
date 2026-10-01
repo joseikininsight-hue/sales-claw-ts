@@ -125,7 +125,7 @@ DL 完了 → 「再起動で更新」ダイアログ
 **注意**: ダッシュボードの「アップデート確認」は **Electron インストール版のみ** 動作する。
 `npm run dashboard:preview` の開発サーバーでは `app.isPackaged=false` のため `AUTO_UPDATE_ENABLED=false` になる。
 
-## Claude Code / Codex Rules
+## AI Coding Agent Rules (Claude Code etc.)
 
 - Do not treat `npm start`, `dashboard:preview`, or `lp:dev` as proof that the installed desktop app is updated.
 - Do not leave the latest operational dashboard in `.claude/worktrees/*`; merge it into the root `src/dashboard-server.cjs`, `src/ui/**`, and `src/routes/**`.

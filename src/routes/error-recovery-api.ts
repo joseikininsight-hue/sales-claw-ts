@@ -41,7 +41,6 @@ export interface ErrorRecoveryRouteContext {
   getSelectedAiProvider: () => string;
   getManagedAiProvider?: () => string;
   getClaudePty?: () => unknown;
-  getActiveHeadlessRun?: () => { provider?: string } | null;
   getManagedAiAutoSendSafe: () => boolean;
   appendDiagnosticEvent?: (event: string, payload: Record<string, unknown>) => void;
 }
@@ -115,7 +114,6 @@ function createErrorRecoveryRoutes(ctx: ErrorRecoveryRouteContext): ErrorRecover
     getSelectedAiProvider,
     getManagedAiProvider,
     getClaudePty,
-    getActiveHeadlessRun,
     getManagedAiAutoSendSafe,
     appendDiagnosticEvent,
   } = ctx;
@@ -124,10 +122,6 @@ function createErrorRecoveryRoutes(ctx: ErrorRecoveryRouteContext): ErrorRecover
     const activePty = getClaudePty?.();
     if (activePty && typeof getManagedAiProvider === 'function') {
       return getManagedAiProvider();
-    }
-    const headless = getActiveHeadlessRun?.();
-    if (headless && headless.provider) {
-      return headless.provider;
     }
     if (explicitProvider) return explicitProvider;
     return getSelectedAiProvider();

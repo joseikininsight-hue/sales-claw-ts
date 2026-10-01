@@ -82,8 +82,6 @@ function checkAssets() {
     'assets/vendor/js/chart.umd.js',
     'assets/vendor/js/xterm.js',
     'assets/vendor/ai-icons/claude-code.svg',
-    'assets/vendor/ai-icons/codex-openai.svg',
-    'assets/vendor/ai-icons/gemini-cli.svg',
   ]) {
     requireFile(relativePath);
   }

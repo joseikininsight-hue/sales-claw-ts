@@ -188,7 +188,7 @@
         ]
       },
       "minSiteTextLength": 800,
-      "_useLLMAnalyzerComment": "■ Phase A-1 ベータ機能 ■ true にすると業態判定を CLI (Claude/Codex/Gemini) に委譲し、業界辞書を使わずに春光社のような OOH 専業を正しく分類します。コスト: 1社あたり CLI 呼び出し 5-30秒 + サブスク枠消費。落ち着いて検証したい場合は false (default)。",
+      "_useLLMAnalyzerComment": "■ Phase A-1 ベータ機能 ■ true にすると業態判定を Claude CLI に委譲し、業界辞書を使わずに春光社のような OOH 専業を正しく分類します。コスト: 1社あたり CLI 呼び出し 5-30秒 + サブスク枠消費。落ち着いて検証したい場合は false (default)。",
       "useLLMAnalyzer": false,
       "_useLLMMessageGeneratorComment": "■ Phase B ベータ機能 ■ true にすると本文生成を CLI に委譲し、テンプレ感のない各社専用文面を生成します。8 項目の品質ゲートで送信前検証。コスト: useLLMAnalyzer に追加で 1社あたり CLI 呼び出し 10-60秒。",
       "useLLMMessageGenerator": false
@@ -268,9 +268,7 @@
     "locale": "ja-JP",
     "aiProvider": "claude",
     "aiModels": {
-      "claude": "claude-sonnet-4-6",
-      "codex": "",
-      "gemini": ""
+      "claude": "claude-sonnet-4-6"
     },
     "logLevel": "info",
     "maxLogEntries": 10000,
