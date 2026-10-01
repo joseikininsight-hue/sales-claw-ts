@@ -3,7 +3,7 @@
 /**
  * MCP CLI 操作の冪等性判定ユーティリティ。
  *
- * Claude / Codex / Gemini CLI の `mcp add` / `mcp remove` 等は、対象が
+ * Claude Code CLI の `mcp add` / `mcp remove` 等は、対象が
  * 既に存在する/存在しない時にエラーで終わる。これを「実害なし」として
  * success に丸める判定を共通化する。
  *
@@ -15,14 +15,14 @@
  *
  * 設計:
  *   - シンプルな regex マッチ
- *   - provider 非依存 (claude/codex/gemini 共通)
+ *   - CLI バージョン非依存 (言い回しの揺れを吸収)
  *   - 「対象あり」「対象なし」両方向を判定可能
  */
 
 /** "already exists" 系のエラー文言 (add 時) */
 const ALREADY_EXISTS_PATTERNS = [
   /\balready\s+exists?\b/i,           // "already exists" / "already exist"
-  /\balready\s+registered\b/i,        // codex の言い回し
+  /\balready\s+registered\b/i,
   /\balready\s+configured\b/i,        // 一般
   /\bduplicate\b/i,                   // "duplicate entry"
   /MCP\s+server\s+\w+\s+already/i,    // claude 特定文言

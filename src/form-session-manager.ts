@@ -510,6 +510,10 @@ class FormSessionManager {
 
       session.view.webContents.loadURL(url).catch((error) => {
         const s = this._sessions.get(sessionId);
+        // ERR_ABORTED はリダイレクト等でナビゲーションが差し替わっただけで、
+        //   ページ自体は続けて読み込まれる。load_failed にすると後続の dom-ready でも
+        //   'loaded' に戻らず、CLI が読み込み済みページを失敗扱いしてターンを浪費していた。
+        if (/ERR_ABORTED/i.test(String(error && error.message))) return;
         if (s && s.status === 'loading') {
           s.status = 'load_failed';
           s.blockedReason = error.message;
@@ -550,18 +554,36 @@ class FormSessionManager {
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     return new Promise<void>((resolve) => {
-      const onReady = () => {
+      const wc = session.view.webContents;
+      const cleanup = () => {
         clearTimeout(timer);
-        session.view.webContents.removeListener('dom-ready', onReady);
+        wc.removeListener('dom-ready', onReady);
+        wc.removeListener('did-fail-load', onFail);
+      };
+      const onReady = () => {
+        cleanup();
         if (session.status === 'loading') session.status = 'loaded';
+        resolve();
+      };
+      // メインフレームの読み込み失敗 (DNS 失敗 / 接続拒否等) は即座に返す。
+      //   旧: dom-ready しか待たず、失敗時も 20 秒 (再試行込みで 40 秒超) 待っていた。
+      const onFail = (_event, errorCode, errorDescription, _validatedUrl, isMainFrame) => {
+        if (isMainFrame === false || Number(errorCode) === -3 /* ERR_ABORTED */) return;
+        cleanup();
+        if (session.status === 'loading') {
+          session.status = 'load_failed';
+          session.blockedReason = session.blockedReason || `${errorDescription || 'load failed'} (${errorCode})`;
+        }
         resolve();
       };
 
       const timer = setTimeout(() => {
-        session.view.webContents.removeListener('dom-ready', onReady);
+        wc.removeListener('dom-ready', onReady);
+        wc.removeListener('did-fail-load', onFail);
         if (session.status === 'loading') session.status = 'load_timeout';
         resolve(); // timeout はエラーにせず続行（部分ロードでも構造取得を試みる）
       }, timeout);
+      if (typeof wc.on === 'function') wc.on('did-fail-load', onFail);
 
       if (!session.view.webContents.isLoading()) {
         onReady();

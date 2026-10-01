@@ -11,7 +11,7 @@
  *   2. 自社情報 (companyProfile)
  *   3. 自社の強み (valuePropositions.strengths)
  *   4. ターゲットリスト (Excel/CSV ドラッグ&ドロップ、スキップ可)
- *   5. AI 認証 (Claude / Codex / Gemini ログイン状態確認)
+ *   5. AI 認証 (Claude Code CLI ログイン状態確認)
  *   完了 → settings.json に書き込み + _onboardedAt を ISO で記録 → 通常ダッシュボード
  *
  * 状態は localStorage + サーバ側 data/onboarding-progress.json に保存して
@@ -550,8 +550,6 @@ body {
   border: 1px solid rgba(15,23,42,.06);
 }
 .ai-card[data-ai="claude"] .ai-icon-wrap { background: rgba(204,120,92,.10); border-color: rgba(204,120,92,.18); }
-.ai-card[data-ai="codex"]  .ai-icon-wrap { background: rgba(15,23,42,.06);    border-color: rgba(15,23,42,.10); }
-.ai-card[data-ai="gemini"] .ai-icon-wrap { background: rgba(66,133,244,.08);  border-color: rgba(66,133,244,.16); }
 .ai-card .ai-icon-wrap img { display: block; width: 34px; height: 34px; }
 .ai-card .name { font-weight: 700; font-size: 15px; color: var(--text-1); }
 .ai-card .vendor { font-size: 12px; color: var(--text-3); margin-top: 2px; }
@@ -658,10 +656,12 @@ body {
     targetList: null,
     targetListMeta: null,
     aiProvider: 'claude',
-    aiAuthStatus: { claude: null, codex: null, gemini: null },
+    aiAuthStatus: { claude: null },
     bypassAi: false,
     errors: [],
   }, SAVED || {});
+  // Claude Code CLI のみサポート。保存済み進捗の 'codex' / 'gemini' は 'claude' に戻す。
+  state.aiProvider = 'claude';
 
   // ---- helpers ----
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -756,8 +756,8 @@ body {
       '  <div class="welcome-content">',
       isJa ? '    <h2>Sales Claw へようこそ</h2>' : '    <h2>Welcome to Sales Claw</h2>',
       isJa
-        ? '    <p class="lead">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。<br>       Claude / Codex / Gemini CLI と連携してフォーム入力までを実行します。</p>'
-        : '    <p class="lead">A tool that automates B2B outreach via corporate contact forms.<br>       It integrates with Claude / Codex / Gemini CLI to fill forms automatically.</p>',
+        ? '    <p class="lead">企業の問い合わせフォーム経由で営業アプローチを自動化するツールです。<br>       Claude Code CLI と連携してフォーム入力までを実行します。</p>'
+        : '    <p class="lead">A tool that automates B2B outreach via corporate contact forms.<br>       It integrates with Claude Code CLI to fill forms automatically.</p>',
       '  </div>',
       '</div>',
 
@@ -1195,13 +1195,9 @@ body {
   // ---- step 5: AI auth ----
   const AI_PROVIDERS_JA = [
     { id: 'claude', name: 'Claude',    vendor: 'Anthropic', icon: '/assets/vendor/ai-icons/claude-code.svg',  desc: 'Claude Code CLI を使って分析・送信' },
-    { id: 'codex',  name: 'Codex',     vendor: 'OpenAI',    icon: '/assets/vendor/ai-icons/codex-openai.svg', desc: 'OpenAI Codex CLI を使って分析・送信' },
-    { id: 'gemini', name: 'Gemini',    vendor: 'Google',    icon: '/assets/vendor/ai-icons/gemini-cli.svg',   desc: 'Google Gemini CLI を使って分析・送信' },
   ];
   const AI_PROVIDERS_EN = [
     { id: 'claude', name: 'Claude',    vendor: 'Anthropic', icon: '/assets/vendor/ai-icons/claude-code.svg',  desc: 'Use Claude Code CLI to analyze and send' },
-    { id: 'codex',  name: 'Codex',     vendor: 'OpenAI',    icon: '/assets/vendor/ai-icons/codex-openai.svg', desc: 'Use OpenAI Codex CLI to analyze and send' },
-    { id: 'gemini', name: 'Gemini',    vendor: 'Google',    icon: '/assets/vendor/ai-icons/gemini-cli.svg',   desc: 'Use Google Gemini CLI to analyze and send' },
   ];
 
   function aiStatusBadge(provider) {
@@ -1241,9 +1237,7 @@ body {
           ? 'ターミナルで以下のコマンドでインストールしてから「認証状態を再確認」してください:<br>'
           : 'Install it from a terminal with the command below, then click &quot;Re-check status&quot;:<br>') +
         '<code style="display:block;margin-top:8px;padding:8px;background:#fff;border:1px solid var(--border);border-radius:6px;font-family:monospace;">' +
-        (state.aiProvider === 'claude' ? 'npm install -g @anthropic-ai/claude-code' :
-         state.aiProvider === 'codex' ? 'npm install -g @openai/codex' :
-         'npm install -g @google/gemini-cli') +
+        'npm install -g @anthropic-ai/claude-code' +
         '</code></div>';
     } else if (status && status.installed && !status.loggedIn) {
       actionHint =

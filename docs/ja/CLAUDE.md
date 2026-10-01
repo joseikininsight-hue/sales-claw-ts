@@ -65,17 +65,13 @@
 - `/api/form-session/*`、Electron WebContentsView、direct JS automation、独自 Playwright worker はフォーム入力の代替に使わない
 - Electron ダッシュボードは UI表示・設定管理・ログ確認のために使う。フォーム探索/入力の主体ではない
 - MCP Playwright が見当たらない場合は、まず Claude Code の MCP 登録/再接続を確認する。Electron Form Session API へ切り替えない
-- 入力済みフォーム/確認画面/CAPTCHA/エラー根拠の最終タブだけを残し、探索残骸タブは閉じる
 
-### タブ管理契約
+### セッション管理 (旧「タブ管理契約」は v2.0.67 以降の内蔵モードでは不要)
 
-- 会社ごとの処理開始時に `browser_tabs` で既存タブを記録し、`baselineTabs` として扱う
-- 探索で開いた検索結果・候補ページ・会社サイト・プライバシー・ニュース等は `workingTabs` として管理する
-- 入力済みフォーム、確認画面、CAPTCHA、またはエラー根拠ページのうち最終確認に必要な1タブだけを `finalFormTab` として残す
-- `awaiting_approval` / `error` / `skipped` にする直前に `browser_tabs` で確認し、`baselineTabs` と `finalFormTab` 以外の `workingTabs` は閉じる
-- `submitted` の場合は `ss-{No}-sent.png` 保存後、その会社の `workingTabs` を閉じる
-- 既存の他社タブ、ユーザーが元から開いていたタブ、`baselineTabs` は閉じない
-- `logAction` の details には `finalFormTab` のURL、閉じたタブ数、残した理由を入れる
+- 1 社 = 1 セッション (sessionId)。新規セッションは `browser_navigate({ url, companyNo })` または `browser_tabs({ action:"new", url, companyNo })` で開く。`companyNo` は必須 (`ss-{No}-*.png` の命名に使う)
+- その会社の `browser_*` 操作はすべて同じ sessionId で行う
+- `awaiting_approval` のセッションは人間確認用にサーバーが残す。`submitted` / `skipped` / `error` のセッションはサーバーが自動で閉じる
+- `logAction` の details には `sentMessage` (または `sentMessageFile`)、`screenshot`、`formUrl` (実際に入力したフォームの URL) を入れる
 
 ## Desktop Release / Auto Update Gate
 
@@ -137,7 +133,7 @@ http://127.0.0.1:3765/onboarding?fresh=1   # 進捗をクリアして最初か�
 2. 自社情報 (companyProfile)
 3. 自社の強み (valuePropositions.strengths) — プリセット 8 種 + カスタム
 4. ターゲットリスト (Excel/CSV、スキップ可)
-5. AI 連携 (Claude / Codex / Gemini ログイン状態確認)
+5. AI 連携 (Claude Code CLI ログイン状態確認)
 
 **完了条件:** `data/settings.json` に `_onboardedAt: <ISO>` が書き込まれ、
 以降のアクセスは通常ダッシュボードに直接遷移する。
@@ -342,8 +338,7 @@ curl -s -X POST -H "Content-Type: application/json" \
     "details":{
       "sentMessage":"お世話になります。サンプル株式会社の担当者と申します。\n貴社の取り組みを拝見し、お役に立てる場面があるかもしれずご連絡いたしました。...(実際にフォーム本文欄に入力した文字列そのもの)",
       "screenshot":"ss-185-input.png",
-      "tabKept":true,
-      "finalFormTab":"https://contact.example.com/..."
+      "formUrl":"https://contact.example.com/..."
     }
   }' \
   "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
@@ -366,8 +361,7 @@ Step 2: メッセージ生成
   → message_draft も Phase A サブプロセスが先に記録済 (再記録不要)
 
 Step 3: フォームURL探索
-  → 1社目: browser_navigate で公式サイトまたは既知フォーム候補を開く
-  → 2社目以降: browser_evaluate で window.open(url,'_blank') → browser_tabs
+  → 各社: browser_navigate({ url, companyNo }) (または browser_tabs({ action:"new", url, companyNo })) で専用セッションを開く。新規セッションでは companyNo 必須
   → 既知 formUrl がない/不正なら、companyUrl 公式サイト内の「お問い合わせ」「Contact」「資料請求」「パートナー」等を Playwright で探索
   → companyUrl 自体が空の場合 (urlMissing=true)、WebSearch で「会社名 + 公式」検索 → 公式ドメイン特定 → お問い合わせフォーム発見
   → 検索結果を使う場合も公式ドメインか確認する
@@ -391,7 +385,7 @@ Step 6: スクリーンショット ★ 絶対省略するな
 Step 7: 確認待ちに登録
   → curl POST /api/log-action で awaiting_approval action を記録
   → ★ Step 5, 6 が完了していない場合、このステップに進んではいけない
-  → awaiting_approval 前にタブ管理契約を実行し、入力済みフォーム/確認画面の finalFormTab だけを保持する
+  → details に formUrl (実際に入力したフォームの URL) を含める。awaiting_approval のセッションはサーバーが残す
 ```
 
 **複数社の場合（2フェーズ並列処理）:**
@@ -420,7 +414,7 @@ Step 7: 確認待ちに登録
 → 1社ずつ MCP Playwright でフォーム探索・構造解析・入力・スクショを実行
 → 各社: browser_navigate / browser_tabs → browser_snapshot → browser_fill_form
          → browser_take_screenshot → logAction(awaiting_approval)
-→ 各社ごとに finalFormTab だけ残し、探索残骸タブは閉じる
+→ セッションの後片付けはサーバーが行う (submitted / skipped / error は自動で閉じる)
 
 → thinking() + updateLiveMonitor() で進行状況をダッシュボードに通知
 

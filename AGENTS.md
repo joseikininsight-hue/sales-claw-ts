@@ -2,8 +2,9 @@
 
 > Japanese version: [docs/ja/AGENTS.md](./docs/ja/AGENTS.md)
 >
-> This file is an **entry point for AI agents that read `AGENTS.md`**
-> (Codex CLI / Gemini CLI / etc.).
+> This file is an **entry point for AI coding agents that read `AGENTS.md`**.
+> (It is for development tooling only — at runtime Sales Claw drives the
+> Claude Code CLI exclusively.)
 >
 > **The canonical operational rules, workflow, and MCP usage contract live in
 > [`CLAUDE.md`](./CLAUDE.md).** Read that file as the single source of truth.

@@ -21,7 +21,7 @@ PR や Issue を出す前に必ず一読してください。
 
 - Node.js 22 以上 ([nodejs.org](https://nodejs.org/))
 - Git
-- AI CLI のいずれか (`claude` / `codex` / `gemini`) — テスト時に使用
+- Claude Code CLI (`claude`) — テスト時に使用
 
 ### セットアップ
 
@@ -123,7 +123,7 @@ npm run verify:release
 ```
 src/
 ├── *.ts                     コアロジック (47 ファイル, 100% TS)
-├── ai-runtime/             Claude / Codex / Gemini プロセス管理
+├── ai-runtime/             Claude Code CLI プロセス管理
 ├── list-builder/           企業リスト発見 (URL / NLQ / カテゴリモード)
 ├── routes/                 ダッシュボード API ハンドラ
 ├── types/                  共有型定義 + 型ヘルパー (helpers.ts)

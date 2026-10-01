@@ -245,7 +245,8 @@ module.exports = function createOnboardingRoutes(ctx) {
       next.valuePropositions = Object.assign({}, next.valuePropositions || {}, {
         strengths: (body.valuePropositions && body.valuePropositions.strengths) || next.valuePropositions?.strengths || [],
       });
-      if (body.aiProvider) next.aiProvider = body.aiProvider;
+      // Claude Code CLI のみサポート
+      if (body.aiProvider) next.aiProvider = 'claude';
 
       // marker
       next._onboardedAt = new Date().toISOString();

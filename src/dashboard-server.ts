@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const WebSocket = require('ws');
 const XLSX = require('xlsx');
-const { getAllLogs, logAction, removeCompanyLogs } = require('./action-logger');
+const { getAllLogs, getAllLogsReadonly, logAction, removeCompanyLogs } = require('./action-logger');
 const { getAllHistorySummary, getHistory, recordContact, removeHistory } = require('./contact-history');
 const { readRuntime, toClientHost, writeRuntime, clearRuntime } = require('./dashboard-runtime');
 const settings = require('./settings-manager');
@@ -88,7 +88,7 @@ const renderProviderIconFixScript = (...a: any[]) => require('./ui/client-script
 const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
 /**
- * CLI (Claude/Codex/Gemini) の managed PTY 用の作業ディレクトリ。
+ * Claude Code CLI の managed PTY 用の作業ディレクトリ。
  *
  * 問題: PROJECT_ROOT は packaged Electron では `C:\Program Files\Sales Claw\
  * resources\app\` となり read-only。CLI が cwd 配下にスクラッチファイルを
@@ -172,7 +172,6 @@ let standaloneDashboardLockHooksInstalled = false;
 let claudePty: any = null;
 let claudeProcessMode = 'default';
 let claudeProcess: any = null;
-let headlessAiRun: any = null;
 let activeAiProvider = normalizeProviderId(typeof settings.getAiProvider === 'function' ? settings.getAiProvider() : 'claude');
 let managedAiAutoSendSafe = !!(typeof settings.getAutoSendEligibleForms === 'function' ? settings.getAutoSendEligibleForms() : false);
 const aiInstallState = Object.fromEntries(listProviders().map((provider: any) => [provider.id, 'idle']));
@@ -442,8 +441,6 @@ const MANAGED_AI_CLAUDE_PASTE_FALLBACK_MS = 3500;
 
 const MANAGED_AI_READY_DELAY_MS = {
   claude: 1500,
-  codex: 12000,
-  gemini: 25000,
 };
 
 const MANAGED_AI_MIN_READY_AGE_MS = {
@@ -453,14 +450,10 @@ const MANAGED_AI_MIN_READY_AGE_MS = {
   // タイマー fallback の 1500ms だったので、1200ms 下限なら従来より遅くならず、
   // かつ「プロンプトが実際に描画された」確認を上乗せできる。
   claude: 1200,
-  codex: 24000,
-  gemini: 25000,
 };
 
 const MANAGED_AI_ENTER_DELAY_MS = {
   claude: 250,
-  codex: 900,
-  gemini: 1000,
 };
 
 // WebSocket server for PTY I/O
@@ -974,63 +967,19 @@ function getProviderModeLabel(providerId, mode, lang = 'ja') {
       auto: isJa ? '完全自動' : 'Auto',
       bypassPermissions: isJa ? '権限スキップ' : 'Bypass permissions',
     },
-    codex: {
-      default: isJa ? 'on-request' : 'On-request',
-      acceptEdits: isJa ? 'on-request（手動監視）' : 'On-request (manual)',
-      auto: isJa ? 'no-prompt auto' : 'No-prompt auto',
-      bypassPermissions: isJa ? 'danger bypass' : 'Danger bypass',
-      'danger-full-access': isJa ? 'danger bypass' : 'Danger bypass',
-    },
-    gemini: {
-      default: isJa ? 'default approvals' : 'Default approvals',
-      acceptEdits: isJa ? 'auto_edit（手動監視）' : 'auto_edit (manual)',
-      auto: 'auto_edit',
-      auto_edit: 'auto_edit',
-      bypassPermissions: 'yolo',
-      yolo: 'yolo',
-      'headless-yolo': 'yolo',
-    },
   };
   const labels = byProvider[provider] || byProvider.claude;
   return labels[currentMode] || currentMode || (isJa ? '未設定' : 'Unknown');
 }
 
-function getProviderRecommendedModesText(providerId, lang = 'ja') {
-  const provider = normalizeProviderId(providerId);
-  if (provider === 'codex') {
-    return lang === 'ja'
-      ? 'no-prompt auto（auto）または danger bypass（bypassPermissions）'
-      : 'no-prompt auto (auto) or danger bypass (bypassPermissions)';
-  }
-  if (provider === 'gemini') {
-    return lang === 'ja'
-      ? 'auto_edit（auto）または yolo（bypassPermissions）'
-      : 'auto_edit (auto) or yolo (bypassPermissions)';
-  }
+function getProviderRecommendedModesText(_providerId, lang = 'ja') {
   return lang === 'ja'
     ? 'auto または bypassPermissions'
     : 'auto or bypassPermissions';
 }
 
-function getProviderApprovalCaveat(providerId, lang = 'ja') {
-  const provider = normalizeProviderId(providerId);
+function getProviderApprovalCaveat(_providerId, lang = 'ja') {
   const isJa = lang === 'ja';
-  if (provider === 'codex') {
-    return {
-      tone: 'warn',
-      message: isJa
-        ? "Codex は bypassPermissions でも起動フラグ自体は正しく付きますが、Playwright MCP の操作種別ごとに Codex 本体の許可ダイアログが一度だけ出る場合があります。これは Sales Claw 側の起動ミスではなく Codex 側の権限ルールです。表示されたら「Yes, and don't ask again」を選ぶと次回から抑制できます。"
-        : 'Codex still receives the bypass flags correctly, but Codex itself may show a one-time permission dialog for Playwright MCP action types. This is a Codex-side permission rule, not a Sales Claw launch failure. Choose "Yes, and don\'t ask again" to suppress it next time.',
-    };
-  }
-  if (provider === 'gemini') {
-    return {
-      tone: 'warn',
-      message: isJa
-        ? 'Gemini は yolo でも browser / MCP 系の確認が残る場合があります。Sales Claw 側では最強の approval-mode を渡していますが、Gemini 側の安全確認は完全には消せないことがあります。'
-        : 'Gemini may still pause for browser / MCP confirmations even in yolo mode. Sales Claw passes the strongest approval mode available, but Gemini can still keep its own safety checks.',
-    };
-  }
   return {
     tone: 'ok',
     message: isJa
@@ -1047,7 +996,7 @@ function getProviderLaunchExamples(providerId) {
   };
 }
 
-// "codex-cli 0.118.0" / "1.2.3-beta" / "v0.4" 等から [major, minor, patch] を抽出する。
+// "2.1.0 (Claude Code)" / "1.2.3-beta" / "v0.4" 等から [major, minor, patch] を抽出する。
 // 取れない場合は null を返す。
 function parseSemverLike(value) {
   const match = String(value || '').match(/(\d+)\.(\d+)(?:\.(\d+))?/);
@@ -1095,8 +1044,6 @@ function getManagedAiMinReadyAge(providerId) {
 
 function getManagedAiSubmitSequence(providerId) {
   switch (normalizeProviderId(providerId)) {
-    case 'codex':
-      return ['\t', '\r'];
     case 'claude':
       // Claude の UI は >49 行のペーストに対して "[Pasted text #1 +49 lines]
       // paste again to expand" バナーを出して 2 回目の Enter を待つ。
@@ -1175,7 +1122,9 @@ function snapshotManagedAiBatchesForRecovery() {
     batches: [] as any[],
   };
   if (controller.activeBatch && Array.isArray(controller.activeBatch.companies) && controller.activeBatch.companies.length > 0) {
-    const progress = getManagedAiBatchProgressSnapshot(controller.activeBatch.companyNos || []);
+    const progress = getManagedAiBatchProgressSnapshot(controller.activeBatch.companyNos || [], {
+      sinceMs: controller.activeBatch.startedAt,
+    });
     const terminalNos = new Set((progress.statuses || [])
       .filter((status: any) => status && status.terminal)
       .map((status: any) => Number(status.companyNo)));
@@ -1243,14 +1192,36 @@ function appendManagedAiPtyLog(providerId, chunk, kind = 'output') {
   ptyLog.appendManagedAiPtyLog(providerId, chunk, kind, { maxBytes: MANAGED_AI_PTY_LOG_MAX_BYTES });
 }
 
-function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
+const MANAGED_AI_BATCH_TERMINAL_STATES = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error', 'confirm_reached']);
+
+function getManagedAiBatchProgressSnapshot(companyNos: any[] = [], options: { sinceMs?: number } = {}) {
   const keySet = new Set((companyNos || []).map((value: any) => String(value)));
   const latestLogByCompany = new Map<any, any>();
   const latestMonitorByCompany = new Map<any, any>();
-  const logs = getAllLogs();
+  // バッチ開始 (sinceMs) より前に書かれた terminal ログ / monitor は
+  //   「前回の試行の結果」なので今回のバッチの完了判定に使わない。
+  //   旧: エラー再試行した会社は直前の 'error' ログが最新のままなので、投入直後の
+  //     最初の tick で batch 完了扱い → 次バッチが CLI 作業中に dispatch され、
+  //     2 社以上なら「半数 error」判定で PTY 再起動まで走っていた。
+  //   バッチ開始前の非 terminal ログ (Phase A の message_draft 等) は従来通り使う。
+  const sinceMs = Number(options.sinceMs) || 0;
+  const isBeforeBatch = (entry: any, ...fields: string[]) => {
+    if (!sinceMs) return false;
+    for (const field of fields) {
+      const ts = parseEventTimestampMs(entry && entry[field]);
+      if (ts) return ts < sinceMs;
+    }
+    return false;
+  };
+  const logs = getAllLogsReadonly();
   logs.forEach((entry: any) => {
     const key = String(entry.companyNo || entry.no || '');
     if (!keySet.has(key)) return;
+    if (isBeforeBatch(entry, 'timestamp', 'date', 'time')
+      && MANAGED_AI_BATCH_TERMINAL_STATES.has(String(entry.action || ''))) {
+      latestLogByCompany.delete(key);
+      return;
+    }
     latestLogByCompany.set(key, entry);
   });
   const monitorState = readMonitorState();
@@ -1258,6 +1229,11 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
   monitorEvents.forEach((entry: any) => {
     const key = String(entry.companyNo || '');
     if (!keySet.has(key)) return;
+    if (isBeforeBatch(entry, 'updatedAt', 'timestamp', 'time')
+      && MANAGED_AI_BATCH_TERMINAL_STATES.has(String(entry.status || ''))) {
+      latestMonitorByCompany.delete(key);
+      return;
+    }
     latestMonitorByCompany.set(key, entry);
   });
 
@@ -1271,7 +1247,7 @@ function getManagedAiBatchProgressSnapshot(companyNos: any[] = []) {
   //     進ませ、UI 側で「確認画面到達 - 手動レビュー推奨」を出す。
   //   注: 1319 行目の terminalStates (live-monitor cleanup 用) はこちらには
   //     入れない。confirm_reached の active event は 20 分以上残しておきたい。
-  const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error', 'confirm_reached']);
+  const terminalStates = MANAGED_AI_BATCH_TERMINAL_STATES;
   let terminalCount = 0;
   let latestActivityAt = 0;
   const statuses: any[] = [];
@@ -1328,7 +1304,6 @@ function getManagedAiReservedCompanyNos() {
 }
 
 function isAiRuntimeActivelyProcessing() {
-  if (getActiveHeadlessRun()) return true;
   if (claudePty) return true;
   const controller = managedAiBatchController;
   return !!(controller && (controller.activeBatch || (controller.pending && controller.pending.length > 0)));
@@ -1346,7 +1321,7 @@ function cleanupStaleManagedAiMonitorEvents(maxAgeMs = MANAGED_AI_BATCH_STALL_MS
   //   旧: PTY 生存中だと無条件 return 0 → stopManagedClaudePty が cleanup を呼んでも
   //     no-op になり、live-monitor の analyzing/active=true な古い event が残留 →
   //     再キュー時に「以下の企業は既に処理中です」エラーで弾かれる事故。
-  if (!options.force && (claudePty || getActiveHeadlessRun())) return 0;
+  if (!options.force && claudePty) return 0;
   const summary = getLiveMonitorSummary();
   const terminalStates = new Set(['awaiting_approval', 'submitted', 'completed', 'skipped', 'error']);
   const now = Date.now();
@@ -1421,17 +1396,6 @@ function hasManagedAiStartupBlocker(providerId, outputText) {
   const hasVisiblePrompt = hasManagedAiReadyMarker(normalizedProviderId, tail);
   if (/Do you trust the following folders/i.test(tail)) return true;
   if (/Action Required/i.test(tail) && !hasVisiblePrompt) return true;
-  if (normalizedProviderId === 'codex'
-    && /Starting MCP servers/i.test(tail)
-    && !/MCP startup incomplete/i.test(tail)
-    && !hasVisiblePrompt) {
-    return true;
-  }
-  if (normalizedProviderId === 'gemini'
-    && /Applying trust settings/i.test(tail)
-    && !hasVisiblePrompt) {
-    return true;
-  }
   return false;
 }
 
@@ -1486,20 +1450,6 @@ function getManagedAiSessionState() {
 
 function getManagedAiReadyMarkers(providerId) {
   switch (normalizeProviderId(providerId)) {
-    case 'codex':
-      return [
-        /›\s+/,
-        /Type instructions and press Enter/i,
-        /Write tests for @filename/i,
-        /Explain this codebase/i,
-        /Implement \{feature\}/i,
-        /gpt-5\.[0-9]/i,
-      ];
-    case 'gemini':
-      return [
-        /Type your message or @path\/to\/file/i,
-        /Type your message/i,
-      ];
     case 'claude':
     default:
       // v2.1.6: Claude Code v2.x の TUI はプロンプト文字が ASCII '>' ではなく
@@ -1813,6 +1763,7 @@ function startManagedAiBatchPoller() {
     try {
       runPollerTickBody(activeController);
     } finally {
+      controller.pollNudged = false;
       const stillController = managedAiBatchController;
       if (stillController && stillController.pollTimer) {
         // clearManagedAiBatchControllerTimer が呼ばれていなければ次回をスケジュール。
@@ -1827,10 +1778,28 @@ function startManagedAiBatchPoller() {
       }
     }
   };
+  controller.pollTick = tick;
   controller.pollTimer = setTimeout(tick, MANAGED_AI_BATCH_POLL_MS);
   if (typeof controller.pollTimer.unref === 'function') {
     controller.pollTimer.unref();
   }
+}
+
+// /api/log-action で terminal ログが入った直後にポーラーを前倒しで回す。
+//   旧: 最後の社が完了しても次の tick (最大 2 秒) まで次バッチが投入されなかった。
+const MANAGED_AI_TERMINAL_LOG_ACTIONS = new Set(['awaiting_approval', 'submitted', 'skipped', 'error', 'confirm_reached']);
+function nudgeManagedAiBatchPoller(companyNo, action) {
+  const controller = managedAiBatchController;
+  if (!controller || !controller.pollTimer || typeof controller.pollTick !== 'function') return;
+  if (!controller.activeBatch || controller.pollNudged) return;
+  if (!MANAGED_AI_TERMINAL_LOG_ACTIONS.has(String(action || ''))) return;
+  const nos = Array.isArray(controller.activeBatch.companyNos) ? controller.activeBatch.companyNos : [];
+  if (!nos.some((no: any) => Number(no) === Number(companyNo))) return;
+  controller.pollNudged = true;
+  clearTimeout(controller.pollTimer);
+  // action-log の debounce flush を待ってから判定する
+  controller.pollTimer = setTimeout(controller.pollTick, 300);
+  if (typeof controller.pollTimer.unref === 'function') controller.pollTimer.unref();
 }
 
 // v2.0.48 F3: tick 本体を関数化。setInterval から再帰 setTimeout に切り替えた際、
@@ -1877,10 +1846,16 @@ function runPollerTickBody(activeController: any) {
     activeController.pendingSinceMs = 0;
     activeController.queueStuckNotified = false;
 
-    const snapshot = getManagedAiBatchProgressSnapshot(activeController.activeBatch.companyNos);
+    const snapshot = getManagedAiBatchProgressSnapshot(activeController.activeBatch.companyNos, {
+      sinceMs: activeController.activeBatch.startedAt,
+    });
     if (snapshot.latestActivityAt && snapshot.latestActivityAt > activeController.activeBatch.lastProgressAt) {
       activeController.activeBatch.lastProgressAt = snapshot.latestActivityAt;
       activeController.activeBatch.lastProgressReason = 'action-log';
+      // 進捗が再開したら停滞通知を再武装する。旧実装は 1 バッチにつき 1 回しか
+      //   stall 判定しなかったため、自動タイムアウト後に別の社が止まると永久に拾えなかった。
+      activeController.activeBatch.stallNotified = false;
+      activeController.activeBatch.softWarnNotified = false;
     }
 
     if (snapshot.terminalCount >= snapshot.totalCount && snapshot.totalCount > 0) {
@@ -2295,19 +2270,13 @@ async function restartManagedAiSessionForAuthRefresh(providerId = getManagedAiPr
   return { restarted: true };
 }
 
-function isHeadlessAutomationProvider(providerId) {
-  return ['codex', 'gemini'].includes(normalizeProviderId(providerId));
-}
-
-// P1-4: parallel-dispatcher が許可する provider。Claude も含む。
-// 既存の単発 headless 経路 (codex/gemini 用 startHeadlessAiAutomationRun) と
-// 並列経路 (parallel-dispatcher の runParallelBatch) を別概念として扱う。
+// P1-4: parallel-dispatcher が許可する provider (Claude のみ)。
 function isParallelDispatchProvider(providerId) {
-  return ['claude', 'codex', 'gemini'].includes(normalizeProviderId(providerId));
+  return normalizeProviderId(providerId) === 'claude';
 }
 
 function requiresManagedAiSessionForFormFill(providerId) {
-  return ['claude', 'codex', 'gemini'].includes(normalizeProviderId(providerId));
+  return normalizeProviderId(providerId) === 'claude';
 }
 
 function getAutomationModeForProvider(providerId) {
@@ -2315,12 +2284,6 @@ function getAutomationModeForProvider(providerId) {
     return claudeProcessMode;
   }
   return getProvider(providerId).defaultMode || 'auto';
-}
-
-function getActiveHeadlessRun(providerId: any = null) {
-  if (!headlessAiRun) return null;
-  if (!providerId) return headlessAiRun;
-  return normalizeProviderId(providerId) === headlessAiRun.provider ? headlessAiRun : null;
 }
 
 function getConfiguredAiModel(providerId = getSelectedAiProvider()) {
@@ -2377,117 +2340,6 @@ function invalidateAiStatusCache(providerId: any = null) {
     return;
   }
   _aiDiagnosticsCache.delete(normalizeProviderId(providerId));
-}
-
-function getCodexConfigPath() {
-  return path.join(os.homedir(), '.codex', 'config.toml');
-}
-
-function getCodexTrustProjectKeys(projectRoot = PROJECT_ROOT) {
-  const resolved = path.resolve(projectRoot);
-  const keys = [resolved];
-  if (process.platform === 'win32' && !resolved.startsWith('\\\\?\\')) {
-    keys.unshift(`\\\\?\\${resolved}`);
-  }
-  return Array.from(new Set(keys));
-}
-
-function ensureCodexWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const configPath = getCodexConfigPath();
-  const trustKeys = getCodexTrustProjectKeys(projectRoot);
-  let content = '';
-  try {
-    if (fs.existsSync(configPath)) {
-      content = fs.readFileSync(configPath, 'utf8');
-    } else {
-      ensureParentDir(configPath);
-    }
-  } catch (_) {
-    return false;
-  }
-
-  if (trustKeys.some((key: any) => content.includes(`[projects.'${key.replace(/'/g, "''")}']`))) {
-    return false;
-  }
-
-  const preferredKey = trustKeys[0];
-  const section = [
-    '',
-    `[projects.'${preferredKey.replace(/'/g, "''")}']`,
-    'trust_level = "trusted"',
-    '',
-  ].join('\n');
-
-  fs.writeFileSync(configPath, `${content.replace(/\s*$/, '')}${section}`, 'utf8');
-  return true;
-}
-
-function getGeminiTrustedFoldersPath() {
-  return path.join(os.homedir(), '.gemini', 'trustedFolders.json');
-}
-
-function getGeminiProjectsPath() {
-  return path.join(os.homedir(), '.gemini', 'projects.json');
-}
-
-function ensureGeminiWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  const trustedFoldersPath = getGeminiTrustedFoldersPath();
-  const projectsPath = getGeminiProjectsPath();
-  let changed = false;
-
-  try {
-    ensureParentDir(trustedFoldersPath);
-    const trustedFolders = readJsonFileSafe(trustedFoldersPath, {}) || {};
-    if (trustedFolders[resolvedProjectRoot] !== 'TRUST_FOLDER') {
-      trustedFolders[resolvedProjectRoot] = 'TRUST_FOLDER';
-      fs.writeFileSync(trustedFoldersPath, JSON.stringify(trustedFolders, null, 2), 'utf8');
-      changed = true;
-    }
-  } catch (_) {
-    return false;
-  }
-
-  try {
-    ensureParentDir(projectsPath);
-    const projectName = path.basename(resolvedProjectRoot) || 'project';
-    const projectsState = readJsonFileSafe(projectsPath, { projects: {} }) || { projects: {} };
-    projectsState.projects = projectsState.projects || {};
-    const lowerKey = resolvedProjectRoot.toLowerCase();
-    if (!projectsState.projects[lowerKey]) {
-      projectsState.projects[lowerKey] = projectName;
-      fs.writeFileSync(projectsPath, JSON.stringify(projectsState, null, 2), 'utf8');
-      changed = true;
-    }
-  } catch (_) {
-    return changed;
-  }
-
-  return changed;
-}
-
-function isCodexWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const configPath = getCodexConfigPath();
-  if (!fs.existsSync(configPath)) return false;
-  try {
-    const content = fs.readFileSync(configPath, 'utf8');
-    return getCodexTrustProjectKeys(projectRoot).some((key: any) => content.includes(`[projects.'${key.replace(/'/g, "''")}']`));
-  } catch (_) {
-    return false;
-  }
-}
-
-function isGeminiWorkspaceTrusted(projectRoot = PROJECT_ROOT) {
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  try {
-    const trustedFolders = readJsonFileSafe(getGeminiTrustedFoldersPath(), {}) || {};
-    const projectsState = readJsonFileSafe(getGeminiProjectsPath(), { projects: {} }) || { projects: {} };
-    const projectKeys = Object.keys(projectsState.projects || {});
-    return trustedFolders[resolvedProjectRoot] === 'TRUST_FOLDER'
-      && projectKeys.includes(resolvedProjectRoot.toLowerCase());
-  } catch (_) {
-    return false;
-  }
 }
 
 function copyFileIfExists(sourcePath, targetPath) {
@@ -2670,64 +2522,6 @@ function prepareClaudeManagedHome(projectRoot = PROJECT_ROOT) {
   return managedHome;
 }
 
-function prepareGeminiManagedHome(projectRoot = PROJECT_ROOT) {
-  const realHome = os.homedir();
-  const managedHome = getManagedProviderHome('gemini');
-  const managedGeminiDir = path.join(managedHome, '.gemini');
-  const managedAppDataRoaming = path.join(managedHome, 'AppData', 'Roaming');
-  const managedAppDataLocal = path.join(managedHome, 'AppData', 'Local');
-  const managedTempDir = path.join(managedHome, 'tmp');
-  fs.mkdirSync(managedGeminiDir, { recursive: true });
-  fs.mkdirSync(managedAppDataRoaming, { recursive: true });
-  fs.mkdirSync(managedAppDataLocal, { recursive: true });
-  fs.mkdirSync(managedTempDir, { recursive: true });
-
-  copyFileIfExists(path.join(realHome, '.gemini', 'oauth_creds.json'), path.join(managedGeminiDir, 'oauth_creds.json'));
-  copyFileIfExists(path.join(realHome, '.gemini', 'google_accounts.json'), path.join(managedGeminiDir, 'google_accounts.json'));
-  copyFileIfExists(path.join(realHome, '.gemini', 'GEMINI.md'), path.join(managedGeminiDir, 'GEMINI.md'));
-  const realSettings = readJsonFileSafe(path.join(realHome, '.gemini', 'settings.json'), {}) || {};
-  const playwrightMcp = localToolchain.getPlaywrightMcpCommandSpec();
-  const managedSettings = {
-    ...realSettings,
-    mcpServers: {
-      ...((realSettings && realSettings.mcpServers) || {}),
-      playwright: {
-        command: playwrightMcp.command,
-        args: playwrightMcp.args,
-        env: playwrightMcp.env,
-      },
-    },
-    security: {
-      ...(realSettings.security || {}),
-      folderTrust: {
-        ...((realSettings.security && realSettings.security.folderTrust) || {}),
-        enabled: false,
-      },
-    },
-    general: {
-      ...(realSettings.general || {}),
-      sessionRetention: {
-        ...((realSettings.general && realSettings.general.sessionRetention) || {}),
-        enabled: false,
-      },
-    },
-  };
-  fs.writeFileSync(path.join(managedGeminiDir, 'settings.json'), JSON.stringify(managedSettings, null, 2), 'utf8');
-
-  const resolvedProjectRoot = path.resolve(projectRoot);
-  const projectName = path.basename(resolvedProjectRoot) || 'project';
-  fs.writeFileSync(path.join(managedGeminiDir, 'projects.json'), JSON.stringify({
-    projects: {
-      [resolvedProjectRoot.toLowerCase()]: projectName,
-    },
-  }, null, 2), 'utf8');
-  fs.writeFileSync(path.join(managedGeminiDir, 'trustedFolders.json'), JSON.stringify({
-    [resolvedProjectRoot]: 'TRUST_FOLDER',
-  }, null, 2), 'utf8');
-
-  return managedHome;
-}
-
 function buildManagedProviderEnv(providerId) {
   const normalizedProviderId = normalizeProviderId(providerId);
   // 1.2.91: SALES_CLAW_SESSION env を必ず注入。Phase B prompt 内の curl コマンドが
@@ -2800,30 +2594,7 @@ function buildManagedProviderEnv(providerId) {
       CLAUDE_CONFIG_DIR: path.join(managedHome, '.claude'),
     };
   }
-  if (normalizedProviderId !== 'gemini') {
-    return baseEnv;
-  }
-
-  const managedHome = prepareGeminiManagedHome(PROJECT_ROOT);
-  const parsed = path.parse(managedHome);
-  const appDataRoaming = path.join(managedHome, 'AppData', 'Roaming');
-  const appDataLocal = path.join(managedHome, 'AppData', 'Local');
-  const managedTempDir = path.join(managedHome, 'tmp');
-  return {
-    ...baseEnv,
-    HOME: managedHome,
-    USERPROFILE: managedHome,
-    HOMEDRIVE: parsed.root.replace(/\\$/, ''),
-    HOMEPATH: managedHome.slice(parsed.root.length - 1),
-    APPDATA: appDataRoaming,
-    LOCALAPPDATA: appDataLocal,
-    TEMP: managedTempDir,
-    TMP: managedTempDir,
-    XDG_CONFIG_HOME: managedHome,
-    XDG_CACHE_HOME: path.join(managedHome, '.cache'),
-    XDG_STATE_HOME: path.join(managedHome, '.state'),
-    GEMINI_CLI_TRUSTED_FOLDERS_PATH: path.join(managedHome, '.gemini', 'trustedFolders.json'),
-  };
+  return baseEnv;
 }
 
 function buildCliCommandSpec(executable, args: any[] = []) {
@@ -2964,20 +2735,13 @@ async function runProviderCliCommand(providerId, args: any[] = [], options: Reco
 
 async function ensureProviderPlaywrightMcp(providerId, options: Record<string, any> = {}) {
   const normalized = normalizeProviderId(providerId);
-  if (!['claude', 'codex', 'gemini'].includes(normalized)) {
-    return { ok: true, required: false };
-  }
 
   const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
   const playwrightMcp = localToolchain.getPlaywrightMcpCommandSpec();
-  const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
+  const listArgs = ['mcp', 'list'];
   // claude の remove は scope を明示しないと「user scope」の登録が残ったまま、
   // 直後の add が "already exists in user config" で失敗する。
-  const removeArgs = normalized === 'gemini'
-    ? ['--debug', 'mcp', 'remove', 'playwright']
-    : normalized === 'claude'
-      ? ['mcp', 'remove', '--scope', 'user', 'playwright']
-      : ['mcp', 'remove', 'playwright'];
+  const removeArgs = ['mcp', 'remove', '--scope', 'user', 'playwright'];
 
   // v2.1.0 Bug fix (2026-05-26): formFill.mode === 'internal' なら
   // Playwright MCP は登録しない (登録済なら remove)。
@@ -3053,40 +2817,28 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
   if (registeredButValid) {
     return { ok: true, required: true, configured: true };
   }
-  // 各 CLI で `mcp add` の引数形式が違う:
-  //   codex  : `codex mcp add playwright -- <command> <args...>`
-  //   gemini : `gemini mcp add playwright <command> <args...>`
-  //   claude : `claude mcp add --scope user [-e KEY=val ...] playwright -- <command> <args...>`
-  //            (--scope user で全プロジェクトで使える user-scope 登録にする。
-  //             local-scope = この cwd のみで有効、を回避)
-  let addArgs;
-  if (normalized === 'codex') {
-    addArgs = ['mcp', 'add', 'playwright', '--', playwrightMcp.command, ...playwrightMcp.args];
-  } else if (normalized === 'claude') {
-    // claude mcp add の引数順:
-    //   `mcp add --scope user <name> [-e KEY=VAL ...] -- <command> <args>`
-    // ★ 重要: -e は variadic option なので、name の前に置くと name 文字列を
-    //   env として吸い込んでしまう (claude が "Invalid environment variable
-    //   format: playwright" と返す)。name を先に配置することで variadic を
-    //   安全に確定させる。
-    const envFlags: any[] = [];
-    if (playwrightMcp.env) {
-      for (const [k, v] of Object.entries(playwrightMcp.env)) {
-        envFlags.push('-e', `${k}=${v}`);
-      }
+  // `claude mcp add --scope user playwright [-e KEY=val ...] -- <command> <args...>`
+  //   (--scope user で全プロジェクトで使える user-scope 登録にする。
+  //    local-scope = この cwd のみで有効、を回避)
+  // ★ 重要: -e は variadic option なので、name の前に置くと name 文字列を
+  //   env として吸い込んでしまう (claude が "Invalid environment variable
+  //   format: playwright" と返す)。name を先に配置することで variadic を
+  //   安全に確定させる。
+  const envFlags: any[] = [];
+  if (playwrightMcp.env) {
+    for (const [k, v] of Object.entries(playwrightMcp.env)) {
+      envFlags.push('-e', `${k}=${v}`);
     }
-    addArgs = [
-      'mcp', 'add',
-      '--scope', 'user',
-      'playwright',
-      ...envFlags,
-      '--',
-      playwrightMcp.command,
-      ...playwrightMcp.args,
-    ];
-  } else {
-    addArgs = ['--debug', 'mcp', 'add', 'playwright', playwrightMcp.command, ...playwrightMcp.args];
   }
+  const addArgs = [
+    'mcp', 'add',
+    '--scope', 'user',
+    'playwright',
+    ...envFlags,
+    '--',
+    playwrightMcp.command,
+    ...playwrightMcp.args,
+  ];
 
   const { isAlreadyExistsError } = require('./mcp-idempotency');
 
@@ -3136,24 +2888,17 @@ async function ensureProviderPlaywrightMcp(providerId, options: Record<string, a
 
 /**
  * 内製 sales-claw-form MCP server (Electron 内 WebContentsView を CDP 制御)
- * の Claude/Codex/Gemini への登録を ensure する。
+ * の Claude Code CLI への登録を ensure する。
  *
  * IPC pipe path は `_internalFormMcpIpcPipePath` グローバル変数経由で参照
  * (electron-main 側で IPC server start 後にセットする)。
  */
 async function ensureProviderInternalFormMcp(providerId, options: Record<string, any> = {}) {
   const normalized = normalizeProviderId(providerId);
-  if (!['claude', 'codex', 'gemini'].includes(normalized)) {
-    return { ok: true, required: false };
-  }
   const mode = getFormFillMode();
   const cliOptions = { timeout: 20000, env: options.env || buildManagedProviderEnv(normalized) };
-  const listArgs = normalized === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
-  const removeArgs = normalized === 'gemini'
-    ? ['--debug', 'mcp', 'remove', 'sales-claw-form']
-    : normalized === 'claude'
-      ? ['mcp', 'remove', '--scope', 'user', 'sales-claw-form']
-      : ['mcp', 'remove', 'sales-claw-form'];
+  const listArgs = ['mcp', 'list'];
+  const removeArgs = ['mcp', 'remove', '--scope', 'user', 'sales-claw-form'];
 
   // playwright モードなら 内製は登録しない (古い登録があれば cleanup)
   // v2.0.76: internal モードも buildManagedClaudeMcpServers が 'playwright' 名で
@@ -3200,19 +2945,12 @@ async function ensureProviderInternalFormMcp(providerId, options: Record<string,
   }
 
   // mcp add の引数
-  let addArgs;
   const envFlags: string[] = [];
   // IPC pipe path を env として渡す (env が無いと MCP server は connection 失敗で起動)
   if (_internalFormMcpIpcPipePath) {
     envFlags.push('-e', `SALES_CLAW_FORM_IPC_PIPE=${_internalFormMcpIpcPipePath}`);
   }
-  if (normalized === 'codex') {
-    addArgs = ['mcp', 'add', 'sales-claw-form', '--', nodeBin, shimPath];
-  } else if (normalized === 'claude') {
-    addArgs = ['mcp', 'add', '--scope', 'user', 'sales-claw-form', ...envFlags, '--', nodeBin, shimPath];
-  } else {
-    addArgs = ['--debug', 'mcp', 'add', 'sales-claw-form', nodeBin, shimPath];
-  }
+  const addArgs = ['mcp', 'add', '--scope', 'user', 'sales-claw-form', ...envFlags, '--', nodeBin, shimPath];
 
   const { isAlreadyExistsError } = require('./mcp-idempotency');
   const add: any = await runProviderCliCommand(normalized, addArgs, { timeout: 30000, env: cliOptions.env });
@@ -3623,7 +3361,8 @@ function estimateTextTokens(text) {
   return Math.max(1, Math.ceil(String(text || '').length / 4));
 }
 
-const MANAGED_AI_CONTRACT_VERSION = 1;
+// 2 — 内蔵モードのセッションルール / 承認待ちモードのボタン制限を反映
+const MANAGED_AI_CONTRACT_VERSION = 2;
 
 function trimOneLineText(value, maxLength = 160) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
@@ -3723,7 +3462,21 @@ function buildCompactApproachPayload(objective = '', guardrails = '') {
   return payload;
 }
 
-function buildTabManagementContractLines() {
+function buildTabManagementContractLines(formFillMode = getFormFillMode()) {
+  // internal モード (内蔵 WebContentsView) では Playwright 時代のタブ契約
+  //   (baselineTabs / workingTabs / finalFormTab / タブを閉じる) は不要。CLAUDE.md の
+  //   Session lifecycle contract と同じ「1 社 = 1 sessionId」ルールだけを渡す。
+  //   旧契約を送り続けると、存在しない Chromium タブの管理に CLI がターンを浪費し、
+  //   サーバーが自動で閉じるセッションを「残す」指示とも矛盾していた。
+  if (formFillMode !== 'playwright') {
+    return [
+      'SALES_CLAW_SESSION_RULES',
+      '- 1 社 = 1 セッション (sessionId)。新規セッションは browser_navigate({url, companyNo}) か browser_tabs({action:"new", url, companyNo}) で開き、companyNo を必ず渡す (ss-{No}-*.png の命名に使われる。省略するとエラー)',
+      '- その会社の browser_* 操作はすべて同じ sessionId で行う。他社のセッションを navigate で上書きしない',
+      '- awaiting_approval のセッションは人間確認用にサーバーが残す。submitted / skipped / error のセッションはサーバーが自動で閉じる (タブを手動で閉じる作業は不要)',
+      '- awaiting_approval / submitted の details には sentMessage (または sentMessageFile)、screenshot、formUrl (実際に入力したフォームの URL) を含める',
+    ];
+  }
   return [
     'SALES_CLAW_TAB_CONTRACT',
     '- 開始時に browser_tabs で既存タブを記録し baselineTabs とする',
@@ -3762,22 +3515,24 @@ function buildManagedAiSessionContract(providerId = getManagedAiProvider(), opti
           '- ブラウザ操作は内蔵ブラウザ MCP (browser_* ツール) のみ使用。別の Web 取得 MCP は使わない',
           '- 各社のタブは browser_tabs({action:"new", url, companyNo}) で開く。window.open は使わない (内蔵ブラウザでは追従しない)',
         ]),
-    '- 既存タブを navigate で上書きしない',
+    ...(getFormFillMode() === 'playwright' ? ['- 既存タブを navigate で上書きしない'] : []),
     '- CAPTCHA / reCAPTCHA / hCaptcha / Turnstile / ロボチェッカーの画像チャレンジは解かない',
     '- CAPTCHA を見つけたら停止せず、まず可能な限り全フィールドを入力 → ss-{No}-input.png 撮影 → awaiting_approval (人間が CAPTCHA 解いて送信)',
     '- visible な checkbox 型 reCAPTCHA v2 (「私はロボットではありません」) は browser_click で 1 回だけ試行可。画像チャレンジが出たら諦めて awaiting_approval',
     '- CAPTCHA を理由に error にするのは「フォーム自体が表示されない」「CAPTCHA より前に進めない (Cloudflare 等のページゲート)」場合だけ',
     '- 営業NG / 対象外は skipped',
-    '- site_analysis が不十分 (サイト本文不足 / URL未設定 / 取得失敗) の会社はフォーム入力せず error/skipped',
+    '- urlMissing=false なのにサイト本文が取得できていない会社はフォーム入力せず error (urlMissing=true は batch_rules の WebSearch 手順に従う)',
     '- awaiting_approval はフォーム入力済み + ss-{No}-input.png 作成済み + sentMessage 付きの場合だけ許可',
-    '- form_fill → confirm_reached → awaiting_approval / submitted の順で記録',
+    '- form_fill (全項目入力後) → confirm_reached (ss-{No}-input.png 撮影後。確認画面が無いフォームでも記録する) → awaiting_approval / submitted の順で記録。form_fill / confirm_reached が無いと API が 422 で拒否する',
     '- 入力項目と本文の社員数・設立年・資本金などは設定にある値だけ使う。推測しない',
-    '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になってから送信ボタンを押す。送信/確認ボタンは browser_snapshot の buttons 配列 (selector+text, 最有力が先頭) から選んで browser_click する',
+    autoSendSafe
+      ? '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になってから送信ボタンを押す。送信/確認ボタンは browser_snapshot の buttons 配列 (selector+text, 最有力が先頭) から選んで browser_click する'
+      : '- ★ 一発入力: browser_fill_form の戻り値 validation.problems (必須未入力/未チェック/ラジオ未選択/形式エラー) が空になるまで直してから ss-{No}-input.png を撮る。ボタンは確認画面へ進むもの (browser_snapshot の buttons 配列から選ぶ) 以外は押さない',
     autoSendSafe
       ? '- ★ sendPolicy=safe-auto-send: 全項目の入力に成功し、必須の同意チェックボックスも入れ、確認画面に到達できたら、ためらわず送信ボタン (「送信」「確認」「送信する」「Submit」「同意して送信」等) を browser_click して submitted まで完了させる。送信を止めて awaiting_approval にしてよいのは次の4つだけ: (1) 操作が必要な画像/チェック型 CAPTCHA が残る、(2) 設定に無い値を要求する必須項目があり埋められない、(3) 営業NG/対象外フォーム → skipped、(4) 送信ボタンを押しても確認画面/完了画面に進めない。これ以外の「念のため」「不確実だから」を理由に止めてはいけない'
-      : '- 送信は行わず awaiting_approval で止める',
-    '- submitted まで進めたら必ず ss-{No}-sent.png を残し、その会社のタブ (セッション) は閉じる',
-    '- awaiting_approval / error / skipped は入力済みタブを残す。送れなかったタブは残す',
+      : '- 送信は行わず awaiting_approval で止める。押してよいのは「確認」「次へ」「入力内容を確認」等の確認画面へ進むボタンだけで、「送信」「送信する」「Submit」「Send」「同意して送信」は押さない',
+    '- submitted まで進めたら必ず ss-{No}-sent.png を残す',
+    '- awaiting_approval のセッションは残る (人間が確認・送信する)。error / skipped のセッションはサーバーが閉じる',
     '- 同じセッションではこの契約を再説明しない。以後の batch payload だけ実行する',
   ].join('\n');
 }
@@ -4212,22 +3967,6 @@ async function stopManagedClaudePty(options: Record<string, any> = {}) {
   };
 }
 
-function getHeadlessRunStatus(providerId = getSelectedAiProvider()) {
-  const run = getActiveHeadlessRun(providerId);
-  if (!run) return null;
-  return {
-    provider: run.provider,
-    providerLabel: getProviderDisplayName(run.provider),
-    running: true,
-    managed: false,
-    headless: true,
-    mode: run.mode,
-    promptFile: run.promptFile,
-    runLogFile: run.logFile,
-    startedAt: run.startedAt,
-  };
-}
-
 function createHeadlessAiLogFile(providerId: string, slotIdx?: number) {
   ensureDataDir();
   // Slot 単位で別ファイルにする (P1-4 並列実行で 3 本同時起動するため
@@ -4255,52 +3994,9 @@ function appendHeadlessAiLog(filePath, stream, text) {
   } catch (_) {}
 }
 
-async function stopHeadlessAiRun(providerId: any = null) {
-  const run = getActiveHeadlessRun(providerId);
-  if (!run) {
-    return { ok: true, stopped: false, method: 'noop' };
-  }
-
-  const child = run.child;
-  const pid = child && Number.isFinite(child.pid) ? child.pid : null;
-  let stopped = false;
-
-  if (pid && process.platform === 'win32') {
-    const result: any = await execCommand(`taskkill /PID ${pid} /T /F`, { timeout: 5000 });
-    stopped = !result.error;
-  } else if (child && typeof child.kill === 'function') {
-    try {
-      stopped = child.kill('SIGTERM');
-    } catch (_) {
-      stopped = false;
-    }
-  }
-
-  await new Promise<any>((resolve) => setTimeout(resolve, 500));
-  if (headlessAiRun === run) {
-    headlessAiRun = null;
-    invalidateAiStatusCache(run.provider);
-  }
-
-  return {
-    ok: true,
-    stopped: !!stopped,
-    method: process.platform === 'win32' ? 'taskkill' : 'kill',
-    provider: run.provider,
-  };
-}
-
-function companyHasLogSince(companyNo, startedAtMs) {
-  return getAllLogs().some((entry: any) => {
-    if (String(entry.companyNo) !== String(companyNo)) return false;
-    const timestampMs = Date.parse(entry.timestamp || '');
-    return Number.isFinite(timestampMs) && timestampMs >= startedAtMs;
-  });
-}
-
 function companyHasTerminalLogSince(companyNo, startedAtMs) {
   const terminalActions = new Set(['awaiting_approval', 'submitted', 'skipped', 'error']);
-  return getAllLogs().some((entry: any) => {
+  return getAllLogsReadonly().some((entry: any) => {
     if (String(entry.companyNo) !== String(companyNo)) return false;
     if (!terminalActions.has(String(entry.action || '').trim())) return false;
     const timestampMs = Date.parse(entry.timestamp || '');
@@ -4342,191 +4038,6 @@ function markParallelCompaniesFailed(companies, reason, meta: Record<string, any
       }
     } catch (_) { /* session 掃除は best-effort */ }
   });
-}
-
-function deriveHeadlessFailureReason(run, exitCode, signal) {
-  const providerLabel = getProviderDisplayName(run.provider);
-  const text = String(run.recentOutput || '');
-  if (/usage limit/i.test(text)) {
-    return `${providerLabel} の利用上限に達しており、今回の自動実行を開始できませんでした。`;
-  }
-  if (/CreateProcessAsUserW failed: 5/i.test(text) || /windows sandbox/i.test(text)) {
-    return `${providerLabel} の Windows sandbox 実行で shell が失敗しました。headless no-approval 実行でもローカルコマンドを開始できていません。`;
-  }
-  if (/user cancelled MCP tool call/i.test(text)) {
-    return `${providerLabel} が MCP Playwright の操作をキャンセルしました。権限・実行モード・provider 側の自動実行設定を確認してください。`;
-  }
-  if (/Not enough arguments following: p/i.test(text)) {
-    return `${providerLabel} の headless prompt 引数が不正でした。`;
-  }
-  return exitCode === 0
-    ? `${providerLabel} headless automation finished without processing the queued company.`
-    : `${providerLabel} headless automation exited early (code=${exitCode}, signal=${signal || 'none'}).`;
-}
-
-function markHeadlessAutomationFailure(run, exitCode, signal) {
-  const providerLabel = getProviderDisplayName(run.provider);
-  const reason = deriveHeadlessFailureReason(run, exitCode, signal);
-
-  (run.companies || []).forEach((company: any) => {
-    if (companyHasLogSince(company.no, run.startedAtMs)) return;
-    logAction(company.no, company.companyName || company.name || '', 'error', {
-      source: `${run.provider}-headless`,
-      action: 'error',
-      detail: reason,
-      promptFile: run.promptFile,
-      runLogFile: run.logFile,
-      provider: run.provider,
-      exitCode,
-      signal: signal || null,
-    });
-    finishLiveMonitor(company.no, {
-      source: `${run.provider}-headless`,
-      companyNo: company.no,
-      companyName: company.companyName || company.name || '',
-      status: 'error',
-      step: providerLabel + ' headless automation failed',
-      currentUrl: company.formUrl || company.url || '',
-    });
-  });
-}
-
-async function startHeadlessAiAutomationRun(companies, providerId = getSelectedAiProvider()) {
-  const normalizedProviderId = normalizeProviderId(providerId);
-  if (!isHeadlessAutomationProvider(normalizedProviderId)) {
-    throw new Error(`${getProviderDisplayName(normalizedProviderId)} does not support headless automation routing.`);
-  }
-  if (headlessAiRun) {
-    throw new Error(`${getProviderDisplayName(headlessAiRun.provider)} の headless automation がまだ実行中です。完了を待つか停止してください。`);
-  }
-
-  const provider = getProvider(normalizedProviderId);
-  const sender = settings.getSender();
-  const promptText = buildClaudeFormFillPrompt(companies, sender, normalizedProviderId);
-  const promptFile = writeWorkspaceClaudeFormFillPromptFile(companies, promptText, normalizedProviderId);
-  const model = getClaudeAutomationModel(normalizedProviderId);
-  // v2.1.0: ブラウザ自動化 MCP はモードで異なる (internal=内蔵 / playwright=外部)。
-  //   tool 名 (browser_*) は両モードでミラーされるため特定 MCP を名指ししない。
-  const kickoffPrompt = [
-    `次の指示ファイルを読んで、その内容を実行してください: ${promptFile}`,
-    `必ず ${provider.cliLabel} と利用可能なブラウザ自動化 MCP (browser_* ツール) を使って進めてください。`,
-    'リポジトリ内の direct worker / 独自 JS automation は使わないでください。',
-    '送信は行わず、確認待ちまでで止め、フォームタブは閉じないでください。',
-  ].join('\n');
-  const invocationPrompt = normalizedProviderId === 'gemini'
-    ? '以下に stdin で渡す Sales Claw automation instructions を、その場で実行してください。要約だけで終わらず、実際にツールを呼び出して処理してください。'
-    : '';
-  const stdinPrompt = normalizedProviderId === 'gemini' ? promptText : promptText;
-  const automationMode = getAutomationModeForProvider(normalizedProviderId);
-  const headlessSpec = buildHeadlessArgs(normalizedProviderId, automationMode, {
-    model,
-    cwd: PROJECT_ROOT,
-    prompt: invocationPrompt,
-  });
-  const executable: any = await resolveClaudeExecutable(normalizedProviderId);
-  if (process.platform === 'win32' && executable === provider.id) {
-    throw new Error(`${provider.cliLabel} が未インストールです。ダッシュボードの「AI CLI を準備」ボタンでセットアップしてください。`);
-  }
-  const spawnSpec = buildCliCommandSpec(executable, headlessSpec.args);
-  const logFile = createHeadlessAiLogFile(normalizedProviderId);
-  const { spawn } = require('child_process');
-  const child = spawn(spawnSpec.command, spawnSpec.args, {
-    cwd: PROJECT_ROOT,
-    env: buildManagedProviderEnv(normalizedProviderId),
-    windowsHide: true,
-    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments === true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  const run = {
-    provider: normalizedProviderId,
-    mode: `headless-${headlessSpec.effectiveMode}`,
-    child,
-    promptFile,
-    logFile,
-    companies: companies.map((company: any) => ({ ...company })),
-    startedAt: new Date().toISOString(),
-    startedAtMs: Date.now(),
-    recentOutput: '',
-  };
-  headlessAiRun = run;
-  invalidateAiStatusCache(normalizedProviderId);
-
-  const targets = companies.map((company: any) => ({
-    companyNo: company.no,
-    companyName: company.companyName || company.name || '',
-  }));
-  setTargets(targets, true);
-
-  companies.forEach((company: any) => {
-    updateLiveMonitor(company.no, {
-      source: `${provider.id}-headless`,
-      companyNo: company.no,
-      companyName: company.companyName || company.name || '',
-      status: 'queued',
-      step: `${provider.displayName} headless CLI に作業指示を送信`,
-      currentUrl: company.formUrl || company.url || '',
-    });
-  });
-
-  emitClaudeAutomationLog(`[AIフォーム入力開始] ${companies.length}社の処理を ${provider.displayName} headless CLI に依頼しました。\n`, 'system', normalizedProviderId);
-  emitClaudeAutomationLog(`[Prompt file] ${promptFile}\n`, 'system', normalizedProviderId);
-  emitClaudeAutomationLog(`[Run log] ${logFile}\n`, 'system', normalizedProviderId);
-  appendHeadlessAiLog(logFile, 'system', `[start] provider=${normalizedProviderId} mode=${run.mode} promptFile=${promptFile}\n`);
-
-  child.stdout.on('data', (chunk) => {
-    run.recentOutput = `${run.recentOutput || ''}${String(chunk)}`.slice(-12000);
-    appendHeadlessAiLog(logFile, 'stdout', chunk);
-    emitClaudeAutomationLog(String(chunk), 'stdout', normalizedProviderId);
-  });
-  child.stderr.on('data', (chunk) => {
-    run.recentOutput = `${run.recentOutput || ''}${String(chunk)}`.slice(-12000);
-    appendHeadlessAiLog(logFile, 'stderr', chunk);
-    emitClaudeAutomationLog(String(chunk), 'stderr', normalizedProviderId);
-  });
-  child.on('error', (error) => {
-    appendHeadlessAiLog(logFile, 'error', `${error.message}\n`);
-    appendDiagnosticEvent('headless_ai_spawn_error', {
-      provider: normalizedProviderId,
-      error: error.message,
-      promptFile,
-      runLogFile: logFile,
-    });
-  });
-  child.on('exit', (exitCode, signal) => {
-    appendHeadlessAiLog(logFile, 'system', `[exit] code=${exitCode} signal=${signal || 'none'}\n`);
-    emitClaudeAutomationLog(`\n[${provider.displayName} headless exit code=${exitCode} signal=${signal || 'none'}]\n`, 'system', normalizedProviderId);
-    if (headlessAiRun === run) {
-      headlessAiRun = null;
-    }
-    if (exitCode !== 0 || (run.companies || []).some((company: any) => !companyHasLogSince(company.no, run.startedAtMs))) {
-      markHeadlessAutomationFailure(run, exitCode, signal);
-    }
-    appendDiagnosticEvent('headless_ai_exit', {
-      provider: normalizedProviderId,
-      exitCode,
-      signal: signal || null,
-      promptFile,
-      runLogFile: logFile,
-    });
-    invalidateAiStatusCache(normalizedProviderId);
-    notifyClients({ type: 'claude-exit', code: exitCode, provider: normalizedProviderId, time: Date.now() });
-  });
-
-  if (headlessSpec.promptViaStdin && child.stdin) {
-    child.stdin.write(stdinPrompt);
-    child.stdin.end();
-  }
-
-  return {
-    ok: true,
-    count: companies.length,
-    provider: normalizedProviderId,
-    providerLabel: provider.displayName,
-    mode: run.mode,
-    promptFile,
-    runLogFile: logFile,
-  };
 }
 
 function getScreenshotArtifacts(companyNo, options: Record<string, any> = {}) {
@@ -5098,53 +4609,12 @@ async function resolveClaudeExecutable(providerId = getSelectedAiProvider()) {
   });
 
   if (candidates[0]) {
-    let chosen = candidates[0];
-    // Codex 専用: node.js wrapper チェーン (cmd → codex.cmd → node → codex.js → spawn(rust, stdio:'inherit'))
-    // を経由すると Electron + node-pty の ConPTY 状態が最深 spawn 'inherit' で TTY を失い
-    // Rust 側 isatty(stdin) が false → "stdin is not a terminal" で即終了する。
-    // wrapper を 1 段にするため、可能なら Rust .exe (codex.exe) を直接起動する。
-    if (provider.id === 'codex') {
-      const rustExe = resolveCodexRustExecutable(chosen);
-      if (rustExe) chosen = rustExe;
-    }
+    const chosen = candidates[0];
     _aiExecutablePath[cacheKey] = chosen;
     return chosen;
   }
 
   return provider.id;
-}
-
-function resolveCodexRustExecutable(wrapperPath) {
-  if (!wrapperPath || process.platform !== 'win32') return null;
-  try {
-    const wrapperDir = path.dirname(wrapperPath);
-    // Codex の Rust バイナリは codex CLI のバージョン/インストール経路で複数の場所に存在しうる:
-    //   A. npm global flat (codex 0.118 nested):
-    //      <npmDir>/codex.cmd → <npmDir>/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   B. npm global flat (codex 0.128+ flat):
-    //      <npmDir>/codex.cmd → <npmDir>/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   C. Sales Claw managed toolchain:
-    //      <toolchain>/node_modules/.bin/codex.cmd → <toolchain>/node_modules/@openai/codex-win32-x64/vendor/.../codex.exe
-    //   D. Codex 0.118 toolchain (nested):
-    //      <toolchain>/node_modules/.bin/codex.cmd → <toolchain>/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/...
-    const triple = 'x86_64-pc-windows-msvc';
-    const tail = path.join('@openai', 'codex-win32-x64', 'vendor', triple, 'codex', 'codex.exe');
-    const searchRoots = [
-      // (A) npm global, nested codex 0.118
-      path.join(wrapperDir, 'node_modules', '@openai', 'codex', 'node_modules'),
-      // (B) npm global, flat 0.128+
-      path.join(wrapperDir, 'node_modules'),
-      // (C) toolchain .bin → 1 つ上の node_modules
-      path.join(wrapperDir, '..'),
-      // (D) toolchain .bin → 0.118 の入れ子構造
-      path.join(wrapperDir, '..', '@openai', 'codex', 'node_modules'),
-    ];
-    for (const root of searchRoots) {
-      const candidate = path.join(root, tail);
-      if (fs.existsSync(candidate)) return path.resolve(candidate);
-    }
-  } catch (_) { /* fall through */ }
-  return null;
 }
 
 async function resolveNodeExecutable() {
@@ -5181,70 +4651,39 @@ async function probeClaudeAuthStatus(providerId = getSelectedAiProvider()) {
     };
   }
 
-  if (provider.id === 'claude') {
-    const result: any = await runProviderCliCommand(provider.id, ['auth', 'status', '--json'], {
-      timeout: 8000,
-      env: buildManagedProviderEnv(provider.id),
-    });
-    if (!result.ok) {
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: false,
-        error: String(result.stderr || result.stdout || result.error?.message || 'Claude auth status failed.').trim(),
-      };
-    }
-
-    try {
-      const parsed = JSON.parse(String(result.stdout || '{}'));
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: !!parsed.loggedIn,
-        authMethod: parsed.authMethod || null,
-        email: parsed.email || null,
-        orgName: parsed.orgName || null,
-        subscriptionType: parsed.subscriptionType || null,
-        error: parsed.loggedIn ? null : 'Claude CLI is not authenticated.',
-      };
-    } catch (error) {
-      return {
-        provider: provider.id,
-        installed: true,
-        loggedIn: false,
-        error: String(result.stdout || result.stderr || error.message || 'Could not parse Claude auth status.').trim(),
-      };
-    }
-  }
-
-  if (provider.id === 'codex') {
-    const result: any = await runProviderCliCommand(provider.id, ['login', 'status'], {
-      timeout: 8000,
-      env: buildManagedProviderEnv(provider.id),
-    });
-    const output = String(result.stdout || result.stderr || '').trim();
-    const loggedIn = /logged in/i.test(output) || /chatgpt/i.test(output);
+  const result: any = await runProviderCliCommand(provider.id, ['auth', 'status', '--json'], {
+    timeout: 8000,
+    env: buildManagedProviderEnv(provider.id),
+  });
+  if (!result.ok) {
     return {
       provider: provider.id,
       installed: true,
-      loggedIn,
-      authMethod: loggedIn ? 'chatgpt' : null,
-      summary: output.split(/\r?\n/)[0] || null,
-      error: loggedIn ? null : (output || 'Codex CLI is not authenticated.'),
+      loggedIn: false,
+      error: String(result.stderr || result.stdout || result.error?.message || 'Claude auth status failed.').trim(),
     };
   }
 
-  const loggedIn = hasAnyAuthFile(provider.id)
-    || !!process.env.GEMINI_API_KEY
-    || !!process.env.GOOGLE_API_KEY;
-  return {
-    provider: provider.id,
-    installed: true,
-    loggedIn,
-    authMethod: loggedIn ? 'cached_credentials' : null,
-    probeReliability: 'heuristic',
-    error: loggedIn ? null : 'Gemini CLI cached credentials were not found.',
-  };
+  try {
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    return {
+      provider: provider.id,
+      installed: true,
+      loggedIn: !!parsed.loggedIn,
+      authMethod: parsed.authMethod || null,
+      email: parsed.email || null,
+      orgName: parsed.orgName || null,
+      subscriptionType: parsed.subscriptionType || null,
+      error: parsed.loggedIn ? null : 'Claude CLI is not authenticated.',
+    };
+  } catch (error) {
+    return {
+      provider: provider.id,
+      installed: true,
+      loggedIn: false,
+      error: String(result.stdout || result.stderr || error.message || 'Could not parse Claude auth status.').trim(),
+    };
+  }
 }
 
 async function probeNpmStatus() {
@@ -5256,23 +4695,12 @@ async function probePlaywrightPackageStatus(npmStatus: any = null) {
   return localToolchain.probePlaywrightMcpStatus();
 }
 
-async function probeProviderPlaywrightSetup(providerId = getSelectedAiProvider()) {
-  const normalizedProviderId = normalizeProviderId(providerId);
-  if (!['codex', 'gemini'].includes(normalizedProviderId)) {
-    return {
-      configured: null,
-      error: null,
-      note: 'Claude validates Playwright access at launch/runtime. Codex and Gemini additionally require MCP registration.',
-    };
-  }
-  const listArgs = normalizedProviderId === 'gemini' ? ['--debug', 'mcp', 'list'] : ['mcp', 'list'];
-  const result: any = await runProviderCliCommand(normalizedProviderId, listArgs, { timeout: 20000 });
-  const output = `${String(result.stdout || '')}\n${String(result.stderr || '')}`.trim();
-  const configured = !!(result.ok && /playwright/i.test(output));
+// Claude は Playwright / 内蔵 form MCP へのアクセスを起動時・実行時に検証する。
+async function probeProviderPlaywrightSetup(_providerId = getSelectedAiProvider()) {
   return {
-    configured,
-    error: configured ? null : (output || `${getProviderDisplayName(normalizedProviderId)} MCP list did not report Playwright.`),
-    note: configured ? 'Playwright MCP is registered.' : 'Playwright MCP is not registered yet.',
+    configured: null,
+    error: null,
+    note: 'Claude validates Playwright access at launch/runtime.',
   };
 }
 
@@ -5300,20 +4728,10 @@ async function probeAiSetupDiagnostics(providerId = getSelectedAiProvider()) {
       probeProviderPlaywrightSetup(normalizedProviderId),
       probeClaudeStatus(normalizedProviderId),
     ]);
-  const workspaceTrusted = normalizedProviderId === 'codex'
-    ? {
-      configured: isCodexWorkspaceTrusted(PROJECT_ROOT),
-      note: 'Codex では trusted workspace 設定が必要です。',
-    }
-    : normalizedProviderId === 'gemini'
-      ? {
-        configured: isGeminiWorkspaceTrusted(PROJECT_ROOT),
-        note: 'Gemini では trustedFolders / projects 登録が必要です。',
-      }
-      : {
-        configured: true,
-        note: 'Claude は workspace trust の事前設定を必要としません。',
-      };
+  const workspaceTrusted = {
+    configured: true,
+    note: 'Claude は workspace trust の事前設定を必要としません。',
+  };
   return {
     provider: normalizedProviderId,
     providerLabel: provider.displayName,
@@ -5446,12 +4864,6 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
     }
   }
   } // v2.0.82: end of `if (getFormFillMode() !== 'internal')` (playwright Chromium prep block)
-  if (selectedProviderId === 'codex') {
-    ensureCodexWorkspaceTrusted(PROJECT_ROOT);
-  }
-  if (selectedProviderId === 'gemini') {
-    ensureGeminiWorkspaceTrusted(PROJECT_ROOT);
-  }
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && claudePty && managedProviderId === selectedProviderId) {
     await restartManagedAiSessionForAuthRefresh(selectedProviderId);
   }
@@ -5509,14 +4921,6 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
         autoSendSafe: managedAiAutoSendSafe,
       });
     }
-  }
-  const activeRun = getActiveHeadlessRun();
-  if (activeRun) {
-    return {
-      ok: false,
-      statusCode: 409,
-      error: `現在は ${getProviderDisplayName(activeRun.provider)} の headless automation が実行中です。確認待ちタブを残すため、完了を待つか停止してから managed セッションで実行してください。`,
-    };
   }
   if (requiresManagedAiSessionForFormFill(selectedProviderId) && !claudePty) {
     const { withRetry } = require('./retry-helper');
@@ -5641,6 +5045,27 @@ async function ensureClaudeAutomationReady(providerId = getSelectedAiProvider())
   };
 }
 
+// Phase A 1 社あたりの上限時間。内部ではサイト解析 60s + LLM 解析 120s +
+// 文面生成 60s + フォーム URL 探索 (最大 16 fetch) が直列に走り得るため 8 分を既定にする。
+const PHASE_A_WORKER_TIMEOUT_DEFAULT_MS = 8 * 60 * 1000;
+function getPhaseAWorkerTimeoutMs() {
+  const fromEnv = Number(process.env.SALES_CLAW_PHASE_A_TIMEOUT_MS);
+  return Number.isFinite(fromEnv) && fromEnv >= 30 * 1000 ? fromEnv : PHASE_A_WORKER_TIMEOUT_DEFAULT_MS;
+}
+
+function killPhaseAChildTree(child) {
+  if (!child || child.exitCode !== null) return;
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      // parallel-analysis は claude -p を孫プロセスとして spawn するのでツリーごと止める
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch (_) { /* best-effort */ }
+}
+
 async function runParallelAnalysisWorker(company, nodeExecutable) {
   const { spawn } = require('child_process');
   const startedAtMs = Date.now();
@@ -5671,9 +5096,7 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
   // 削っておく (parallel-analysis.cjs から別経路で AI を呼ばれた場合の保険)。
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildSanitizedSpawnEnv, stripSanitizerMeta } = require('./spawn-env-sanitizer');
-  // provider-home: parallel-analysis.cjs から呼ばれる CLI は 'claude' を想定
-  // (settings.aiProvider が codex/gemini でも、その provider の HOME を解決する
-  // ロジックは leaf 側で持つので、ここでは claude の provider-home のみ仕込む)
+  // provider-home: parallel-analysis.cjs から呼ばれる CLI は 'claude' のみ。
   const providerHomeDir = getManagedProviderHome('claude');
   const sanitizedEnv = buildSanitizedSpawnEnv({
     providerId: 'claude',
@@ -5701,6 +5124,17 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
     activePhaseAChildProcesses.add(child);
     let stdout = '';
     let stderr = '';
+    // 1 社の Phase A がハング (page.goto / claude -p の応答待ち等) すると
+    //   /api/ai-form-fill 全体が返らなくなるため、上限時間で子プロセスごと打ち切る。
+    let timedOut = false;
+    const timeoutMs = getPhaseAWorkerTimeoutMs();
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      killPhaseAChildTree(child);
+    }, timeoutMs);
+    if (typeof timeoutTimer.unref === 'function') timeoutTimer.unref();
+    child.on('close', () => clearTimeout(timeoutTimer));
+    child.on('error', () => clearTimeout(timeoutTimer));
 
     child.stdout.on('data', (chunk) => {
       stdout += String(chunk || '');
@@ -5722,6 +5156,19 @@ async function runParallelAnalysisWorker(company, nodeExecutable) {
     });
     child.on('close', (exitCode) => {
       activePhaseAChildProcesses.delete(child);
+      if (timedOut) {
+        resolve({
+          ok: false,
+          companyNo: company.no,
+          companyName: company.companyName || company.name || '',
+          elapsedMs: Date.now() - startedAtMs,
+          error: `企業分析 (Phase A) が ${Math.round(timeoutMs / 1000)} 秒以内に完了しなかったため打ち切りました (タイムアウト)`,
+          timedOut: true,
+          stdout,
+          stderr,
+        });
+        return;
+      }
       const parsed = extractPromptJsonLine(stdout);
       if (parsed && parsed.ok) {
         resolve({
@@ -5813,28 +5260,22 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
   // LLM 解析が 90 秒タイムアウトしていた。Claude CLI の同時起動を抑えるため
   // Phase A の並列度を 2 に固定する (LLM 解析 + メッセージ生成で実質 4 並列)。
   //
-  // v2.0.48 F6: provider-aware に拡張。Claude は Pro 個人プランの厳しいレート
-  //   制限のため 2 を維持。Codex (OpenAI) と Gemini はアカウントレートが高く、
-  //   実測で 4 並列でも 429 を踏まない (codex は org tier、gemini は AI Studio
-  //   実績ベース)。env で override 可能、env 指定がなければ provider 別の既定値を使う。
-  //   100 社・Codex/Gemini で Phase A 時間が概ね半減する。
+  // 2 並列の制約は Phase A 内で claude -p を呼ぶ (LLM 解析 / LLM 文面生成)
+  //   場合の Claude Pro レート制限が理由。既定 (両フラグ OFF) の Phase A は HTTP 取得
+  //   だけなので 4 並列にして、最初の社が Phase B に入るまでの待ちと全体時間を短縮する。
+  //   SALES_CLAW_PHASE_A_CONCURRENCY で 1〜6 に上書き可能。
+  let phaseAUsesLlm = true;
+  try {
+    const ic = typeof settings.getIdealCustomer === 'function' ? settings.getIdealCustomer() : null;
+    phaseAUsesLlm = !!(ic && (ic.useLLMAnalyzer || ic.useLLMMessageGenerator));
+  } catch (_) { /* 設定読込失敗時は保守的に LLM 有り扱い */ }
+  const PHASE_A_DEFAULT_CONCURRENCY = phaseAUsesLlm ? 2 : 4;
+  const PHASE_A_MAX_CONCURRENCY = 6;
   const phaseAEnvOverride = Number(process.env.SALES_CLAW_PHASE_A_CONCURRENCY);
-  const phaseADefaultByProvider: Record<string, number> = {
-    claude: 2,
-    codex: 4,
-    gemini: 4,
-  };
-  const phaseAMaxByProvider: Record<string, number> = {
-    claude: 2,
-    codex: 6,
-    gemini: 6,
-  };
-  const phaseAProviderDefault = phaseADefaultByProvider[normalizedProviderId] ?? 2;
-  const phaseAProviderMax = phaseAMaxByProvider[normalizedProviderId] ?? 2;
   const phaseAEffective = Number.isFinite(phaseAEnvOverride) && phaseAEnvOverride > 0
-    ? phaseAEnvOverride
-    : phaseAProviderDefault;
-  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(phaseAProviderMax, phaseAEffective));
+    ? Math.floor(phaseAEnvOverride)
+    : PHASE_A_DEFAULT_CONCURRENCY;
+  const PHASE_A_CONCURRENCY = Math.max(1, Math.min(PHASE_A_MAX_CONCURRENCY, phaseAEffective));
   const results = new Array(companies.length);
   let nextIdx = 0;
   let phaseAAuthAbortedCount = 0;
@@ -5912,6 +5353,35 @@ async function executeBackendPhaseABatch(companies, providerId = getSelectedAiPr
     } else {
       failures.push(result);
     }
+  });
+
+  // Phase A で失敗した社 (subprocess crash / timeout / 認証失効で中断) は
+  //   subprocess 側が terminal ログを書かないことがあり、site_analysis / message_draft
+  //   のまま「処理中」に見え続けていた。バッチ開始以降に terminal ログが無い社は
+  //   ここで error を記録し、エラータブから再試行できるようにする。
+  results.forEach((result: any, idx: number) => {
+    if (result && (result.ok || (result.skipped === true && result.skipKind !== 'claude_auth_failed'))) return;
+    const company = companies[idx];
+    if (!company || company.no == null) return;
+    try {
+      if (companyHasTerminalLogSince(company.no, batchStartedAtMs)) return;
+      const companyName = company.companyName || company.name || '';
+      const reason = result && result.skipKind === 'claude_auth_failed'
+        ? 'Claude 認証失効 / レート上限のため企業分析 (Phase A) を中断しました。/login 後に再試行してください'
+        : `企業分析 (Phase A) 失敗: ${trimOneLineText((result && result.error) || 'parallel-analysis failed', 200)}`;
+      logAction(company.no, companyName, 'error', {
+        source: 'phase-a',
+        reason,
+        timedOut: !!(result && result.timedOut),
+      });
+      finishLiveMonitor(company.no, {
+        companyNo: company.no,
+        companyName,
+        status: 'error',
+        step: reason,
+        currentUrl: company.formUrl || company.url || '',
+      });
+    } catch (_) { /* ログ記録失敗で Phase A 結果の返却を止めない */ }
   });
 
   const elapsedMs = Date.now() - batchStartedAtMs;
@@ -6134,6 +5604,7 @@ function buildClaudeFormFillPrompt(companies, sender, providerId = getManagedAiP
     approachPayload,
     '',
     'batch_rules:',
+    // 並列ヘッドレス経路は session contract を経由しないため batch payload にも含める。
     ...buildTabManagementContractLines(),
     ...batchRuleLines,
     '',
@@ -6238,11 +5709,11 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   //          実機 prompt 中央値 13K chars → 10.7K chars 目標 (Phase B 全体 ~10% トークン削減)
   const curlTemplate = `curl -s -X POST -H "Content-Type: application/json" -H "x-sales-claw-session: \${SALES_CLAW_SESSION}" -d '<JSON>' \${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action`;
   const messageLines = isFirstBatchInSession ? [
-    `Sales Claw batch payload。${provider.cliLabel} + MCP Playwright で実行。前回会話は引き継がず、この batch のみ実行。`,
+    `Sales Claw batch payload。${provider.cliLabel} + ブラウザ自動化 MCP (browser_* ツール) で実行。前回会話は引き継がず、この batch のみ実行。`,
     'Phase A は backend 完了済み (再分析・再生成・settings 更新はしない)。',
-    'urlMissing=true → WebSearch で「会社名 公式サイト」検索 → 公式ドメイン特定 → サイト確認 → 本文生成 → フォーム入力。公式サイト不明なら error。',
+    'urlMissing=true → batch_rules の WebSearch 手順で公式ドメイン特定 → サイト確認 → 本文生成 → フォーム入力。公式サイト不明なら error。',
     'urlMissing=false かつ siteExcerpt 空 / 取得失敗 → 本文推測せず error。',
-    '本文は companies_jsonl の messageCore を基準に、sender_json の署名・送信停止案内・住所(ある場合)で補完。社員数・設立年・資本金など sender_json に無い値は推測しない。',
+    '本文は companies_jsonl の messagePrompt で最終化し (messageDraft はフォールバック)、sender_json の署名・送信停止案内・住所(ある場合)で補完。社員数・設立年・資本金など sender_json に無い値は推測しない。',
     autoSendSafe
       ? 'CAPTCHA / 手動必須項目 / 営業NG / 不確実以外は自動送信 → ss-{No}-sent.png → submitted。送信不要は ss-{No}-input.png → awaiting_approval。'
       : '送信せず ss-{No}-input.png → awaiting_approval で停止。',
@@ -6251,9 +5722,11 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '```',
     curlTemplate,
     '```',
-    '<JSON> 例 (action 別 details はこれだけ差し替える):',
-    `  awaiting_approval: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由>","sentMessage":"<入力本文全文>","screenshot":"ss-<No>-input.png","tabKept":true}}`,
-    `  submitted:         {"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<入力本文全文>","screenshot":"ss-<No>-sent.png"}}`,
+    '<JSON> 例 (action 別 details はこれだけ差し替える。1 社あたり form_fill → confirm_reached → awaiting_approval/submitted の順):',
+    `  form_fill:         {"no":<No>,"name":"<会社名>","action":"form_fill","details":{"formUrl":"<入力したフォームURL>","filledFields":["会社名","氏名","メール","電話","本文"]}}`,
+    `  confirm_reached:   {"no":<No>,"name":"<会社名>","action":"confirm_reached","details":{"formUrl":"<入力したフォームURL>","screenshot":"ss-<No>-input.png"}}`,
+    `  awaiting_approval: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"reason":"<理由>","sentMessage":"<入力本文全文>","screenshot":"ss-<No>-input.png","formUrl":"<入力したフォームURL>"}}`,
+    `  submitted:         {"no":<No>,"name":"<会社名>","action":"submitted","details":{"sentMessage":"<入力本文全文>","screenshot":"ss-<No>-sent.png","formUrl":"<入力したフォームURL>"}}`,
     `  skipped:           {"no":<No>,"name":"<会社名>","action":"skipped","details":"<理由>"}`,
     `  error:             {"no":<No>,"name":"<会社名>","action":"error","details":"<理由>"}`,
     '会社名は JSON エスケープ ("/\\)。SALES_CLAW_SESSION / SALES_CLAW_DASHBOARD_URL は PTY 起動時に env 注入済み。',
@@ -6264,7 +5737,7 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
     '    Step 1: Write tool で UTF-8 (BOM 無し) のテキストファイルを作成',
     '        例: Write file_path=C:\\\\Users\\\\<user>\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt content=<本文全文>',
     '    Step 2: details に "sentMessageFile":"<absolute path>" を指定 (sentMessage は省略可)',
-    '    例: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"sentMessageFile":"C:\\\\Users\\\\xxx\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt","screenshot":"ss-<No>-input.png","tabKept":true,"reason":"<理由>","finalFormTab":"<実際のフォームURL>"}}',
+    '    例: {"no":<No>,"name":"<会社名>","action":"awaiting_approval","details":{"sentMessageFile":"C:\\\\Users\\\\xxx\\\\AppData\\\\Local\\\\Temp\\\\body-<No>.txt","screenshot":"ss-<No>-input.png","reason":"<理由>","formUrl":"<実際のフォームURL>"}}',
     '    → サーバが %TEMP% / OS tmp / Sales Claw data dir 配下から本文を読み、UTF-8 文字化け無しで sentMessage 記録。',
     '★★ サーバは sentMessage に `?` を 3 文字以上連続検出すると 422 で reject する。リトライ時は sentMessageFile を使うこと。',
     '',
@@ -6302,7 +5775,7 @@ function queueClaudeFormFillInManagedSession(companies, providerId = getManagedA
   });
 
   emitClaudeAutomationLog(`[AIフォーム入力開始] ${companies.length}社の2フェーズ並列処理を ${provider.displayName} CLI に依頼しました。\n  フェーズA: 企業分析+メッセージ生成（並列）\n  フェーズB: フォーム入力（順次）\n  送信ポリシー: ${autoSendSafe ? '安全なフォームは自動送信' : '確認待ちで停止'}\n`, 'system', providerId);
-  // 全プロバイダーで直接テキスト送信に統一（@file参照はGemini PTYで動作しないため）
+  // プロンプトはファイル参照ではなく直接テキストで PTY に送信する
   const queuedPrompt = [
     ...(needsSessionContract ? [sessionContractText, ''] : []),
     ...messageLines,
@@ -6544,12 +6017,6 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
     claudePty = null;
   }
 
-  if (normalizedProviderId === 'codex') {
-    ensureCodexWorkspaceTrusted(PROJECT_ROOT);
-  }
-  if (normalizedProviderId === 'gemini') {
-    ensureGeminiWorkspaceTrusted(PROJECT_ROOT);
-  }
   const launchEnv = buildManagedProviderEnv(normalizedProviderId);
   const executable: any = await resolveClaudeExecutable(normalizedProviderId);
   assertManagedAiLaunchActive(launchToken, 'after-resolve-executable');
@@ -6568,9 +6035,8 @@ async function _startManagedAiSessionImpl(mode = 'default', providerId = getSele
     err.providerLabel = provider.displayName;
     throw err;
   }
-  // 古い CLI を検出 → 起動前に actionable error を投げる。
-  // Codex 0.118 は gpt-5.5 に対応していない / 2026-05-08 でサポート終了するため、
-  // 0.128+ への更新を促す (ai-providers.cjs の minRecommendedCliVersion)。
+  // 古い CLI を検出 → 起動前に actionable error を投げる
+  // (ai-providers の minRecommendedCliVersion が設定されている場合のみ)。
   if (provider.minRecommendedCliVersion) {
     try {
       const probe: any = await runProviderCliCommand(normalizedProviderId, ['--version'], {
@@ -6952,20 +6418,6 @@ function decorateAiStatus(baseStatus, selectedProviderId, runtimeProviderId, ins
 
 async function probeClaudeStatus(providerId = getSelectedAiProvider()) {
   const selectedProviderId = normalizeProviderId(providerId);
-  const activeHeadlessStatus = headlessAiRun ? getHeadlessRunStatus(headlessAiRun.provider) : null;
-  if (activeHeadlessStatus) {
-    return {
-      ...activeHeadlessStatus,
-      selectedProvider: selectedProviderId,
-      selectedProviderLabel: getProviderDisplayName(selectedProviderId),
-      autoSendSafe: getManagedAiAutoSendSafe(),
-      installed: true,
-      version: null,
-      installState: getProviderInstallState(activeHeadlessStatus.provider),
-      installError: getProviderInstallError(activeHeadlessStatus.provider),
-      installCommand: localToolchain.getProviderInstallCommand(activeHeadlessStatus.provider),
-    };
-  }
   const runtimeProviderId = claudePty ? getManagedAiProvider() : selectedProviderId;
   const provider = getProvider(runtimeProviderId);
   const installCommand = localToolchain.getProviderInstallCommand(runtimeProviderId);
@@ -7036,7 +6488,6 @@ async function probeClaudeStatus(providerId = getSelectedAiProvider()) {
       loggedIn: !!auth.loggedIn,
       authMethod: auth.authMethod || null,
       authError: auth.error || null,
-      probeReliability: auth.probeReliability || null,
       cliTooOld: !!versionWarning,
       minVersion: versionWarning ? versionWarning.minVersion : null,
       updateCommand: versionWarning ? versionWarning.updateCommand : null,
@@ -7176,6 +6627,7 @@ function buildDashboardDataFromSources() {
   const nameToNo: Record<string, any> = {};
   const rowMap = new Map<any, any>();
   const orderedNos: any[] = [];
+  const orderedNoSet = new Set<any>();
   const targetNoSet = new Set<any>();
 
   function upsertCompanyRow(row, source = 'target') {
@@ -7194,7 +6646,7 @@ function buildDashboardDataFromSources() {
       progress: row.progress || existing.progress || '',
     };
     rowMap.set(key, next);
-    if (!orderedNos.includes(key)) orderedNos.push(key);
+    if (!orderedNoSet.has(key)) { orderedNoSet.add(key); orderedNos.push(key); }
     if (next.companyName) nameToNo[next.companyName] = next.no;
     if (source === 'target') targetNoSet.add(key);
     return key;
@@ -7549,10 +7001,10 @@ function buildPage() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sales Claw</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
-<!-- ローカルバンドル: フォント・Material Symbols・Phosphor・Tailwind (全てオフライン動作) -->
+<!-- ローカルバンドル: フォント・Material Symbols・Tailwind (全てオフライン動作) -->
+<!-- 未使用の Phosphor アイコン (CSS 78KB + webfont 147KB) の読み込みを削除 -->
 <link rel="stylesheet" href="/assets/vendor/fonts.css">
 <link rel="stylesheet" href="/assets/vendor/material-symbols.css">
-<link rel="stylesheet" href="/assets/vendor/phosphor.css">
 <link rel="stylesheet" href="/assets/vendor/tailwind.css">
 <link rel="stylesheet" href="/assets/vendor/js/xterm.css">
 <script src="/assets/vendor/js/xterm.js" defer></script>
@@ -7596,32 +7048,32 @@ ${renderStyles()}
   <div class="app-brand-meta">
     <span title="Version ${APP_VERSION}" class="app-version-chip">v${APP_VERSION}</span>
     <span class="app-build-chip" style="color:${buildMeta.fg};background:${buildMeta.bg}" title="${buildMeta.title}">${buildMeta.label}</span>
-    <button id="updateCheckBtn" type="button" title="${_t['header.updateCheck.title'] || 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.62rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
+    <button id="updateCheckBtn" type="button" title="${_t['header.updateCheck.title'] || 'Check for updates'}" style="display:flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-2);font-size:.75rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-sm)">
       <span id="updateCheckIcon" class="material-symbols-outlined" style="font-size:13px">sync</span>
       <span id="updateCheckLabel">${_t['header.updateCheck.label'] || 'Update'}</span>
     </button>
   <!-- Live status -->
   <div style="display:flex;align-items:center;gap:6px;margin-right:2px">
     <span class="live-dot on" id="liveDot"></span>
-    <span style="font-size:.62rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)" id="liveLabel">${_t['app.live'] || 'LIVE'}</span>
+    <span style="font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)" id="liveLabel">${_t['app.live'] || 'LIVE'}</span>
   </div>
-  <small style="font-size:.62rem;color:var(--text-3);margin-right:auto;font-family:var(--font-mono)" id="lastUpdate"></small>
+  <small style="font-size:.75rem;color:var(--text-3);margin-right:auto;font-family:var(--font-mono)" id="lastUpdate"></small>
   </div>
   <!-- AI status + mode widget -->
-  <div style="display:flex;align-items:center;gap:0;background:var(--bg-raised);border:1px solid var(--border-default);font-size:.72rem;border-radius:var(--radius-sm)">
+  <div style="display:flex;align-items:center;gap:0;background:var(--bg-raised);border:1px solid var(--border-default);font-size:.75rem;border-radius:var(--radius-sm)">
     <div id="claudeStatusWidget" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-right:1px solid var(--border-subtle)">
       <span id="claudeStatusDot" class="live-dot" style="width:7px;height:7px"></span>
       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" style="flex-shrink:0;opacity:.6"><path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg>
       <span id="claudeStatusLabel" style="color:var(--text-2);white-space:nowrap">AI</span>
     </div>
-    <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
-    <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
-    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_t['header.queueReset.title'] || 'Clear stuck queue'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.68rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_t['header.queueReset.label'] || 'QUEUE'}</button>
+    <button id="claudeActionBtn" onclick="claudeAction()" style="display:none;background:var(--primary);border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0"></button>
+    <button id="claudeStopBtn" onclick="stopClaude()" style="display:none;background:#dc2626;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">STOP</button>
+    <button id="queueResetBtn" onclick="resetAiQueue()" title="${_t['header.queueReset.title'] || 'Clear stuck queue'}" style="background:#7c3aed;border:none;border-left:1px solid var(--border-subtle);color:#fff;font-size:.75rem;padding:4px 10px;cursor:pointer;font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;border-radius:0 var(--radius-sm) var(--radius-sm) 0">${_t['header.queueReset.label'] || 'QUEUE'}</button>
   </div>
   <!-- Icon-only action buttons -->
   <div style="display:flex;align-items:center;gap:2px">
     <!-- v2.0.33: 言語切替トグル (ja ↔ en)。クリックで preferences.language を更新 → リロード -->
-    <button class="lang-toggle" onclick="toggleLanguage()" title="${_t['header.langToggle.title'] || 'Switch language'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.72rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
+    <button class="lang-toggle" onclick="toggleLanguage()" title="${_t['header.langToggle.title'] || 'Switch language'}" aria-label="Toggle language" style="display:flex;align-items:center;justify-content:center;width:auto;min-width:36px;height:32px;padding:0 8px;background:none;border:1px solid var(--border-default);cursor:pointer;color:var(--text-2);transition:all .15s;border-radius:var(--radius-sm);font-size:.75rem;font-weight:700;letter-spacing:.04em" onmouseover="this.style.background='var(--bg-hover)';this.style.color='var(--text-1)'" onmouseout="this.style.background='none';this.style.color='var(--text-2)'">
       <span class="material-symbols-outlined" style="font-size:14px;margin-right:4px">language</span>
       <span>${_t['header.langToggle.label'] || 'EN'}</span>
     </button>
@@ -7646,7 +7098,7 @@ ${renderStyles()}
 <div id="updateBanner" style="display:none;position:fixed;top:48px;left:0;right:0;z-index:49;background:#2563eb;color:#fff;padding:6px 16px;font-size:.75rem;font-weight:600;align-items:center;gap:8px;justify-content:center"></div>
 
 <!-- Cost summary chip (AI トークン消費概算 — pollCostSummary 経由で表示) -->
-<div id="costChip" title="${_t['cost.title.tooltip'] || 'AI token cost estimate'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.72rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
+<div id="costChip" title="${_t['cost.title.tooltip'] || 'AI token cost estimate'}" style="display:none;position:fixed;bottom:14px;left:14px;z-index:47;background:var(--bg-card);border:1px solid var(--border-default);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow-md);font-size:.75rem;line-height:1.5;color:var(--text-1);min-width:200px;max-width:300px">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
     <span style="display:inline-flex;align-items:center;gap:5px;font-weight:700">
       <span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">payments</span>
@@ -7656,7 +7108,7 @@ ${renderStyles()}
   </div>
   <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.today'] || 'Today'}</span><span id="costToday" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
   <div style="display:flex;justify-content:space-between;color:var(--text-2)"><span>${_t['cost.thisMonth'] || 'This month'}</span><span id="costMonth" style="font-family:var(--font-mono);font-weight:600;color:var(--text-1)">—</span></div>
-  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.66rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_t['cost.avgPerCompany'] || 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
+  <div style="display:flex;justify-content:space-between;color:var(--text-3);font-size:.75rem;margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px"><span>${_t['cost.avgPerCompany'] || 'Avg/company'}</span><span id="costPerCompany" style="font-family:var(--font-mono)">—</span></div>
 </div>
 
 <!-- Recovery banner (前回中断バッチの復旧通知) — pollRecoveryStatus 経由で表示 -->
@@ -7666,10 +7118,10 @@ ${renderStyles()}
     <span id="recoveryBannerText">${_t['recovery.banner.text'] || 'Recovery snapshot detected from previous session'}</span>
   </span>
   <span id="recoveryBannerDetail" style="font-weight:400;opacity:.9"></span>
-  <button id="recoveryResumeBtn" onclick="resumeRecovery()" style="background:#fff;color:#ea580c;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.72rem">
+  <button id="recoveryResumeBtn" onclick="resumeRecovery()" style="background:#fff;color:#ea580c;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.75rem">
     ${_t['recovery.banner.resume'] || 'Resume'}
   </button>
-  <button id="recoveryDiscardBtn" onclick="discardRecovery()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.72rem">
+  <button id="recoveryDiscardBtn" onclick="discardRecovery()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:.75rem">
     ${_t['recovery.banner.discard'] || 'Discard'}
   </button>
 </div>
@@ -7707,22 +7159,6 @@ ${renderStyles()}
             </div>
             <div class="lp-name">Claude</div>
             <div class="lp-sub">Anthropic</div>
-          </div>
-          <div id="launchProviderCard_codex" class="launch-provider-card codex" onclick="selectLaunchProvider('codex')">
-            <div class="lp-check">✓</div>
-            <div class="lp-icon" data-provider="codex">
-              <img src="/assets/vendor/ai-icons/codex-openai.svg" width="26" height="26" alt="Codex">
-            </div>
-            <div class="lp-name">CodeX</div>
-            <div class="lp-sub">OpenAI</div>
-          </div>
-          <div id="launchProviderCard_gemini" class="launch-provider-card gemini" onclick="selectLaunchProvider('gemini')">
-            <div class="lp-check">✓</div>
-            <div class="lp-icon" data-provider="gemini">
-              <img src="/assets/vendor/ai-icons/gemini-cli.svg" width="26" height="26" alt="Gemini CLI">
-            </div>
-            <div class="lp-name">Gemini</div>
-            <div class="lp-sub">Google</div>
           </div>
         </div>
         <select id="launchProviderSelect" style="display:none">${providerSelectHtml}</select>
@@ -7954,8 +7390,8 @@ ${renderStyles()}
   <button class="tab-btn" data-tab="live-form" title="${_lang === 'ja' ? 'AI がフォームを操作する様子を表示' : 'Watch AI fill the form live'}">
     <span class="material-symbols-outlined tab-icon">smart_toy</span>
     ${_lang === 'ja' ? '操作中' : 'AI Live'}
-    <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.55rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
-    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? '本人確認など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;align-items:center;gap:3px;background:#f59e0b;color:#3a2a00;font-size:.55rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
+    <span id="liveFormBadge" style="display:none;background:var(--success-container,#16a34a);color:#fff;font-size:.75rem;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:4px">●</span>
+    <span id="liveFormNeedsHumanBadge" title="${_lang === 'ja' ? '本人確認など要対応のセッション数' : 'Sessions needing manual action'}" style="display:none;align-items:center;gap:3px;background:#f59e0b;color:#3a2a00;font-size:.75rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
   </button>
   <!-- v2.0.93: セッションを終了 — 操作中タブで active session が居る時だけ表示 -->
   <button id="liveSessionEndInline" type="button" class="tab-end-btn" style="display:none" title="${_lang === 'ja' ? '稼働中の AI 操作セッションを終了' : 'End active AI operation session'}">
@@ -7965,7 +7401,7 @@ ${renderStyles()}
   <button class="tab-btn" data-tab="awaiting">
     <span class="material-symbols-outlined tab-icon">pending_actions</span>
     ${_t['tab.awaiting']}
-    <span style="background:var(--warning-container);color:var(--warning);font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:var(--radius-xl);font-family:var(--font-mono)" id="awaitingCount">0</span>
+    <span style="background:var(--warning-container);color:var(--warning);font-size:.75rem;font-weight:700;padding:1px 6px;border-radius:var(--radius-xl);font-family:var(--font-mono)" id="awaitingCount">0</span>
   </button>
   <button class="tab-btn" data-tab="sent">
     <span class="material-symbols-outlined tab-icon">mark_email_read</span>
@@ -7988,6 +7424,7 @@ ${renderStyles()}
 
   <!-- Dashboard tab: analytics-only view -->
   <div class="tab-content active" id="tab-dashboard">
+    <h1 class="sr-only">${_t['tab.dashboard'] || 'Dashboard'}</h1>
   <div id="analyticsRow" class="chart-panel" style="padding:20px 22px;display:flex;flex-direction:column;margin-bottom:0;gap:0">
     <!-- HERO: donut + ratio + live badge -->
     <div class="analytics-hero">
@@ -8162,13 +7599,15 @@ ${renderStyles()}
 
   <!-- Companies tab (inside main column) -->
   <div class="tab-content" id="tab-companies">
+    <h1 class="sr-only">${_t['tab.companies']}</h1>
     <div class="company-toolbar" style="flex-direction:column;gap:0">
       <!-- Row 1: Bulk action buttons -->
       <div class="bulk-toolbar" style="justify-content:flex-end">
+        <!-- 破壊的操作 (選択を削除) は左端に離し、主要操作 (AIでフォーム入力) と隣接させない (GB-4-1) -->
+        <button class="btn btn-outline-danger btn-sm" style="margin-right:auto" onclick="bulkDeleteCompanies()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
         <button class="btn btn-outline-primary btn-sm" onclick="triggerCompanyImport()">${_t['action.importTargets'] || 'Import Excel/CSV'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="openCompanyFormModal()">${_t['action.addCompany'] || 'Add Company'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="toggleAllCompanies()">${_t['action.selectAll']}</button>
-        <button class="btn btn-outline-danger btn-sm" onclick="bulkDeleteCompanies()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
         <button class="btn btn-outline-primary btn-sm" onclick="markSelectedTargets(true)">${_t['action.markTarget'] || 'Mark Target'}</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="markSelectedTargets(false)">${_t['action.unmarkTarget'] || 'Unmark Target'}</button>
         <button class="btn btn-primary btn-sm" onclick="prepareSelectedOutreach()">${_t['action.prepareOutreach'] || 'Prepare Outreach'}</button>
@@ -8188,19 +7627,19 @@ ${renderStyles()}
         <span class="filter-bar-divider" aria-hidden="true"></span>
         <div class="filter-field">
           <span class="ms">category</span>
-          <select id="companyTypeFilter">
+          <select id="companyTypeFilter" aria-label="${_lang === 'ja' ? '種別で絞り込み' : 'Filter by type'}">
             <option value="">${_t['companies.filter.typeAll'] || 'Type: All'}</option>
           </select>
         </div>
         <div class="filter-field">
           <span class="ms">trending_up</span>
-          <select id="companyProgressFilter">
+          <select id="companyProgressFilter" aria-label="${_lang === 'ja' ? '進捗で絞り込み' : 'Filter by progress'}">
             <option value="">${_t['companies.filter.progressAll'] || 'Progress: All'}</option>
           </select>
         </div>
         <div class="filter-field" style="flex:1;min-width:180px">
           <span class="ms">search</span>
-          <input type="text" id="q" placeholder="${_t['filter.search']}">
+          <input type="text" id="q" aria-label="${_t['filter.search']}" placeholder="${_t['filter.search']}">
         </div>
         <button id="clearFiltersBtn" class="filter-clear-btn" onclick="clearAllFilters()">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>
@@ -8210,8 +7649,8 @@ ${renderStyles()}
     </div>
     <div class="table-shell table-shell-scroll">
       <table class="main-table" id="mt">
-<colgroup><col style="width:36px"><col style="width:44px"><col><col style="width:110px"><col style="width:110px"><col style="width:52px"><col style="width:170px"><col style="width:180px"><col style="width:200px"></colgroup>
-<thead><tr><th class="checkbox-cell"><input type="checkbox" id="companySelectAll" class="form-check-input" onclick="toggleAllCompanies(this.checked)"></th><th onclick="sortTable('no')">${_t['th.no']} <span class="sort-icon" data-col="no"></span></th><th onclick="sortTable('name')">${_t['th.company']} <span class="sort-icon" data-col="name"></span></th><th onclick="sortTable('type')">${_t['th.type']} <span class="sort-icon" data-col="type"></span></th><th onclick="sortTable('progress')">${_t['th.progress']} <span class="sort-icon" data-col="progress"></span></th><th onclick="sortTable('sent')">${_t['th.sent']} <span class="sort-icon" data-col="sent"></span></th><th>${_t['th.formUrl']}</th><th>${_t['th.message']}</th><th class="action-cell">${_t['th.action']}</th></tr></thead>
+<colgroup><col style="width:36px"><col style="width:44px"><col><col style="width:96px"><col style="width:96px"><col style="width:88px"><col style="width:172px"><col style="width:180px"><col style="width:200px"></colgroup>
+<thead><tr><th class="checkbox-cell"><input type="checkbox" id="companySelectAll" aria-label="${_lang === 'ja' ? '表示中の企業をすべて選択' : 'Select all visible companies'}" class="form-check-input" onclick="toggleAllCompanies(this.checked)"></th><th onclick="sortTable('no')">${_t['th.no']} <span class="sort-icon" data-col="no"></span></th><th onclick="sortTable('name')">${_t['th.company']} <span class="sort-icon" data-col="name"></span></th><th onclick="sortTable('type')">${_t['th.type']} <span class="sort-icon" data-col="type"></span></th><th onclick="sortTable('progress')">${_t['th.progress']} <span class="sort-icon" data-col="progress"></span></th><th onclick="sortTable('sent')">${_t['th.sent']} <span class="sort-icon" data-col="sent"></span></th><th>${_t['th.formUrl']}</th><th>${_t['th.message']}</th><th class="action-cell">${_t['th.action']}</th></tr></thead>
         <tbody id="companyBody"></tbody>
       </table>
     </div>
@@ -8270,7 +7709,7 @@ ${renderStyles()}
     }
     .lfs-summary-item .lfs-summary-head {
       display: flex; align-items: center; gap: 6px;
-      font-size: .74rem; font-weight: 600;
+      font-size: .75rem; font-weight: 600;
       color: var(--on-surface, #111);
     }
     /* v2.0.95: 操作中タブは「純粋なブラウザが開いている」見た目に。
@@ -8298,7 +7737,7 @@ ${renderStyles()}
     .tab-end-btn {
       display: inline-flex; align-items: center; gap: 4px;
       background: linear-gradient(180deg, #ef4444, #dc2626);
-      color: #fff; border: none; font-size: .68rem; font-weight: 700;
+      color: #fff; border: none; font-size: .75rem; font-weight: 700;
       padding: 5px 10px; border-radius: 999px; cursor: pointer;
       margin-left: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.15);
       transition: filter .15s ease;
@@ -8311,12 +7750,13 @@ ${renderStyles()}
       width: 16px; height: 16px; margin-left: 4px;
       background: rgba(255,255,255,.18); color: inherit;
       border: none; border-radius: 50%; cursor: pointer;
-      font-size: 11px; line-height: 1; padding: 0;
+      font-size: 12px; line-height: 1; padding: 0;
       transition: background .15s ease;
     }
     .lf-session-close:hover { background: rgba(239,68,68,.85); color: #fff; }
   </style>
   <div class="tab-content lfs-bg" id="tab-live-form" style="height:calc(100vh - 92px);overflow:hidden">
+    <h1 class="sr-only">${_lang === 'ja' ? '操作中' : 'AI Live'}</h1>
     <!-- v2.0.93: ヘッダーカード撤去。状態は隠し span で保持 (script からの参照互換) -->
     <span id="liveSessionStatus" data-status="IDLE" style="display:none"></span>
     <span id="liveSessionId" style="display:none"></span>
@@ -8331,7 +7771,7 @@ ${renderStyles()}
         <span class="material-symbols-outlined" style="font-size:16px;color:#10b981">smart_toy</span>
         <span class="lfs-text" style="font-size:.85rem;font-weight:600">${_lang === 'ja' ? 'AI 操作中のブラウザ画面' : 'AI browser view'}</span>
         <span style="background:#10b981;width:7px;height:7px;border-radius:50%;display:inline-block"></span>
-        <span class="lfs-muted" style="font-size:.72rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
+        <span class="lfs-muted" style="font-size:.75rem">${_lang === 'ja' ? 'リアルタイムプレビュー' : 'Real-time preview'}</span>
       </div>
 
       <!-- v2.0.95: 進捗/現在の操作/実行ステップ サマリは撤去 (右下 Live Monitor に集約)。
@@ -8349,9 +7789,9 @@ ${renderStyles()}
               <text id="liveProgressText" x="18" y="20.5" text-anchor="middle" font-size="8" fill="var(--on-surface,#111)" font-weight="700">0%</text>
             </svg>
             <div style="flex:1;min-width:0">
-              <div id="liveProgressStep" class="lfs-muted" style="font-size:.7rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
+              <div id="liveProgressStep" class="lfs-muted" style="font-size:.75rem">${_lang === 'ja' ? 'ステップ - / -' : 'Step - / -'}</div>
               <div id="liveProgressLabel" class="lfs-strong" style="font-size:.82rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '待機中' : 'Idle'}</div>
-              <div id="liveProgressEta" class="lfs-muted" style="font-size:.68rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
+              <div id="liveProgressEta" class="lfs-muted" style="font-size:.75rem;margin-top:2px">${_lang === 'ja' ? '完了予定: -' : 'ETA: -'}</div>
             </div>
           </div>
         </div>
@@ -8362,7 +7802,7 @@ ${renderStyles()}
             <span>${_lang === 'ja' ? '現在の操作' : 'Current Action'}</span>
           </div>
           <div id="liveCurrentAction" class="lfs-text" style="font-size:.76rem;line-height:1.5;min-height:1.5em">${_lang === 'ja' ? 'AI が起動するとここに表示されます。' : 'Action appears here when AI starts.'}</div>
-          <div class="lfs-muted" style="font-size:.68rem;display:grid;gap:2px">
+          <div class="lfs-muted" style="font-size:.75rem;display:grid;gap:2px">
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">URL: <span id="liveCurrentUrl" style="color:#3b82f6">-</span></div>
             <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_lang === 'ja' ? '要素' : 'Element'}: <span id="liveCurrentElement" style="color:#9333ea;font-family:monospace">-</span></div>
             <div>${_lang === 'ja' ? 'ステータス' : 'Status'}: <span id="liveCurrentStatus" style="color:#10b981">${_lang === 'ja' ? '待機' : 'idle'}</span></div>
@@ -8374,8 +7814,8 @@ ${renderStyles()}
             <span class="material-symbols-outlined" style="font-size:14px;color:#f59e0b">checklist</span>
             <span>${_lang === 'ja' ? '実行ステップ' : 'Execution Steps'}</span>
           </div>
-          <div id="liveStepsList" style="overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:160px;min-height:60px;font-size:.7rem">
-            <div class="lfs-muted" style="font-size:.7rem;padding:4px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
+          <div id="liveStepsList" style="overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:160px;min-height:60px;font-size:.75rem">
+            <div class="lfs-muted" style="font-size:.75rem;padding:4px">${_lang === 'ja' ? 'AI が動作するとステップが順次表示されます' : 'Steps will appear as AI works'}</div>
           </div>
         </div>
       </div>
@@ -8390,19 +7830,23 @@ ${renderStyles()}
            外 (上) に置く必要がある。アクティブな社名 + 閉じるボタンのみの最小構成。 -->
       <div id="liveFormToolbar" style="display:none;flex-shrink:0;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--outline-variant,#d8dee5);border-bottom:none;border-radius:10px 10px 0 0;background:color-mix(in srgb, var(--surface-container-low,#fafbfc) 60%, transparent)">
         <span id="liveFormToolbarDot" style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0"></span>
-        <span id="liveFormToolbarLabel" style="font-size:.72rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
-        <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.66rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
+        <span id="liveFormToolbarLabel" style="font-size:.75rem;font-weight:600;color:var(--on-surface,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">—</span>
+        <button id="liveFormMarkSentBtn" type="button" style="display:none;align-items:center;gap:3px;border:1px solid #16a34a;background:#16a34a;color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:6px;cursor:pointer">
           <span class="material-symbols-outlined" style="font-size:13px">check</span>${_lang === 'ja' ? '送信済みにする' : 'Mark sent'}
         </button>
-        <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.66rem;padding:3px 9px;border-radius:6px;cursor:pointer">
+        <button id="liveFormCloseBtn" type="button" title="${_lang === 'ja' ? 'このブラウザを閉じる' : 'Close this browser'}" style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--outline-variant,#d8dee5);background:transparent;color:var(--on-surface,#111);font-size:.75rem;padding:3px 9px;border-radius:6px;cursor:pointer">
           <span class="material-symbols-outlined" style="font-size:13px">close</span>${_lang === 'ja' ? '閉じる' : 'Close'}
         </button>
       </div>
 
       <!-- 全幅 WebView slot -->
       <div id="liveFormViewSlot" class="lfs-view-slot">
-        <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
-          ${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}
+        <div id="liveFormEmpty" class="lfs-muted" style="position:absolute;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;font-size:.85rem;text-align:center;padding:30px">
+          <div>${_lang === 'ja' ? 'AI 起動 + フォーム入力中にここに WebView が表示されます。reCAPTCHA など人手操作も直接行えます。' : 'WebView appears here during AI form-filling.'}</div>
+          <!-- 空状態から次の操作へ 1 クリックで進める (GB-9-3) -->
+          <button type="button" class="btn btn-primary btn-sm" onclick="document.querySelector('.tab-btn[data-tab=&quot;companies&quot;]').click()">
+            ${_lang === 'ja' ? '企業一覧で対象を選んで開始する' : 'Pick companies to start'}
+          </button>
         </div>
       </div>
     </div>
@@ -8575,27 +8019,31 @@ ${renderStyles()}
 
         async function refreshLiveFormSessions() {
           try {
+            // 進捗表示に必要な liveMonitor だけを取得 (旧: 毎秒 /api/data 全体)。
+            //   操作中タブが非表示なら badge 用に sessions だけ取る。
+            const liveTabActive = document.querySelector('.tab-content.active')?.id === 'tab-live-form';
             const [sessionsRes, dataRes] = await Promise.all([
               fetch('/api/form-session'),
-              fetch('/api/data'),
+              liveTabActive ? fetch('/api/live-monitor') : Promise.resolve(null),
             ]);
             if (!sessionsRes.ok) return;
             const j = await sessionsRes.json();
             const list = j.sessions || [];
-            const data = dataRes.ok ? await dataRes.json() : { liveMonitor: { events: [] } };
+            const badge = document.getElementById('liveFormBadge');
+            if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
+            if (!liveTabActive) return; // 非表示タブの DOM は書き換えない
+            const data = dataRes && dataRes.ok ? await dataRes.json() : { liveMonitor: { events: [] } };
             const events = (data.liveMonitor && data.liveMonitor.events) || [];
 
             const bar = document.getElementById('liveFormSessions');
             const empty = document.getElementById('liveFormEmpty');
             if (!bar) return;
-            const badge = document.getElementById('liveFormBadge');
-            if (badge) badge.style.display = list.length > 0 ? 'inline-block' : 'none';
 
             // セッション ID / ステータス更新
             const sessionIdEl = document.getElementById('liveSessionId');
             const liveStatusEl = document.getElementById('liveSessionStatus');
             if (list.length === 0) {
-              bar.innerHTML = '<span style="color:#5b6675;font-size:.7rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
+              bar.innerHTML = '<span style="color:#5b6675;font-size:.75rem;padding:6px">${_lang === 'ja' ? '稼働中のセッションはありません' : 'No active sessions'}</span>';
               if (empty) empty.style.display = 'flex';
               if (sessionIdEl) sessionIdEl.textContent = '${_lang === 'ja' ? 'セッション待機中…' : 'Waiting for session...'}';
               if (liveStatusEl) { liveStatusEl.textContent = 'IDLE'; liveStatusEl.style.background = '#5b6675'; }
@@ -8695,17 +8143,17 @@ ${renderStyles()}
               const cls = isActive ? 'lfs-active-bg' : 'lfs-row-bg lfs-text';
               const ring = isActive ? 'box-shadow:0 0 0 2px #3b82f6' : '';
               const isVirtual = String(s.id||'').startsWith('virtual:');
-              const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.55rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
-              const captchaBadge = s.captchaDetected ? '<span title="${_lang === 'ja' ? '本人確認が必要 — 人手対応' : 'Verification required'}" style="display:inline-flex;align-items:center;background:#f59e0b;color:#3a2a00;font-size:.55rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:800">${_lang === 'ja' ? '要対応' : 'action'}</span>' : '';
+              const virtualBadge = isVirtual ? '<span title="外部 Chromium 経路 (並列モード)" style="background:#f59e0b;color:#fff;font-size:.75rem;padding:1px 4px;border-radius:3px;margin-left:4px">ext</span>' : '';
+              const captchaBadge = s.captchaDetected ? '<span title="${_lang === 'ja' ? '本人確認が必要 — 人手対応' : 'Verification required'}" style="display:inline-flex;align-items:center;background:#f59e0b;color:#3a2a00;font-size:.75rem;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:800">${_lang === 'ja' ? '要対応' : 'action'}</span>' : '';
               const nameStr = (s.companyName || '').toString().slice(0, 14);
               const escName = nameStr.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const fullName = (s.companyName || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
               const titleAttr = 'No.' + (s.companyNo||'?') + ' ' + fullName + ' (' + (s.status||'') + ')';
               return '<span data-sid="' + s.id + '" class="lf-session-chip-wrap" style="display:inline-flex;align-items:center">' +
-                '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.72rem;padding:5px 10px;border-radius:999px 0 0 999px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);border-right:none;max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
+                '<button data-sid="' + s.id + '" data-no="' + (s.companyNo||'') + '" title="' + titleAttr + '" class="lf-session-btn ' + cls + '" style="' + ring + ';font-size:.75rem;padding:5px 10px;border-radius:999px 0 0 999px;cursor:pointer;white-space:nowrap;border:1px solid var(--outline-variant,#d8dee5);border-right:none;max-width:220px;overflow:hidden;text-overflow:ellipsis">' +
                   '<span style="font-weight:700">No.' + (s.companyNo||'?') + '</span>' +
                   (escName ? ' <span style="opacity:.85">' + escName + '</span>' : '') +
-                  ' <span style="opacity:.65;font-size:.62rem">· ' + (s.status||'') + '</span>' +
+                  ' <span style="opacity:.65;font-size:.75rem">· ' + (s.status||'') + '</span>' +
                   captchaBadge + virtualBadge +
                 '</button>' +
                 '<button data-close-sid="' + s.id + '" class="lf-session-close ' + cls + '" title="${_lang === 'ja' ? 'このセッションを閉じる' : 'Close this session'}" style="border-radius:0 999px 999px 0;border:1px solid var(--outline-variant,#d8dee5);border-left:none;width:22px;height:auto;align-self:stretch">×</button>' +
@@ -9009,13 +8457,13 @@ ${renderStyles()}
             const rowClass = state === 'running' ? 'lfs-row-bg-active' : 'lfs-row-bg';
             const opacity = state === 'pending' ? '.55' : '1';
 
-            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:.72rem;opacity:' + opacity + '">' +
-              '<span style="width:20px;height:20px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:' + dotTextColor + ';font-weight:700;font-size:.62rem;flex-shrink:0">' + dotIcon + '</span>' +
+            return '<div class="' + rowClass + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:.75rem;opacity:' + opacity + '">' +
+              '<span style="width:20px;height:20px;border-radius:50%;background:' + dotColor + ';display:inline-flex;align-items:center;justify-content:center;color:' + dotTextColor + ';font-weight:700;font-size:.75rem;flex-shrink:0">' + dotIcon + '</span>' +
               '<span class="lfs-text" style="flex:1;font-weight:' + (state === 'running' ? '600' : '500') + '">' + step.label +
-                (detail ? '<span class="lfs-muted" style="font-weight:400;font-size:.65rem;margin-left:6px">— ' + detail.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' : '') +
+                (detail ? '<span class="lfs-muted" style="font-weight:400;font-size:.75rem;margin-left:6px">— ' + detail.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' : '') +
               '</span>' +
-              (ts ? '<span class="lfs-muted" style="font-family:monospace;font-size:.62rem;flex-shrink:0">' + ts + '</span>' : '') +
-              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.58rem;padding:2px 7px;border-radius:4px;flex-shrink:0;border:1px solid var(--outline-variant,#d8dee5)">' + statusText + '</span>' +
+              (ts ? '<span class="lfs-muted" style="font-family:monospace;font-size:.75rem;flex-shrink:0">' + ts + '</span>' : '') +
+              '<span style="background:' + statusBg + ';color:' + statusFg + ';font-size:.75rem;padding:2px 7px;border-radius:4px;flex-shrink:0;border:1px solid var(--outline-variant,#d8dee5)">' + statusText + '</span>' +
               '</div>';
           });
           el.innerHTML = items.join('');
@@ -9026,13 +8474,13 @@ ${renderStyles()}
           const el = document.getElementById('liveThoughts');
           if (!el) return;
           if (events.length === 0) {
-            el.innerHTML = '<div style="color:#5b6675;font-size:.72rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>';
+            el.innerHTML = '<div style="color:#5b6675;font-size:.75rem">${_lang === 'ja' ? '思考ログがここにストリーミング表示されます' : 'Reasoning log streams here'}</div>';
             return;
           }
           el.innerHTML = events.slice(-10).reverse().map((e) => {
             const ts = (e.timestamp || e.updatedAt || '').toString().substr(11, 8);
             const text = (e.step || e.action || '').toString().slice(0, 200);
-            return '<div style="display:flex;gap:8px;font-size:.72rem;align-items:start"><span class="lfs-muted" style="font-family:monospace;flex-shrink:0">' + ts + '</span>' +
+            return '<div style="display:flex;gap:8px;font-size:.75rem;align-items:start"><span class="lfs-muted" style="font-family:monospace;flex-shrink:0">' + ts + '</span>' +
               '<span style="color:#10b981;flex-shrink:0">●</span>' +
               '<span class="lfs-text" style="flex:1">' + text.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>' +
               '</div>';
@@ -9043,12 +8491,9 @@ ${renderStyles()}
         async function refreshScreenshots(sessions) {
           const el = document.getElementById('liveScreenshots');
           if (!el) return;
-          // session 各社の screenshot path を収集 (action-log の screenshot field から)
+          // session 各社の ss-{No}-{input|confirm|sent}.png を並べる
+          // (結果を使っていなかった /api/data 取得を削除)
           try {
-            const r = await fetch('/api/data');
-            if (!r.ok) return;
-            const j = await r.json();
-            const events = (j.liveMonitor && j.liveMonitor.events) || [];
             const noSet = new Set(sessions.map(s => Number(s.companyNo)).filter(n => Number.isFinite(n)));
             const shots = [];
             for (const no of noSet) {
@@ -9058,7 +8503,7 @@ ${renderStyles()}
               }
             }
             if (shots.length === 0) {
-              el.innerHTML = '<div style="color:#5b6675;font-size:.72rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
+              el.innerHTML = '<div style="color:#5b6675;font-size:.75rem;padding:8px">${_lang === 'ja' ? '撮影されたスクリーンショットがここに並びます' : 'Captured screenshots will appear here'}</div>';
               return;
             }
             // v2.0.89: 旧 (~v0.88) は inline onclick / onerror に escape された
@@ -9070,7 +8515,7 @@ ${renderStyles()}
               const safeUrl = String(s.url || '').replace(/"/g, '&quot;');
               return '<div class="lf-shot-thumb" data-url="' + safeUrl + '" style="flex-shrink:0;width:140px;cursor:pointer">' +
                 '<img data-shot-img="1" src="' + safeUrl + '?t=' + Date.now() + '" style="width:140px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #2a3441;background:#0a0d12">' +
-                '<div style="font-size:.62rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
+                '<div style="font-size:.75rem;color:#8895a5;margin-top:3px;text-align:center">No.' + s.no + ' · ' + s.suffix + '</div></div>';
             }).join('');
             el.querySelectorAll('.lf-shot-thumb').forEach(div => {
               div.addEventListener('click', () => {
@@ -9198,6 +8643,7 @@ ${renderStyles()}
 
   <!-- Awaiting tab -->
   <div class="tab-content" id="tab-awaiting">
+    <h1 class="sr-only">${_t['tab.awaiting']}</h1>
     <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid var(--primary);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="material-symbols-outlined" style="font-size:16px;color:var(--primary)">pending_actions</span>
@@ -9207,7 +8653,8 @@ ${renderStyles()}
         <button class="btn btn-sm btn-outline-primary" onclick="toggleAllAwaiting()">${_t['action.selectAll']}</button>
         <button class="btn btn-sm btn-success" onclick="bulkApprove('sent')">${_t['action.bulkSent']}</button>
         <button class="btn btn-sm btn-outline-danger" onclick="bulkSkipWithFeedback()">${_t['action.bulkSkip']}</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteAwaiting()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
+        <!-- 破壊的操作 (削除) は他ボタンから離して右端に置く (GB-4-1) -->
+        <button class="btn btn-sm btn-outline-danger" style="margin-left:16px" onclick="bulkDeleteAwaiting()">${_t['action.bulkDeleteCompanies'] || 'Delete Selected'}</button>
       </div>
     </div>
     <div id="awaitingList" style="padding:16px;background:var(--bg-base)"></div>
@@ -9215,16 +8662,17 @@ ${renderStyles()}
 
   <!-- Sent tab -->
   <div class="tab-content" id="tab-sent">
+    <h1 class="sr-only">${_t['tab.sent']}</h1>
     <div style="background:#fff;border:1px solid var(--outline-variant);border-bottom:2px solid #059669;padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:10px">
       <div style="display:flex;align-items:center;gap:8px;min-width:0">
         <span class="material-symbols-outlined" style="font-size:16px;color:#059669">mark_email_read</span>
         <div style="display:flex;flex-direction:column;gap:2px">
           <strong style="font-size:.76rem;color:var(--on-surface)">${_t['sent.panelTitle'] || 'Sent log'}</strong>
-          <span style="font-size:.66rem;color:var(--outline)">${_t['sent.panelHint'] || 'Filter by company, type, message body, or form URL.'}</span>
+          <span style="font-size:.75rem;color:var(--outline)">${_t['sent.panelHint'] || 'Filter by company, type, message body, or form URL.'}</span>
         </div>
       </div>
-      <input type="text" id="sentSearch" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || 'Search company, type, message, or URL...'}">
-      <select id="sentTypeFilter" class="form-control-sm" style="width:180px;max-width:100%">
+      <input type="text" id="sentSearch" aria-label="${_t['sent.search'] || 'Search company, type, message, or URL...'}" class="form-control-sm" style="width:280px;max-width:100%" placeholder="${_t['sent.search'] || 'Search company, type, message, or URL...'}">
+      <select id="sentTypeFilter" aria-label="${_lang === 'ja' ? '種別で絞り込み' : 'Filter by type'}" class="form-control-sm" style="width:180px;max-width:100%">
         <option value="">${_t['sent.filter.typeAll'] || 'Type: All'}</option>
       </select>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -9232,13 +8680,14 @@ ${renderStyles()}
         <button class="fb-sent fb" data-sf="1">${_t['sent.firstOnly']}</button>
         <button class="fb-sent fb" data-sf="2+">${_t['sent.multipleOnly']}</button>
       </div>
-      <small style="margin-left:auto;font-family:var(--font-mono);font-size:.68rem;color:var(--outline)" id="sentCount">0 items</small>
+      <small style="margin-left:auto;font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="sentCount">0 items</small>
     </div>
     <div id="sentList" style="padding:16px;background:var(--bg-base)"></div>
   </div>
 
   <!-- List Builder tab — full UI (criteria chip-inputs + 4-stage progress + result table + sidebar) -->
   <div class="tab-content" id="tab-list-builder">
+    <h1 class="sr-only">${_t['tab.listBuilder'] || 'List Builder'}</h1>
     <!-- 上部のページヘッダ + 4 stats カードはユーザ要望で廃止。
          代わりに小さなアクションバーに「営業 NG 企業を見る」ボタンを置き、
          過去に「営業お断り」「採用専用」等で skip された会社を確認できるようにする。 -->
@@ -9332,51 +8781,51 @@ ${renderStyles()}
           </div>
           <div class="lb2-criteria-grid" id="lb2CriteriaGrid">
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">work</span>${_t['lb.criteria.industry'] || 'Industry'}</label>
+              <label class="lb2-field-label" for="lb2Chip-industries"><span class="material-symbols-outlined">work</span>${_t['lb.criteria.industry'] || 'Industry'}</label>
               <div class="lb2-chip-input" data-lb2-chip="industries">
-                <input type="text" placeholder="${_t['lb.criteria.industry.placeholder'] || 'e.g. SaaS / press Enter'}" autocomplete="off">
+                <input type="text" id="lb2Chip-industries" placeholder="${_t['lb.criteria.industry.placeholder'] || 'e.g. SaaS / press Enter'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">place</span>${_t['lb.criteria.region'] || 'Region'}</label>
+              <label class="lb2-field-label" for="lb2Chip-regions"><span class="material-symbols-outlined">place</span>${_t['lb.criteria.region'] || 'Region'}</label>
               <div class="lb2-chip-input" data-lb2-chip="regions">
-                <input type="text" placeholder="${_t['lb.criteria.region.placeholder'] || 'e.g. Tokyo, Osaka'}" autocomplete="off">
+                <input type="text" id="lb2Chip-regions" placeholder="${_t['lb.criteria.region.placeholder'] || 'e.g. Tokyo, Osaka'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">groups</span>${_t['lb.criteria.employees'] || 'Employee size'}</label>
+              <label class="lb2-field-label" for="lb2Chip-employeeSize"><span class="material-symbols-outlined">groups</span>${_t['lb.criteria.employees'] || 'Employee size'}</label>
               <div class="lb2-chip-input" data-lb2-chip="employeeSize">
-                <input type="text" placeholder="${_t['lb.criteria.employees.placeholder'] || 'e.g. 50-500'}" autocomplete="off">
+                <input type="text" id="lb2Chip-employeeSize" placeholder="${_t['lb.criteria.employees.placeholder'] || 'e.g. 50-500'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">monitoring</span>${_t['lb.criteria.revenue'] || 'Revenue'}</label>
+              <label class="lb2-field-label" for="lb2Chip-revenue"><span class="material-symbols-outlined">monitoring</span>${_t['lb.criteria.revenue'] || 'Revenue'}</label>
               <div class="lb2-chip-input" data-lb2-chip="revenue">
-                <input type="text" placeholder="${_t['lb.criteria.revenue.placeholder'] || 'e.g. 1B+ JPY'}" autocomplete="off">
+                <input type="text" id="lb2Chip-revenue" placeholder="${_t['lb.criteria.revenue.placeholder'] || 'e.g. 1B+ JPY'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">badge</span>${_t['lb.criteria.dept'] || 'Dept / role'}</label>
+              <label class="lb2-field-label" for="lb2Chip-departments"><span class="material-symbols-outlined">badge</span>${_t['lb.criteria.dept'] || 'Dept / role'}</label>
               <div class="lb2-chip-input" data-lb2-chip="departments">
-                <input type="text" placeholder="${_t['lb.criteria.dept.placeholder'] || 'e.g. Sales Ops, IT'}" autocomplete="off">
+                <input type="text" id="lb2Chip-departments" placeholder="${_t['lb.criteria.dept.placeholder'] || 'e.g. Sales Ops, IT'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">tag</span>${_t['lb.criteria.keywords'] || 'Keywords'}</label>
+              <label class="lb2-field-label" for="lb2Chip-keywords"><span class="material-symbols-outlined">tag</span>${_t['lb.criteria.keywords'] || 'Keywords'}</label>
               <div class="lb2-chip-input" data-lb2-chip="keywords">
-                <input type="text" placeholder="${_t['lb.criteria.keywords.placeholder'] || 'e.g. automation, DX'}" autocomplete="off">
+                <input type="text" id="lb2Chip-keywords" placeholder="${_t['lb.criteria.keywords.placeholder'] || 'e.g. automation, DX'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">block</span>${_t['lb.criteria.exclude'] || 'Exclude'}</label>
+              <label class="lb2-field-label" for="lb2Chip-excludes"><span class="material-symbols-outlined">block</span>${_t['lb.criteria.exclude'] || 'Exclude'}</label>
               <div class="lb2-chip-input" data-lb2-chip="excludes">
-                <input type="text" placeholder="${_t['lb.criteria.exclude.placeholder'] || 'e.g. recruit-only'}" autocomplete="off">
+                <input type="text" id="lb2Chip-excludes" placeholder="${_t['lb.criteria.exclude.placeholder'] || 'e.g. recruit-only'}" autocomplete="off">
               </div>
             </div>
             <div class="lb2-field">
-              <label class="lb2-field-label"><span class="material-symbols-outlined">database</span>${_t['lb.criteria.sources'] || 'Sources'}</label>
+              <label class="lb2-field-label" for="lb2Chip-sources"><span class="material-symbols-outlined">database</span>${_t['lb.criteria.sources'] || 'Sources'}</label>
               <div class="lb2-chip-input" data-lb2-chip="sources">
-                <input type="text" placeholder="${_t['lb.criteria.sources.placeholder'] || 'e.g. company site, DB'}" autocomplete="off">
+                <input type="text" id="lb2Chip-sources" placeholder="${_t['lb.criteria.sources.placeholder'] || 'e.g. company site, DB'}" autocomplete="off">
               </div>
             </div>
           </div>
@@ -9391,14 +8840,6 @@ ${renderStyles()}
                   <option value="100">100</option>
                   <option value="200">200</option>
                   <option value="500">500</option>
-                </select>
-              </label>
-              <label class="lb2-mini-field" id="lb2ProviderField">
-                <span>${_t['lb.toolbar.cli'] || 'CLI'}</span>
-                <select id="lb2Provider" class="lb2-mini-select">
-                  <option value="claude" selected>Claude Code</option>
-                  <option value="codex">Codex</option>
-                  <option value="gemini">Gemini</option>
                 </select>
               </label>
             </div>
@@ -9472,8 +8913,8 @@ ${renderStyles()}
           </div>
           <div class="lb2-result-search">
             <span class="material-symbols-outlined lb2-result-search-icon">search</span>
-            <input type="text" id="lb2FilterText" placeholder="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" class="lb2-result-search-input">
-            <select id="lb2FilterStatus" class="lb2-mini-select lb2-result-search-status">
+            <input type="text" id="lb2FilterText" aria-label="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" placeholder="${_t['lb.result.filter.placeholder'] || 'Filter by name or industry'}" class="lb2-result-search-input">
+            <select id="lb2FilterStatus" aria-label="${_lang === 'ja' ? 'ステータスで絞り込み' : 'Filter by status'}" class="lb2-mini-select lb2-result-search-status">
               <option value="">${_t['lb.result.filter.allStatus'] || 'All status'}</option>
               <option value="unique">${_t['lb.result.filter.unique'] || 'New'}</option>
               <option value="needs_review">${_t['lb.result.filter.review'] || 'Review'}</option>
@@ -9592,6 +9033,7 @@ ${renderStyles()}
   </div>
   <!-- CLI Activity tab -->
   <div class="tab-content" id="tab-logs">
+    <h1 class="sr-only">${_t['tab.logs']}</h1>
     <!-- Embedded interactive terminal -->
     <div id="cliTerminalCard" class="cli-term-card">
       <div class="cli-term-head">
@@ -9605,14 +9047,6 @@ ${renderStyles()}
           <button type="button" class="cli-term-launch claude" data-cli-launch="claude">
             <img src="/assets/vendor/ai-icons/claude-code.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
             <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Claude')}</span>
-          </button>
-          <button type="button" class="cli-term-launch codex" data-cli-launch="codex">
-            <img src="/assets/vendor/ai-icons/codex-openai.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Codex')}</span>
-          </button>
-          <button type="button" class="cli-term-launch gemini" data-cli-launch="gemini">
-            <img src="/assets/vendor/ai-icons/gemini-cli.svg" alt="" class="cli-term-launch-icon" onerror="this.style.display='none'">
-            <span>${(_t['cli.term.launchProvider'] || '{provider} を起動').replace('{provider}', 'Gemini')}</span>
           </button>
           <button type="button" class="cli-term-stop" data-cli-stop="1" disabled>
             <span class="material-symbols-outlined" style="font-size:14px">stop_circle</span>
@@ -9654,7 +9088,7 @@ ${renderStyles()}
           <span class="material-symbols-outlined" style="font-size:36px;color:var(--text-3)">smart_toy</span>
         </div>
         <p class="cli-term-empty-title">${_t['cli.term.empty.title'] || 'AI CLI を起動してください'}</p>
-        <p class="cli-term-empty-sub">${_t['cli.term.empty.sub'] || '上の「Claude を起動」「Codex を起動」「Gemini を起動」のいずれかをクリックすると、ここに対話型ターミナルが立ち上がります。'}</p>
+        <p class="cli-term-empty-sub">${_t['cli.term.empty.sub'] || '上の「Claude を起動」をクリックすると、ここに対話型ターミナルが立ち上がります。'}</p>
         <p class="cli-term-empty-hint">${_t['cli.term.empty.hint'] || '初回はインストールが必要な場合があります。エラーが出たら自動で案内が表示されます。'}</p>
       </div>
 
@@ -9665,8 +9099,8 @@ ${renderStyles()}
     <div style="background:#fff;border:1px solid var(--outline-variant);margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant)">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.live.title'] || 'Live CLI'}</span>
-          <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliStreamLastEvent">—</span>
+          <span style="font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.live.title'] || 'Live CLI'}</span>
+          <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="cliStreamLastEvent">—</span>
         </div>
       </div>
       <div id="cliThinkingRow" style="display:none;align-items:center;gap:8px;padding:10px 16px;background:rgba(99,102,241,.08);border-bottom:1px solid rgba(99,102,241,.16)">
@@ -9679,10 +9113,10 @@ ${renderStyles()}
     <div style="background:#fff;border:1px solid var(--outline-variant)">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--outline-variant);flex-wrap:wrap;gap:8px">
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.actionLog']}</span>
-          <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="cliLastEvent">—</span>
+          <span style="font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--on-surface)">${_t['cli.actionLog']}</span>
+          <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="cliLastEvent">—</span>
         </div>
-        <span style="font-family:var(--font-mono);font-size:.65rem;color:var(--outline)" id="logCount">0 items</span>
+        <span style="font-family:var(--font-mono);font-size:.75rem;color:var(--outline)" id="logCount">0 items</span>
       </div>
       <!-- v2.1.0: 操作ログのタブ(フィルタ)。件数バッジ付き。クライアント側で絞り込む。 -->
       <div class="filter-pills" id="logFilterPills" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--outline-variant)">
@@ -9701,6 +9135,7 @@ ${renderStyles()}
 
   <!-- Settings tab -->
   <div class="tab-content" id="tab-settings">
+    <h1 class="sr-only">${_t['tab.settings']}</h1>
     <div class="settings-layout">
       <div class="settings-sidebar">
         <button class="settings-sidebar-btn active" data-section="companyProfile"><span class="settings-sidebar-label">${_t['settings.companyProfile']}</span><span class="settings-sidebar-status" id="settingsSidebarStatus-companyProfile"></span></button>
@@ -9719,7 +9154,7 @@ ${renderStyles()}
             </div>
             <div class="settings-setup-overview">
               <div class="settings-setup-progress-track"><span id="settingsSetupProgressBar"></span></div>
-              <div class="settings-setup-progress-label" id="settingsSetupProgressLabel" style="font-size:.72rem">0 / 5</div>
+              <div class="settings-setup-progress-label" id="settingsSetupProgressLabel" style="font-size:.75rem">0 / 5</div>
               <div class="settings-setup-progress-note" id="settingsSetupProgressNote"></div>
             </div>
           </div>
@@ -10501,16 +9936,6 @@ ${renderStyles()}
               <input type="text" id="pf-aiModelClaude" placeholder="claude-sonnet-4-6">
               <div class="help-text">${_t['help.aiModel']}</div>
             </div>
-            <div class="settings-group">
-              <label>${_t['field.aiModelCodex']}</label>
-              <input type="text" id="pf-aiModelCodex" placeholder="gpt-5-codex">
-              <div class="help-text">${_t['help.aiModel']}</div>
-            </div>
-            <div class="settings-group">
-              <label>${_t['field.aiModelGemini']}</label>
-              <input type="text" id="pf-aiModelGemini" placeholder="gemini-2.5-pro">
-              <div class="help-text">${_t['help.aiModel']}</div>
-            </div>
           </div>
 
           <div class="save-bar">
@@ -10589,16 +10014,16 @@ ${renderStyles()}
     <span id="monitorToastDot" style="width:8px;height:8px;border-radius:50%;background:var(--primary);flex-shrink:0;margin-top:3px"></span>
     <div style="min-width:0;flex:1">
       <div id="monitorToastCompany" style="font-size:.75rem;font-weight:700;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
-      <div id="monitorToastStep" style="font-size:.68rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
+      <div id="monitorToastStep" style="font-size:.75rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
     </div>
-    <span style="font-size:.6rem;color:var(--text-3);font-family:var(--font-mono);flex-shrink:0" id="monitorToastTime">--:--</span>
+    <span style="font-size:.75rem;color:var(--text-3);font-family:var(--font-mono);flex-shrink:0" id="monitorToastTime">--:--</span>
   </div>
 </div>
 
 <!-- Floating toggle button -->
-<button id="monitorFab" onclick="toggleMonitorPanel()" style="position:fixed;bottom:24px;right:24px;z-index:9991;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#1e293b);color:#eeefeb;border:none;cursor:pointer;box-shadow:var(--shadow-modal);display:flex;align-items:center;justify-content:center;transition:all .25s var(--ease-out-expo)" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
-  <span id="monitorDot" style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:#9a9a96;transition:background .3s;border:2px solid #1a1a1a"></span>
-  <span id="monitorFabBadge" style="display:none;position:absolute;top:0;right:0;min-width:18px;height:18px;background:var(--error);color:#fff;font-size:.6rem;font-weight:800;border-radius:9px;padding:0 5px;line-height:18px;text-align:center;border:2px solid #fff;font-family:var(--font-mono)">0</span>
+<button id="monitorFab" type="button" aria-label="${_lang === 'ja' ? '進捗モニターを開く' : 'Open progress monitor'}" title="${_lang === 'ja' ? '進捗モニターを開く' : 'Open progress monitor'}" onclick="toggleMonitorPanel()" style="position:fixed;bottom:24px;right:24px;z-index:9991;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a1a1a,#1e293b);color:#eeefeb;border:none;cursor:pointer;box-shadow:var(--shadow-modal);display:flex;align-items:center;justify-content:center;transition:all .25s var(--ease-out-expo)" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'">
+  <span id="monitorDot" style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:var(--text-3);transition:background .3s;border:2px solid #1a1a1a"></span>
+  <span id="monitorFabBadge" style="display:none;position:absolute;top:0;right:0;min-width:18px;height:18px;background:var(--error);color:#fff;font-size:.75rem;font-weight:800;border-radius:9px;padding:0 5px;line-height:18px;text-align:center;border:2px solid #fff;font-family:var(--font-mono)">0</span>
   <span class="material-symbols-outlined" style="font-size:22px">chat</span>
 </button>
 
@@ -10607,8 +10032,8 @@ ${renderStyles()}
   <!-- Header -->
   <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:linear-gradient(135deg,#1a1a1a 0%,#1e293b 100%);user-select:none;flex-shrink:0">
     <span class="material-symbols-outlined" style="font-size:16px;color:#eeefeb">monitoring</span>
-    <span style="font-size:.72rem;font-weight:700;color:#eeefeb;flex:1">Live Activity</span>
-    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:#9a9a96;font-size:.56rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_t['monitor.idle'] || 'Idle'}</div>
+    <span style="font-size:.75rem;font-weight:700;color:#eeefeb;flex:1">Live Activity</span>
+    <div id="monitorStatusChip" style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.1);color:var(--text-3);font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.04em">${_t['monitor.idle'] || 'Idle'}</div>
     <button id="liveMonitorToggleBtn" onclick="toggleMonitorPanel()" style="display:inline-flex;align-items:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#eeefeb;font-size:14px;padding:3px;border-radius:6px;cursor:pointer;transition:all .15s;line-height:1" onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.08)'">✕</button>
   </div>
 
@@ -10619,16 +10044,16 @@ ${renderStyles()}
       <div style="display:flex;align-items:center;gap:8px">
         <div style="min-width:0;flex:1">
           <div id="monitorCompany" style="font-size:.78rem;font-weight:700;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
-          <div id="monitorStep" style="font-size:.68rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
+          <div id="monitorStep" style="font-size:.75rem;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</div>
         </div>
-        <div id="monitorUpdatedAt" style="font-size:.58rem;font-family:var(--font-mono);color:var(--text-3);white-space:nowrap;flex-shrink:0">-</div>
+        <div id="monitorUpdatedAt" style="font-size:.75rem;font-family:var(--font-mono);color:var(--text-3);white-space:nowrap;flex-shrink:0">-</div>
       </div>
     </div>
 
     <!-- Thinking indicator -->
     <div id="monitorThinkingRow" style="display:none;align-items:center;gap:8px;padding:6px 14px;background:linear-gradient(90deg,rgba(99,102,241,.06),transparent);border-bottom:1px solid rgba(99,102,241,.1);flex-shrink:0">
       <span class="think-spin"></span>
-      <span id="monitorThinkingText" style="font-size:.68rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">思考中...</span>
+      <span id="monitorThinkingText" style="font-size:.75rem;color:#6366f1;font-style:italic;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">思考中...</span>
     </div>
     <div id="monitorActiveSummary" style="display:none">-</div>
 
@@ -10638,8 +10063,8 @@ ${renderStyles()}
     <!-- Collapsible footer: URL + Screenshot -->
     <div id="monitorFooter" style="border-top:1px solid var(--border-subtle);background:var(--bg-surface);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 14px">
-        <a id="monitorCurrentUrl" href="#" target="_blank" style="flex:1;font-size:.62rem;color:var(--primary);font-family:var(--font-mono);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</a>
-        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.58rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_t['monitor.screenshot.short'] || 'SS ↗'}</a>
+        <a id="monitorCurrentUrl" href="#" target="_blank" style="flex:1;font-size:.75rem;color:var(--primary);font-family:var(--font-mono);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">-</a>
+        <a id="monitorScreenshotLink" href="#" target="_blank" style="display:none;font-size:.75rem;color:var(--primary);text-decoration:none;font-weight:700;white-space:nowrap">${_t['monitor.screenshot.short'] || 'SS ↗'}</a>
       </div>
       <div id="monitorScreenshotWrap" style="display:none;margin:0 14px 8px;max-height:100px;overflow:auto;overscroll-behavior:contain;border:1px dashed var(--border-default);border-radius:var(--radius-sm);background:var(--bg-deep)"></div>
     </div>
@@ -11444,9 +10869,6 @@ ${renderProviderIconFixScript()}
     const showCriteria = mode === 'ai' || mode === 'category';
     if (grid) grid.style.display = showCriteria ? 'grid' : 'none';
     if (head) head.style.display = showCriteria ? 'flex' : 'none';
-    // CLI selector は AI モードのみ
-    const provField = $('lb2ProviderField');
-    if (provField) provField.style.display = mode === 'ai' ? 'flex' : 'none';
     // ヒント文言の切替
     const hint = $('lb2CriteriaHint');
     if (hint) {
@@ -11552,7 +10974,7 @@ ${renderProviderIconFixScript()}
       else alert(needsCriteria);
       return;
     }
-    const provider = $('lb2Provider').value || 'claude';
+    const provider = 'claude';
     showProgress(provider + (LANG === 'ja' ? ' CLI に依頼中…' : ' CLI: sending request…'));
     setStage('discovery', 8);
     try {
@@ -11703,6 +11125,7 @@ let _simpleApiDispatch: any = null;
 function getSimpleApiDispatch() {
   if (!_simpleApiDispatch) {
     _simpleApiDispatch = require('./routes/simple-api')({
+      onActionLogged: nudgeManagedAiBatchPoller,
       jsonResponse,
       parseJsonBody,
       loadData,
@@ -11746,9 +11169,6 @@ function getAiRuntimeApiDispatch() {
       cancelManagedAiLaunch,
       launchClaudeInExternalTerminal,
       stopManagedClaudePty,
-      stopHeadlessAiRun,
-      getActiveHeadlessRun,
-      getHeadlessAiRun: () => headlessAiRun,
       getManagedAiProvider,
       getClaudePty: () => claudePty,
       getClaudeProcess: () => claudeProcess,
@@ -11825,7 +11245,6 @@ function getAiFormFillApiDispatch() {
       getManagedAiAutoSendSafe,
       getManagedAiReservedCompanyNos,
       cleanupStaleManagedAiMonitorEvents,
-      getActiveHeadlessRun,
       getClaudePty: () => claudePty,
       getManagedAiBatchController: () => managedAiBatchController,
       setManagedAiBatchActive: (value) => {
@@ -11942,9 +11361,9 @@ function getErrorRecoveryApiDispatch() {
       getSelectedAiProvider,
       getManagedAiProvider,
       getClaudePty: () => claudePty,
-      getActiveHeadlessRun,
       getManagedAiAutoSendSafe,
       appendDiagnosticEvent,
+      runAiFormFill: (body, res) => getAiFormFillApiDispatch().runWithBody(body, res),
     });
   }
   return _errorRecoveryApiDispatch;
@@ -12130,6 +11549,19 @@ const server = http.createServer(async (req, res) => {
   // (旧2つ目の /screenshots/ ブロックは到達不能なデッドコードだったため削除。
   //  先行の /screenshots/ ハンドラが全 /screenshots/ パスを return 済み。)
 
+  // --- Live monitor only ---
+  // GET /api/live-monitor
+  //   操作中タブは liveMonitor.events しか使わないのに、毎秒 /api/data (全社分の
+  //   一覧・履歴・本文入り、数 MB) を取得していた。進捗表示に必要な分だけ返す。
+  if (pathname === '/api/live-monitor' && req.method === 'GET') {
+    try {
+      jsonResponse(res, 200, { ok: true, liveMonitor: buildMonitorPayload(getAllLogsReadonly() as any[]) || { events: [] } });
+    } catch (e) {
+      jsonResponse(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
   // --- Force-reset managed AI queue (v2.0.10) ---
   // POST /api/managed-ai-batch/reset
   //   pending + activeBatch を空にして「処理中」扱いの会社を解放する。
@@ -12137,7 +11569,7 @@ const server = http.createServer(async (req, res) => {
   //   ユーザーが「既に処理中です」エラーから抜け出すための非常脱出弁。
   if (pathname === '/api/managed-ai-batch/reset' && req.method === 'POST') {
     try {
-      if (claudePty || getActiveHeadlessRun()) {
+      if (claudePty) {
         jsonResponse(res, 409, {
           ok: false,
           error: 'AI セッションが現在稼働中のためリセットできません。停止してから再実行してください。',

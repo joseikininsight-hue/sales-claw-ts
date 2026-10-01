@@ -171,7 +171,7 @@ dashboard-server.ts が単一ファイルで肥大化している。
 - `dashboard-server/middleware.ts` — auth / cors / logging
 - `dashboard-server/managed-provider-home.ts` — provider-home 管理
 - `dashboard-server/batch-orchestrator.ts` — runParallelAnalysisWorker 周辺
-- `dashboard-server/ai-runtime-manager.ts` — Claude/Codex/Gemini プロセス管理
+- `dashboard-server/ai-runtime-manager.ts` — Claude Code CLI プロセス管理
 - `dashboard-server/recovery.ts` — クラッシュリカバリ
 
 この分割は **Stage 2 と並行して進めない方が良い** (リファクタの衝突を避ける)。

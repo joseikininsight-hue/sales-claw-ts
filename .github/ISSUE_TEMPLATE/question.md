@@ -28,7 +28,7 @@ assignees: ''
 ## 環境 / Environment
 - Sales Claw バージョン: <!-- 例: 2.0.37 -->
 - OS: <!-- 例: Windows 11 / macOS 15.0 / Ubuntu 22.04 -->
-- AI Provider: <!-- Claude / Codex / Gemini -->
+- Claude Code CLI version: <!-- claude --version -->
 - UI 言語 / UI language: <!-- 日本語 / English -->
 
 ## 関連ドキュメント / Related docs

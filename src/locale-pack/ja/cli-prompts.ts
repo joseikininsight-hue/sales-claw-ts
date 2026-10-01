@@ -1,7 +1,7 @@
 // CLI Prompt 用 batch_rules (日本語)
 //
 // dashboard-server.ts の buildClaudeFormFillPrompt 内 batch_rules セクションを
-// locale 別に抽出したもの。CLI (Claude/Codex/Gemini) に対する MCP Playwright
+// locale 別に抽出したもの。Claude Code CLI に対する MCP Playwright
 // 自動化指示をまとめる。日本語企業を相手にする際の現状文言をそのまま保持し、
 // 日本語ユーザーの挙動が変わらないようにする。
 
@@ -56,9 +56,11 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
     '- Phase A は backend 完了済み。form 未解決時を除き、対象サイトを再分析しない',
     '- ★ urlMissing=true の会社: WebSearch は **最大 2 クエリまで**。1 本目「会社名 公式サイト」→ 上位 3 件で公式ドメインが確定したら即 navigate。確定できない場合 (外資系/グループ会社等でドメインが紛らわしい時) のみ 2 本目「会社名 お問い合わせ」または英語正式社名で再検索可。それでも 30 秒以内に確定しなければ **即 error**。候補を 1 件ずつ navigate 試行・3 クエリ目以降・wikipedia 経由検索は禁止 (探索ループ防止)。',
     '- ★ urlMissing=false かつ siteExcerpt 空 / サイト取得失敗の会社は送信対象外。フォーム入力せず error で止める。本文を推測して awaiting_approval / submitted にしてはいけない',
-    '- ★ awaiting_approval / submitted は、Phase A の site_analysis が十分なサイト本文を取得済みで、form_fill → confirm_reached が記録済みの場合だけ API が受け付ける',
+    '- ★ awaiting_approval / submitted は、form_fill (全項目入力後) → confirm_reached (ss-{No}-input.png 撮影後。確認画面が無いフォームでも記録する) が記録済みの場合だけ API が受け付ける (無いと 422)',
     '- ★ 入力は一発で完結させる: browser_fill_form の戻り値 results で ok:false (value_mismatch / not_found) のフィールドだけ browser_type で再入力し、同梱の validation.problems が **空になってから** 送信ボタンを押す。problems には「必須なのに未入力/未チェック/ラジオ未選択/形式エラー」が selector + label 付きで列挙される (サイト側の「必須項目を入力してください」エラーを踏む前に直せる)。problems が空なら再 snapshot せず直ちに送信ボタンへ進む。',
-    '- ★ 確認画面への進み方: 送信/確認ボタン候補は browser_snapshot の buttons 配列に selector + text 付きで入っている (最有力が先頭)。buttons から「確認」「送信」系を選んで browser_click(selector) する (browser_evaluate でのボタン探索は不要)。buttons が空の場合のみ可視テキスト (「送信」「確認」「次へ」「Submit」) で探索する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待ち、到達したら confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。',
+    autoSendSafe
+      ? '- ★ 確認画面への進み方: 送信/確認ボタン候補は browser_snapshot の buttons 配列に selector + text 付きで入っている (最有力が先頭)。buttons から「確認」「送信」系を選んで browser_click(selector) する (browser_evaluate でのボタン探索は不要)。buttons が空の場合のみ可視テキスト (「送信」「確認」「次へ」「Submit」) で探索する。クリック後は browser_wait_for で確認画面の文言/URL 変化が出るまで待つ。ss-{No}-input.png 撮影後に confirm_reached を curl で記録する。フォーム入力 (form_fill) だけで止まり confirm_reached を記録しないと、その社は送信判定に進めず未完了のまま残る。'
+      : '- ★ 承認待ちモードのボタン操作: browser_snapshot の buttons 配列から押してよいのは「確認」「次へ」「入力内容を確認」「Confirm」「Next」など確認画面へ進むボタンだけ。「送信」「送信する」「Submit」「Send」「同意して送信」は **絶対に押さない** (確認画面が無いフォームでは押した瞬間に送信される)。確認画面へ進むボタンが無いフォームはクリックせずにそのまま ss-{No}-input.png を撮る。撮影後に confirm_reached を curl で記録する (記録しないとその社は未完了のまま残る)。',
     '- messagePrompt がある場合は、それを使ってこの会社向けの本文を最終化してからフォーム入力する',
     '- messageDraft は Phase A の草案、messagePrompt は本文生成コンテキスト。messagePrompt を優先し、messageDraft はフォールバックとして扱う',
     '- 本文を書き換える場合でも、messagePrompt / analysisHints / siteExcerpt にない事実は足さない。社員数・設立年・資本金など sender_json に無い数値は推測しない',
@@ -87,7 +89,9 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
       `- ${tabs} 社の navigate が全て完了するまで待機 → その後 browser_snapshot を ${tabs} 社並列発行 → browser_fill_form を ${tabs} 社並列発行 (Claude API は同種ツールを並列に呼べる)。`,
       `- screenshot / curl は社ごとに発行するが、可能なら ${tabs} 社分まとめて並列発行。同時タブは ${tabs + 1} 個まで (それ以上はリソース競合)。`,
       `- 並列発行が効くのは「同じ前提条件・同じ判断軸で進むツール」のみ。CAPTCHA 解析・本文最終化・送信可否判断など「社ごとに違う思考が必要な工程」は 1 社ずつ集中する。`,
-      `- 各社の awaiting_approval / submitted ログには finalFormTab URL を必ず含める。`,
+      isInternal
+        ? `- 各社の awaiting_approval / submitted ログには formUrl (実際に入力したフォームの URL) を必ず含める。`
+        : `- 各社の awaiting_approval / submitted ログには finalFormTab URL を必ず含める。`,
     );
   }
 
@@ -103,9 +107,11 @@ function buildBatchRules(opts: BuildBatchRulesOpts): string[] {
       '- ★ 送信後は往復を最小化: 送信ボタン browser_click → browser_wait_for で完了文言/URL変化を短く待つ (既定 8 秒で十分、出なくても可) → browser_take_screenshot({suffix:"sent"}) → curl submitted の順で即完了させる。送信後に browser_snapshot は撮らない (screenshot が送信記録として十分)。確認画面が無い直接送信フォームは click → screenshot(sent) → curl の 3 手で終える。',
     );
   }
-  lines.push('- submitted 完了時は ss-{No}-sent.png を残し、その会社のタブ (セッション) を閉じる');
+  lines.push(isInternal
+    ? '- submitted 完了時は ss-{No}-sent.png を残す (セッションはサーバーが自動で閉じる)'
+    : '- submitted 完了時は ss-{No}-sent.png を残し、その会社のタブ (セッション) を閉じる');
   lines.push(
-    '- 入力済みだが最終送信しない場合だけタブを残して awaiting_approval。未入力 (CAPTCHA 以外の理由) / フォーム無しは error / skipped',
+    '- 入力済みだが最終送信しない場合だけ awaiting_approval (セッションは人間確認用に残る)。未入力 (CAPTCHA 以外の理由) / フォーム無しは error / skipped',
   );
 
   return lines;

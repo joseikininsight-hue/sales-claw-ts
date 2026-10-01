@@ -19,8 +19,6 @@ that service's privacy policy applies:
 | External service | Use | Data destination |
 |---|---|---|
 | Claude API (Anthropic) | Company analysis / message generation | https://api.anthropic.com ([Anthropic privacy policy](https://www.anthropic.com/legal/privacy)) |
-| OpenAI Codex API | Same as above (when Codex is selected) | [OpenAI privacy policy](https://openai.com/policies/privacy-policy) |
-| Google Gemini API | Same as above (when Gemini is selected) | [Google privacy policy](https://policies.google.com/privacy) |
 | SerpApi | Company-list discovery (NLQ / category mode) | https://serpapi.com (optional, only when an API key is set) |
 | Japan NTA Corporate Number Web API | Corporate existence verification | https://www.houjin-bangou.nta.go.jp (optional, only when an API key is set) |
 | gBizINFO | Company detail information | https://info.gbiz.go.jp (optional, only when an API key is set) |

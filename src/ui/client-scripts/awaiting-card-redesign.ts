@@ -21,11 +21,11 @@ const STYLE = [
   '.aw2-head-icon{width:30px;height:30px;border-radius:8px;background:rgba(37,99,235,.12);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}',
   '.aw2-head-icon .material-symbols-outlined{font-size:18px}',
   '.aw2-head-title{font-size:.92rem;font-weight:800;color:var(--text-1);margin:0;letter-spacing:.01em;line-height:1.2}',
-  '.aw2-head-sub{font-size:.66rem;color:var(--text-2);margin:1px 0 0;line-height:1.2}',
+  '.aw2-head-sub{font-size:.75rem;color:var(--text-2);margin:1px 0 0;line-height:1.2}',
   '.aw2-head-right{display:flex;align-items:center;gap:10px;flex-shrink:0}',
-  '.aw2-acquired{display:flex;align-items:center;gap:5px;font-size:.68rem;color:var(--text-2);font-family:var(--font-mono)}',
+  '.aw2-acquired{display:flex;align-items:center;gap:5px;font-size:.75rem;color:var(--text-2);font-family:var(--font-mono)}',
   '.aw2-acquired .material-symbols-outlined{font-size:13px}',
-  '.aw2-status{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--radius-pill)!important;font-size:.68rem;font-weight:700;background:var(--success-dim);color:var(--success);border:1px solid rgba(5,150,105,.25)}',
+  '.aw2-status{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--radius-pill)!important;font-size:.75rem;font-weight:700;background:var(--success-dim);color:var(--success);border:1px solid rgba(5,150,105,.25)}',
   '.aw2-status.warn{background:var(--warning-dim);color:var(--warning);border-color:rgba(217,119,6,.25)}',
   '.aw2-status.err{background:var(--error-dim);color:var(--error);border-color:rgba(220,38,38,.25)}',
   '.aw2-status .material-symbols-outlined{font-size:13px}',
@@ -34,20 +34,20 @@ const STYLE = [
   '.aw2-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;border-top:1px solid var(--border-subtle)}',
   '.aw2-body > section{padding:12px 16px}',
   '.aw2-body > section:first-child{border-right:1px solid var(--border-subtle)}',
-  '.aw2-section-title{display:flex;align-items:center;gap:6px;font-size:.7rem;font-weight:700;color:var(--text-2);margin:0 0 8px;letter-spacing:.04em;text-transform:uppercase}',
+  '.aw2-section-title{display:flex;align-items:center;gap:6px;font-size:.75rem;font-weight:700;color:var(--text-2);margin:0 0 8px;letter-spacing:.04em;text-transform:uppercase}',
   '.aw2-section-title .material-symbols-outlined{font-size:14px;color:var(--primary)}',
 
   /* screenshot viewer — compact */
   '.aw2-shot-frame{position:relative;width:100%;border:1px solid var(--border-default);border-radius:var(--radius-md)!important;background:var(--bg-deep);overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:180px;max-height:380px}',
   '.aw2-shot-scroll{width:100%;height:100%;max-height:380px;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:6px}',
   '.aw2-shot-img{display:block;max-width:100%;height:auto;transform-origin:top left;transition:transform .18s var(--ease-out-expo);cursor:zoom-in}',
-  '.aw2-shot-empty{padding:28px 14px;font-size:.74rem;color:var(--text-3);text-align:center}',
+  '.aw2-shot-empty{padding:28px 14px;font-size:.75rem;color:var(--text-3);text-align:center}',
   '.aw2-shot-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}',
   '.aw2-zoom{display:inline-flex;align-items:center;gap:1px;background:var(--bg-card);border:1px solid var(--border-default);border-radius:var(--radius-pill)!important;padding:2px 4px;box-shadow:var(--shadow-xs)}',
   '.aw2-zoom button{width:22px;height:22px;border:none;background:transparent;color:var(--text-2);font-size:.92rem;cursor:pointer;border-radius:50%!important;display:flex;align-items:center;justify-content:center;transition:background .12s}',
   '.aw2-zoom button:hover{background:var(--bg-hover);color:var(--text-1)}',
-  '.aw2-zoom .aw2-zoom-val{min-width:40px;text-align:center;font-size:.7rem;font-weight:700;font-family:var(--font-mono);color:var(--text-1)}',
-  '.aw2-open-tab{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:.7rem;font-weight:600;border:1px solid var(--border-default);border-radius:var(--radius-md)!important;background:var(--bg-card);color:var(--text-1);cursor:pointer;transition:all .15s var(--ease-out-expo)}',
+  '.aw2-zoom .aw2-zoom-val{min-width:40px;text-align:center;font-size:.75rem;font-weight:700;font-family:var(--font-mono);color:var(--text-1)}',
+  '.aw2-open-tab{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;font-size:.75rem;font-weight:600;border:1px solid var(--border-default);border-radius:var(--radius-md)!important;background:var(--bg-card);color:var(--text-1);cursor:pointer;transition:all .15s var(--ease-out-expo)}',
   '.aw2-open-tab:hover{background:var(--bg-raised);border-color:var(--border-strong)}',
   '.aw2-open-tab .material-symbols-outlined{font-size:13px}',
 
@@ -55,48 +55,48 @@ const STYLE = [
   '.aw2-log{margin-top:12px;border:1px solid var(--border-subtle);border-radius:var(--radius-md)!important;padding:10px 12px;background:var(--bg-surface)}',
   '.aw2-log-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;position:relative}',
   '.aw2-log-list::before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:1px;background:var(--border-default)}',
-  '.aw2-log-item{display:flex;align-items:center;gap:8px;font-size:.7rem;color:var(--text-1);position:relative}',
+  '.aw2-log-item{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--text-1);position:relative}',
   '.aw2-log-dot{width:16px;height:16px;border-radius:50%!important;background:var(--success);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;z-index:1;border:2px solid var(--bg-surface)}',
   '.aw2-log-dot.pending{background:var(--bg-card);border-color:var(--border-default);color:var(--text-3)}',
-  '.aw2-log-dot .material-symbols-outlined{font-size:11px}',
+  '.aw2-log-dot .material-symbols-outlined{font-size:12px}',
   '.aw2-log-label{flex:1 1 auto;font-weight:500}',
-  '.aw2-log-time{font-size:.65rem;color:var(--text-3);font-family:var(--font-mono)}',
+  '.aw2-log-time{font-size:.75rem;color:var(--text-3);font-family:var(--font-mono)}',
 
   /* summary — compact */
   '.aw2-fields{display:flex;flex-direction:column;gap:5px}',
   '.aw2-field{display:grid;grid-template-columns:150px minmax(0,1fr);align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm)!important;background:var(--bg-card);transition:background .15s,border-color .15s}',
   '.aw2-field:hover{background:var(--bg-surface);border-color:var(--border-default)}',
-  '.aw2-field-label{display:flex;align-items:center;gap:6px;font-size:.7rem;font-weight:600;color:var(--text-2)}',
+  '.aw2-field-label{display:flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;color:var(--text-2)}',
   '.aw2-field-label .material-symbols-outlined{font-size:14px;color:var(--text-3)}',
   '.aw2-field-value{font-size:.76rem;color:var(--text-1);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   '.aw2-field-value.muted{color:var(--text-3);font-style:italic}',
   '.aw2-field.tall{grid-template-columns:150px minmax(0,1fr);align-items:flex-start}',
-  '.aw2-field.tall .aw2-field-value{white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.55;padding-right:4px;font-size:.74rem}',
+  '.aw2-field.tall .aw2-field-value{white-space:pre-wrap;max-height:200px;overflow-y:auto;line-height:1.55;padding-right:4px;font-size:.75rem}',
 
   /* AI 分析詳細 — Phase Obs */
   '.aw2-insight-details{margin-top:10px;border:1px solid var(--border-subtle);border-radius:var(--radius-md)!important;background:var(--bg-surface);overflow:hidden}',
-  '.aw2-insight-summary{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:.72rem;font-weight:700;color:var(--text-2);background:var(--bg-card);border-bottom:1px solid var(--border-subtle);user-select:none;list-style:none}',
+  '.aw2-insight-summary{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:.75rem;font-weight:700;color:var(--text-2);background:var(--bg-card);border-bottom:1px solid var(--border-subtle);user-select:none;list-style:none}',
   '.aw2-insight-summary::-webkit-details-marker{display:none}',
   '.aw2-insight-summary .material-symbols-outlined{font-size:14px;color:var(--primary)}',
   '.aw2-insight-summary:hover{background:var(--bg-raised)}',
-  '.aw2-insight-pill{display:inline-flex;align-items:center;padding:1px 8px;border-radius:var(--radius-pill)!important;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-left:auto}',
+  '.aw2-insight-pill{display:inline-flex;align-items:center;padding:1px 8px;border-radius:var(--radius-pill)!important;font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-left:auto}',
   '.aw2-insight-ok{background:rgba(5,150,105,.18);color:#047857;border:1px solid rgba(5,150,105,.32)}',
   '.aw2-insight-warn{background:rgba(217,119,6,.18);color:#b45309;border:1px solid rgba(217,119,6,.32)}',
   '.aw2-insight-err{background:rgba(220,38,38,.18);color:#b91c1c;border:1px solid rgba(220,38,38,.32)}',
   '.aw2-insight-body{padding:10px 12px;display:flex;flex-direction:column;gap:6px}',
-  '.aw2-insight-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;align-items:flex-start;font-size:.72rem;line-height:1.45}',
+  '.aw2-insight-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;align-items:flex-start;font-size:.75rem;line-height:1.45}',
   '.aw2-insight-key{color:var(--text-2);font-weight:600}',
   '.aw2-insight-val{color:var(--text-1);min-width:0;word-break:break-word}',
-  '.aw2-insight-quotes{font-style:italic;color:var(--text-2);font-size:.7rem}',
+  '.aw2-insight-quotes{font-style:italic;color:var(--text-2);font-size:.75rem}',
   '.aw2-insight-failures{margin:0;padding:0 0 0 0;list-style:none;display:flex;flex-direction:column;gap:3px}',
-  '.aw2-insight-failures li{font-size:.7rem}',
-  '.aw2-insight-failures code{background:var(--bg-card);padding:1px 4px;border-radius:3px!important;font-size:.66rem;color:var(--text-1)}',
+  '.aw2-insight-failures li{font-size:.75rem}',
+  '.aw2-insight-failures code{background:var(--bg-card);padding:1px 4px;border-radius:3px!important;font-size:.75rem;color:var(--text-1)}',
 
   /* footer — compact */
   '.aw2-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 16px;border-top:1px solid var(--border-subtle);background:var(--bg-surface)}',
-  '.aw2-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-size:.74rem;font-weight:700;border-radius:var(--radius-sm)!important;cursor:pointer;border:1px solid transparent;transition:all .15s var(--ease-out-expo);font-family:var(--font-body)}',
-  '.aw2-btn-cancel{background:var(--bg-card);color:var(--text-2);border-color:var(--border-default)}',
-  '.aw2-btn-cancel:hover{background:var(--bg-raised);color:var(--text-1)}',
+  '.aw2-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-size:.75rem;font-weight:700;border-radius:var(--radius-sm)!important;cursor:pointer;border:1px solid transparent;transition:all .15s var(--ease-out-expo);font-family:var(--font-body)}',
+  '.aw2-btn-cancel{background:var(--bg-card);color:var(--error);border-color:color-mix(in srgb,var(--error) 45%,transparent)}',
+  '.aw2-btn-cancel:hover{background:color-mix(in srgb,var(--error) 8%,var(--bg-card));color:var(--error)}',
   '.aw2-btn-edit{background:var(--bg-card);color:var(--primary);border-color:rgba(37,99,235,.4)}',
   '.aw2-btn-edit:hover{background:var(--primary-glow);border-color:var(--primary)}',
   '.aw2-btn-edit .material-symbols-outlined{font-size:16px}',
@@ -109,7 +109,7 @@ const STYLE = [
   '.aw2-btn-send .material-symbols-outlined{font-size:16px}',
   '.aw2-btn[disabled]{opacity:.45;cursor:not-allowed!important;pointer-events:none}',
   '.aw2-foot-right{display:flex;align-items:center;gap:8px}',
-  '.aw2-form-url{font-size:.7rem;color:var(--text-3);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%}',
+  '.aw2-form-url{font-size:.75rem;color:var(--text-3);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%}',
 
   /* responsive */
   '@media (max-width:960px){.aw2-body{grid-template-columns:1fr}.aw2-body > section:first-child{border-right:none;border-bottom:1px solid var(--border-subtle)}.aw2-field{grid-template-columns:1fr;gap:4px}.aw2-field-value{white-space:normal}}'
@@ -186,6 +186,7 @@ const SCRIPT = `(function(){
     var p = senderProfile();
     if (!p) return;
     var map = {
+      'aw2-fld-company': p.companyName || '',
       'aw2-fld-contact': p.contactName || p.name || '',
       'aw2-fld-email': p.email || '',
       'aw2-fld-phone': p.phone || ''
@@ -278,6 +279,13 @@ const SCRIPT = `(function(){
     + '</div>';
   }
 
+  function cardHeading(c, fallback) {
+    var no = c && (c.no != null ? c.no : c.companyNo);
+    var name = c && (c.name || c.companyName) ? String(c.name || c.companyName) : '';
+    if (!name) return fallback;
+    return (no != null ? 'No.' + no + '  ' : '') + name;
+  }
+
   function renderHeader(c, status, dateStr) {
     var no = c && (c.no != null ? c.no : c.companyNo);
     var noAttr = no != null ? safeText(String(no)) : '';
@@ -290,8 +298,9 @@ const SCRIPT = `(function(){
           : '')
       + '<div class="aw2-head-icon"><span class="material-symbols-outlined">description</span></div>'
       + '<div>'
-      + '<h3 class="aw2-head-title">' + safeText(aw2T('awaitingCard.title', '送信内容の確認')) + '</h3>'
-      + '<p class="aw2-head-sub">' + safeText(aw2T('awaitingCard.subtitle', 'AI が入力した内容とスクリーンショットを確認してください')) + '</p>'
+      // 見出しを会社名にする (旧: 全カード「送信内容の確認」で、どの会社か走査できなかった)
+      + '<h3 class="aw2-head-title">' + safeText(cardHeading(c, aw2T('awaitingCard.title', '送信内容の確認'))) + '</h3>'
+      + '<p class="aw2-head-sub">' + safeText(aw2T('awaitingCard.title', '送信内容の確認')) + ' — ' + safeText(aw2T('awaitingCard.subtitle', 'AI が入力した内容とスクリーンショットを確認してください')) + '</p>'
       + '</div>'
       + '</div>'
       + '<div class="aw2-head-right">'
@@ -310,7 +319,7 @@ const SCRIPT = `(function(){
       +   '<button type="button" data-zoom-action="out" title="' + safeText(aw2T('awaitingCard.zoom.out', '縮小')) + '">−</button>'
       +   '<span class="aw2-zoom-val">100%</span>'
       +   '<button type="button" data-zoom-action="in" title="' + safeText(aw2T('awaitingCard.zoom.in', '拡大')) + '">+</button>'
-      +   '<button type="button" data-zoom-action="reset" title="' + safeText(aw2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.7rem;width:auto;padding:0 8px">100%</button>'
+      +   '<button type="button" data-zoom-action="reset" title="' + safeText(aw2T('awaitingCard.zoom.reset', 'リセット')) + '" style="font-size:.75rem;width:auto;padding:0 8px">100%</button>'
       + '</div>'
       + (src ? '<button type="button" class="aw2-open-tab" data-action="open-tab"><span class="material-symbols-outlined">open_in_new</span>' + safeText(aw2T('awaitingCard.openTab', '別タブで開く')) + '</button>' : '')
       + '</div>'
@@ -320,16 +329,19 @@ const SCRIPT = `(function(){
   function renderRight(c) {
     var p = senderProfile();
     var industry = c.type || '';
-    var defaultInquiry = aw2T('awaitingCard.field.defaultInquiry', 'サービスについて');
-    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || (industry || defaultInquiry);
+    // 設定にお問い合わせ種別が無い時は行を出さない。旧実装は相手企業の業種
+    //   (industry) で埋めていたため、フォームに入力した値と誤解されていた (GB-0-1)。
+    var inquiryType = (p && (p.defaultInquiryType || p.inquiryType)) || '';
+    void industry;
     var contactName = p ? (p.contactName || p.name || '') : '';
     var email = p ? (p.email || '') : '';
     var phone = p ? (p.phone || '') : '';
     var settingsLoadingPh = aw2T('awaitingCard.field.settingsLoading', '— (settings 取得中)');
 
     var fields = [
-      renderField('help', aw2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }),
-      renderField('domain', aw2T('awaitingCard.field.company', '会社名'), c.name, { valueClass: 'aw2-fld-company' }),
+      (inquiryType ? renderField('help', aw2T('awaitingCard.field.inquiryType', 'お問い合わせ種別'), inquiryType, { valueClass: 'aw2-fld-inquiry' }) : ''),
+      // 「入力内容」なのでフォームに入力した自社名を出す (旧: 宛先企業名を表示しており誤解を招いた。宛先は見出しに表示)
+      renderField('domain', aw2T('awaitingCard.field.company', '会社名'), (p && p.companyName) || '', { valueClass: 'aw2-fld-company', placeholder: settingsLoadingPh }),
       renderField('person', aw2T('awaitingCard.field.contact', '担当者名'), contactName, { valueClass: 'aw2-fld-contact', placeholder: settingsLoadingPh }),
       renderField('mail', aw2T('awaitingCard.field.email', 'メールアドレス'), email, { valueClass: 'aw2-fld-email', placeholder: settingsLoadingPh }),
       renderField('call', aw2T('awaitingCard.field.phone', '電話番号'), phone, { valueClass: 'aw2-fld-phone', placeholder: settingsLoadingPh })
@@ -343,7 +355,7 @@ const SCRIPT = `(function(){
     // 表示することになり、実フォーム入力との乖離が起きる (NEC ネクサ事案)。
     var draftWarning = '';
     if (c.sentMessageSource === 'template_draft_fallback') {
-      draftWarning = '<div class="aw2-draft-warning" style="margin-top:8px;padding:8px 12px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);border-radius:6px;color:#b45309;font-size:.7rem;line-height:1.55;display:flex;align-items:flex-start;gap:6px">'
+      draftWarning = '<div class="aw2-draft-warning" style="margin-top:8px;padding:8px 12px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.35);border-radius:6px;color:#b45309;font-size:.75rem;line-height:1.55;display:flex;align-items:flex-start;gap:6px">'
         + '<span class="material-symbols-outlined" style="font-size:14px;flex-shrink:0;margin-top:1px">warning</span>'
         + '<span>' + safeText(aw2T('awaitingCard.draftWarning', '表示中の本文は Phase A の下書きであり、実際のフォーム入力本文と異なる可能性があります。スクリーンショットで実入力内容を必ず確認してください。')) + '</span>'
         + '</div>';
@@ -452,7 +464,8 @@ const SCRIPT = `(function(){
       ? aw2T('awaitingCard.btn.aiSend.disabledCaptcha', 'CAPTCHA / 認証が要求されているため AI 送信できません。ブラウザで手動送信してください')
       : aw2T('awaitingCard.btn.aiSend.title', 'AI に再度フォームを開かせ、submit ボタンをクリックさせます (実送信)');
     return '<div class="aw2-foot">'
-      + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel">' + safeText(aw2T('awaitingCard.btn.cancel', 'キャンセル')) + '</button>'
+      // 実際の動作は「この会社を送らずスキップ」。旧ラベル「キャンセル」は動作と不一致 (GB-4-5)
+      + '<button type="button" class="aw2-btn aw2-btn-cancel" data-action="cancel"><span class="material-symbols-outlined">block</span>' + safeText(aw2T('awaitingCard.btn.cancel', '送らない（スキップ）')) + '</button>'
       + '<div class="aw2-foot-right">'
       + (formUrl ? '<span class="aw2-form-url" title="' + formUrl + '">' + formUrl + '</span>' : '')
       // v2.0.89: 確認待ちカードから WebView 復活 (goal #6)。AI が CAPTCHA 等

@@ -24,7 +24,7 @@ Advisory).
 
 - Node.js 22+ ([nodejs.org](https://nodejs.org/))
 - Git
-- At least one AI CLI (`claude` / `codex` / `gemini`) — used in tests
+- Claude Code CLI (`claude`) — used in tests
 
 ### Setup
 
@@ -146,7 +146,7 @@ For breaking changes, use `feat!:` / `fix!:` or include
 ```
 src/
 ├── *.ts                     Core logic (47 files, 100% TS)
-├── ai-runtime/             Claude / Codex / Gemini process management
+├── ai-runtime/             Claude Code CLI process management
 ├── list-builder/           Company-list discovery (URL / NLQ / category modes)
 ├── routes/                 Dashboard API handlers
 ├── types/                  Shared types + type helpers (helpers.ts)

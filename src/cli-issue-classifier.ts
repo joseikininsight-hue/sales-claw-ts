@@ -7,7 +7,7 @@
 //    1 チャンクが 5KB を超えるケースもあるので、ある一文に "MCP" 別の場所に
 //    "error" だけで全文 200 文字を「MCP接続エラー」ラベルにしてしまうのは
 //    実害が大きい (修正前の挙動)。
-//  - Claude / Codex / Gemini の **自己 narrative** (「見当たりません」
+//  - Claude の **自己 narrative** (「見当たりません」
 //    「error ログを記録します」など) は実際の接続エラーではないので
 //    excludePattern で除外する。
 //  - 真の MCP 接続エラーは Claude Code 側が以下のような明確な形で出す:
@@ -37,7 +37,7 @@ export interface CliIssueClassification {
 }
 
 /**
- * Claude / Codex / Gemini が日本語/英語で「これから error ログを残す」のような
+ * Claude が日本語/英語で「これから error ログを残す」のような
  * narrative を喋るときに引っかかる単語の集合。
  * 真の接続エラーには出てこないが、CLAUDE.md ガイドラインに従って動いている
  * Claude の自己説明には頻繁に出てくる。

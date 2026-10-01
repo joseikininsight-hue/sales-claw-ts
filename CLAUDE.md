@@ -293,7 +293,7 @@ http://127.0.0.1:3765/onboarding?fresh=1   # clear progress, restart from step 1
 2. Company profile (`companyProfile`)
 3. Your strengths (`valuePropositions.strengths`) — 8 presets + custom
 4. Target list (Excel / CSV, can be skipped)
-5. AI integration (Claude / Codex / Gemini login status check)
+5. AI integration (Claude Code CLI login status check)
 
 **Completion criterion:** `data/settings.json` gains an `_onboardedAt: <ISO>`
 field, after which subsequent visits go directly to the normal dashboard.
@@ -536,8 +536,7 @@ curl -s -X POST -H "Content-Type: application/json" \
     "details":{
       "sentMessage":"お世話になります。サンプル株式会社の担当者と申します。\n貴社の取り組みを拝見し、お役に立てる場面があるかもしれずご連絡いたしました。... (the exact string typed into the contact form body)",
       "screenshot":"ss-185-input.png",
-      "tabKept":true,
-      "finalFormTab":"https://contact.example.com/..."
+      "formUrl":"https://contact.example.com/..."
     }
   }' \
   "${SALES_CLAW_DASHBOARD_URL:-http://127.0.0.1:3765}/api/log-action"
@@ -566,8 +565,8 @@ Step 2: Message generation
   → message_draft is also pre-recorded by the Phase A subprocess (no re-record needed)
 
 Step 3: Form-URL discovery
-  → First company: browser_navigate to the official site or a known form candidate
-  → Subsequent companies: browser_evaluate window.open(url,'_blank') → browser_tabs
+  → Each company: browser_navigate({ url, companyNo }) (or browser_tabs({ action:"new", url, companyNo }))
+    opens its own session. companyNo is required for new sessions (ss-{No}-*.png naming).
   → If formUrl is absent or invalid, explore inside the official site for "Contact" / "お問い合わせ" / "Contact" / "資料請求" / "パートナー" via Playwright
   → If companyUrl itself is empty (urlMissing=true), use WebSearch to query "company name + 公式", identify the official domain, find the contact form
   → When using search results, always re-verify the official domain
@@ -591,7 +590,8 @@ Step 6: Screenshot ★ NEVER SKIP
 Step 7: Register awaiting_approval
   → Record an awaiting_approval action via curl POST /api/log-action
   → ★ If Steps 5 and 6 are not complete, do NOT enter this step
-  → Before logging awaiting_approval, execute the Tab management contract: keep only the finalFormTab for the filled form / confirmation screen
+  → Include formUrl (the form actually filled) in details. The server keeps the
+    awaiting_approval session open and closes submitted / skipped / error sessions itself.
 ```
 
 **Multi-company case (two-phase parallel processing):**
@@ -651,7 +651,7 @@ Each company analysis start: thinking('[No.X] <name>: site analysis start')
 Each company prompt: thinking('[No.X] <name>: building message prompt')
 Phase A.5 start: thinking('Phase A.5 start: CLI message generation')
 Each company CLI generation: thinking('[No.X] <name>: CLI personalizing message')
-Phase B start: thinking('Phase B start: form filling (sequential)')
+Phase B start: thinking('Phase B start: form filling (parallel tabs)')
 Each company form filling: thinking('[No.X] <name>: filling form')
 Each company complete: log('[No.X] <name>: awaiting_approval registered', 'action')
 ```

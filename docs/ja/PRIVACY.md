@@ -19,8 +19,6 @@ Sales Claw は **ユーザーのローカル PC 内で完結する**ツールで
 | 外部サービス | 用途 | データ送信先 |
 |---|---|---|
 | Claude API (Anthropic) | 企業分析・メッセージ生成 | https://api.anthropic.com (Anthropic の[プライバシーポリシー](https://www.anthropic.com/legal/privacy)) |
-| OpenAI Codex API | 同上 (Codex を選択時) | OpenAI の[プライバシーポリシー](https://openai.com/policies/privacy-policy) |
-| Google Gemini API | 同上 (Gemini を選択時) | Google の[プライバシーポリシー](https://policies.google.com/privacy) |
 | SerpApi | 企業リスト発見 (NLQ/カテゴリモード) | https://serpapi.com (任意機能、API キー設定時のみ) |
 | 国税庁 法人番号 Web API | 法人実在性検証 | https://www.houjin-bangou.nta.go.jp (任意機能、API キー設定時のみ) |
 | gBizINFO | 企業詳細情報 | https://info.gbiz.go.jp (任意機能、API キー設定時のみ) |

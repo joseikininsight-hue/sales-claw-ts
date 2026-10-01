@@ -281,20 +281,7 @@ describe('error-recovery dispatch — /api/error/retry', () => {
     assert.equal(usedProviders[0], 'codex'); // managed wins over explicit
   });
 
-  it('uses headless provider when no PTY but headless run exists', async () => {
-    const usedProviders = [];
-    const dispatch = errorRecoveryFactory(makeCtx({
-      getClaudePty: () => null,
-      getActiveHeadlessRun: () => ({ provider: 'gemini' }),
-      ensureClaudeAutomationReady: async (p) => { usedProviders.push(p); return { ok: true }; },
-    }));
-    const req = makeReq({ method: 'POST', url: '/api/error/retry', body: { companyNos: [1] } });
-    const res = makeRes();
-    await callDispatch(dispatch, req, res, '/api/error/retry');
-    assert.equal(usedProviders[0], 'gemini');
-  });
-
-  it('uses explicit body.provider when no PTY/headless', async () => {
+  it('uses explicit body.provider when no PTY', async () => {
     const usedProviders = [];
     const dispatch = errorRecoveryFactory(makeCtx({
       ensureClaudeAutomationReady: async (p) => { usedProviders.push(p); return { ok: true }; },

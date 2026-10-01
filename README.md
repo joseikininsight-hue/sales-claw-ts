@@ -8,7 +8,7 @@
 > Japanese version: [docs/ja/README.md](./docs/ja/README.md)
 
 **B2B outreach automation for web contact forms.** Sales Claw drives the
-Claude Code CLI (or Codex / Gemini) to analyze a target company's website,
+Claude Code CLI to analyze a target company's website,
 draft a personalized message, and fill out the company's contact form —
 autonomously and at scale. A local Electron dashboard keeps a human in the
 loop for the final send decision.
@@ -79,11 +79,9 @@ Latest releases: [GitHub Releases](https://github.com/joseikininsight-hue/sales-
   and every 6 h thereafter; updates download silently and prompt
   "Restart to update".
 
-### Supported AI CLIs (pluggable per session)
+### Supported AI CLI
 
-- Claude Code CLI 2.0+ (primary)
-- Codex CLI 0.128+
-- Gemini CLI 0.1+
+- Claude Code CLI 2.0+
 
 ---
 
@@ -94,9 +92,9 @@ Latest releases: [GitHub Releases](https://github.com/joseikininsight-hue/sales-
 | OS | Windows 10 / 11, macOS 13+, Ubuntu 22.04+ | Windows 11 |
 | RAM | 4 GB | 8 GB |
 | Disk | 1 GB free | 2 GB free |
-| Network | Outbound HTTPS to AI provider + GitHub | Same |
+| Network | Outbound HTTPS to Anthropic + GitHub | Same |
 | **Node.js** | 20+ *(only for development from source)* | 20 LTS |
-| **AI CLI** | One of Claude / Codex / Gemini | Claude Code CLI 2.0+ |
+| **AI CLI** | Claude Code CLI 2.0+ | Latest Claude Code CLI |
 
 The packaged Electron installers bundle their own Node runtime — end users
 do **not** need to install Node.js.
@@ -136,8 +134,8 @@ through 5 steps:
 3. **Strengths** — pick 1–2 from 8 presets (or add custom). These drive
    the gap-analysis prompt that personalizes each message.
 4. **Target list** — drop in an Excel/CSV; skippable.
-5. **AI integration** — verify at least one of Claude / Codex / Gemini is
-   installed and authenticated.
+5. **AI integration** — verify the Claude Code CLI is installed and
+   authenticated.
 
 A `_onboardedAt` timestamp is written to `data/settings.json`; subsequent
 launches go straight to the dashboard. Re-run anytime via
@@ -146,7 +144,7 @@ launches go straight to the dashboard. Re-run anytime via
 ### 4. Trigger an AI form-fill run
 
 On the **Companies** tab, select one or more targets and click
-**AI Form Fill**. Sales Claw spawns a managed Claude / Codex / Gemini PTY
+**AI Form Fill**. Sales Claw spawns a managed Claude Code PTY
 that:
 
 - **Phase A** (parallel, no browser): analyzes each company's website,
@@ -190,7 +188,7 @@ To add a new locale, follow the Phase 2 Locale Pack pattern under
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│        Claude / Codex / Gemini CLI (managed PTY)         │
+│             Claude Code CLI (managed PTY)                │
 │  Phase A: parallel analysis · Phase B: form-fill driver  │
 └─────────────┬─────────────────────────────┬──────────────┘
               │                             │
@@ -293,12 +291,12 @@ These are not a substitute for legal review. **Use at your own risk.**
 - [FAQ.md](./FAQ.md) — Frequently asked questions *(in preparation)*
 - [SUPPORT.md](./SUPPORT.md) — How to get help / report bugs
 - [PRIVACY.md](./PRIVACY.md) — What data Sales Claw stores locally and
-  what it sends to AI providers
+  what it sends to the AI provider (Anthropic)
 
 ### For AI agents and developers
 
-- [CLAUDE.md](./CLAUDE.md) — The operating contract the Claude / Codex /
-  Gemini CLI reads as its system prompt (English)
+- [CLAUDE.md](./CLAUDE.md) — The operating contract the Claude Code CLI
+  reads as its system prompt (English)
 - [AGENTS.md](./AGENTS.md) — Agent orchestration rules
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — Coding style, PR flow, test
   requirements

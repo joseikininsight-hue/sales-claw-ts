@@ -3,7 +3,7 @@
 /**
  * CLI Agent Discovery
  *
- * 既存の Claude Code / Codex / Gemini CLI を headless モードで起動し、
+ * 既存の Claude Code CLI を headless モードで起動し、
  * "公開情報から企業候補を JSON で返してもらう" 役割を持つ。
  *
  * 既存の自然言語/カテゴリモードが要求する SerpApi / 法人番号 API キーを

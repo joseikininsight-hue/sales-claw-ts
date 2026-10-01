@@ -4,8 +4,8 @@
 
 このガイドは「インストーラをダウンロードした」状態から「最初のメッセージが
 人間の承認待ちに乗る」状態まで、約 15 分で到達するための手順です。
-Windows / macOS / Linux すべてのプラットフォーム、Claude Code / Codex /
-Gemini すべての AI CLI に対応しています。
+Windows / macOS / Linux すべてのプラットフォームと、Sales Claw が駆動する
+AI エンジンである Claude Code CLI のセットアップを扱います。
 
 すでに Node.js に慣れていてワンライナーだけ知りたい方は
 [5. 初回送信 (5 分)](#5-初回送信-5-分) まで飛ばしてください。
@@ -17,7 +17,7 @@ Gemini すべての AI CLI に対応しています。
 1. [動作環境](#1-動作環境)
 2. [インストール](#2-インストール)
 3. [初回起動](#3-初回起動)
-4. [AI プロバイダのセットアップ](#4-ai-プロバイダのセットアップ)
+4. [Claude Code CLI のセットアップ](#4-claude-code-cli-のセットアップ)
 5. [初回送信 (5 分)](#5-初回送信-5-分)
 6. [バイリンガル設定 (v2.0.37+)](#6-バイリンガル設定-v2037)
 7. [自動アップデート](#7-自動アップデート)
@@ -44,13 +44,10 @@ Gemini すべての AI CLI に対応しています。
 | コンポーネント | 必要なケース | 最低バージョン |
 |----|----|----|
 | **Node.js** | ソースビルド時のみ (インストーラには同梱済み) | 20.0.0 |
-| **Claude Code CLI** | デフォルトの AI ドライバ | 2.0.0 |
-| **Codex CLI** | 代替 AI ドライバ | 0.128.0 (gpt-5.5 対応) |
-| **Gemini CLI** | 代替 AI ドライバ | 0.5.0 |
+| **Claude Code CLI** | AI ドライバ (必須) | 2.0.0 |
 | **Git** | ソースビルド + `npm run preflight` | 2.30+ |
 
-3 つの CLI のうち **どれか 1 つ** だけで動作します。Claude Code がデフォルト
-かつ最も検証されています。
+対応している AI ドライバは **Claude Code CLI** のみです。
 
 ### ブラウザ
 
@@ -227,11 +224,11 @@ http://127.0.0.1:3765/onboarding?fresh=1   # 進捗をクリアして 1 から
   `data/sample-targets.csv` と同じ)
 - スキップしてダッシュボードから後で手動追加
 
-#### ステップ 5: AI プロバイダ
+#### ステップ 5: AI 連携
 
-Claude / Codex / Gemini から **1 つ** を選択。ウィザードが CLI の
-インストール状況とログイン状況をチェックし、未設定なら修復コマンドを
-表示します。プロバイダ別の詳細は [4. AI プロバイダのセットアップ](#4-ai-プロバイダのセットアップ)
+ウィザードが Claude Code CLI のインストール状況とログイン状況をチェックし、
+未設定なら修復コマンドを表示します。詳細は
+[4. Claude Code CLI のセットアップ](#4-claude-code-cli-のセットアップ)
 を参照してください。
 
 5 ステップが完了すると `data/settings.json` に
@@ -254,14 +251,16 @@ JSON を編集する場合は自己責任で (次回起動時にバリデーシ�
 
 ---
 
-## 4. AI プロバイダのセットアップ
+## 4. Claude Code CLI のセットアップ
 
-オンボーディングのステップ 5 で選択したプロバイダだけ設定すれば OK です。
-**Settings → AI provider** から後で切り替えも可能です。
+Sales Claw は Claude Code CLI を駆動して、企業分析・メッセージ生成・
+フォーム入力を行います。セットアップ状況はオンボーディングのステップ 5 で
+自動チェックされます。
 
-### 4.1 Claude Code CLI (推奨)
+> `aiProvider` 設定は常に `"claude"` です。旧バージョンの設定値
+> (`"codex"` / `"gemini"`) は `"claude"` として扱われます。
 
-#### インストール
+### 4.1 インストール
 
 ```bash
 # npm でグローバルインストール
@@ -275,7 +274,7 @@ claude --version
 最低サポートバージョン: **2.0.0** (それより古いバージョンには Windows の
 `cmd.exe` クォーティングバグがあります。CLAUDE.md → Known traps 参照)。
 
-#### ログイン
+### 4.2 ログイン
 
 2 つの方法:
 
@@ -314,7 +313,7 @@ claude auth status --json
 # → { "loggedIn": true, "account": "your@email", ... }
 ```
 
-#### MCP Playwright
+### 4.3 MCP Playwright
 
 Sales Claw が CLI から実ブラウザを操作するため、Playwright MCP サーバーを
 登録する必要があります。**Sales Claw が初回起動時に自動登録** します:
@@ -344,7 +343,7 @@ claude mcp list
 バージョンです。
 [TROUBLESHOOTING.md → Category 1](../../TROUBLESHOOTING.md) を参照してください。
 
-#### Claude Code のトラブルシューティング
+### 4.4 トラブルシューティング
 
 | 症状 | 対処 |
 |----|----|
@@ -352,115 +351,6 @@ claude mcp list
 | `claude: command not found` (npm i -g 後) | npm のグローバル bin を `$PATH` に追加: `npm config get prefix` |
 | ログインのブラウザが開かない | `claude --print-login-url` で URL を取得し手動で開く |
 | `auto mode unavailable for this model` | `bypassPermissions` 経由で起動 (CLAUDE.md → Workflow Step 0 参照) |
-
-### 4.2 Codex CLI
-
-#### インストール
-
-```bash
-npm install -g @openai/codex
-
-# バージョン確認
-codex --version
-# → codex 0.128.x 以降
-```
-
-最低サポートバージョン: **0.128.0** (Sales Claw の Phase A.5 メッセージ
-生成には gpt-5.5 モデルサポートが必要)。
-
-#### ログイン
-
-Codex は API キー認証のみ (現状 OAuth サブスクリプションモードは未対応):
-
-```bash
-# Linux / macOS
-export OPENAI_API_KEY=sk-...
-
-# Windows (PowerShell, 永続化)
-setx OPENAI_API_KEY "sk-..."
-```
-
-Sales Claw のダッシュボードからキーを入力することもできます:
-**Settings → AI provider → Codex → API key**。値は `settings.json` ではなく
-OS のキーリング (Windows 資格情報マネージャ / macOS キーチェーン / Linux の
-libsecret) に保存されます。
-
-#### MCP Playwright
-
-Sales Claw が初回起動時に自動登録します:
-
-```bash
-codex mcp add playwright -- node /path/to/playwright-mcp-wrapper.cjs
-```
-
-確認:
-
-```bash
-codex mcp list
-# → playwright: connected
-```
-
-#### Sales Claw からの動作確認
-
-```bash
-# Codex が正しく接続されているか確認
-codex exec -m gpt-5.5 -s workspace-write "echo hello"
-```
-
-`hello` と出力されれば、Sales Claw から Codex を駆動できる状態です。
-
-### 4.3 Gemini CLI
-
-#### インストール
-
-```bash
-npm install -g @google/gemini-cli
-
-# バージョン確認
-gemini --version
-# → gemini-cli 0.5.x
-```
-
-#### ログイン
-
-2 つの方法:
-
-**オプション A — Google アカウント OAuth (推奨):**
-
-```bash
-gemini auth login
-# ブラウザで Google ログイン画面が開きます
-```
-
-**オプション B — API キー:**
-
-```bash
-# Linux / macOS
-export GEMINI_API_KEY=...
-
-# Windows (PowerShell, 永続化)
-setx GEMINI_API_KEY "..."
-```
-
-確認:
-
-```bash
-gemini auth status
-# → Authenticated as your@gmail.com
-```
-
-#### MCP Playwright
-
-Sales Claw が自動登録します:
-
-```bash
-gemini mcp add playwright -- node /path/to/playwright-mcp-wrapper.cjs
-```
-
-`gemini mcp list` で確認してください。
-
-> Gemini の MCP サポートは Claude / Codex に比べて新しいので、不安定なら
-> Claude Code にフォールバックしてください。
 
 困ったら [TROUBLESHOOTING.md](../../TROUBLESHOOTING.md) /
 [FAQ.md](../../FAQ.md) / [SUPPORT.md](../../SUPPORT.md) を参照してください。
@@ -673,13 +563,11 @@ cd ..
 rm -rf sales-claw-ts  # リポジトリ自体を削除
 ```
 
-CLI プロバイダ (Claude / Codex / Gemini) と MCP 登録は、Sales Claw とは
-独立しているため **そのまま残ります**。必要なら個別に削除してください:
+Claude Code CLI と MCP 登録は、Sales Claw とは独立しているため
+**そのまま残ります**。必要なら個別に削除してください:
 
 ```bash
 npm uninstall -g @anthropic-ai/claude-code
-npm uninstall -g @openai/codex
-npm uninstall -g @google/gemini-cli
 ```
 
 困ったら [TROUBLESHOOTING.md](../../TROUBLESHOOTING.md) /

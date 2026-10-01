@@ -177,8 +177,8 @@ function renderListBuilderPage({ sessionToken, lang }: { sessionToken?: string; 
 <div class="panel" id="tab-cli">
   <div style="background:#0a3a5c;color:#cce4ff;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;line-height:1.5;">
     💡 ${T(
-      '<strong>起動中の Claude / Codex / Gemini CLI</strong> に企業を探してもらいます。SerpApi や法人番号 API のキーは不要。CLI が公開情報をもとに JSON で返します。実行前に「AI を起動」で CLI を起動しておいてください。',
-      'Ask the <strong>running Claude / Codex / Gemini CLI</strong> to find companies. No SerpApi or Houjin-Bangou API key needed — the CLI returns JSON based on public information. Launch the CLI via "Launch AI" before running.'
+      '<strong>起動中の Claude Code CLI</strong> に企業を探してもらいます。SerpApi や法人番号 API のキーは不要。CLI が公開情報をもとに JSON で返します。実行前に「AI を起動」で CLI を起動しておいてください。',
+      'Ask the <strong>running Claude Code CLI</strong> to find companies. No SerpApi or Houjin-Bangou API key needed — the CLI returns JSON based on public information. Launch the CLI via "Launch AI" before running.'
     )}
   </div>
   <label>${T('探したい企業の条件（自由文）', 'Free-text criteria for the companies you want')}</label>
@@ -191,14 +191,6 @@ function renderListBuilderPage({ sessionToken, lang }: { sessionToken?: string; 
         <option value="30" selected>${T('30 社', '30 companies')}</option>
         <option value="50">${T('50 社', '50 companies')}</option>
         <option value="100">${T('100 社', '100 companies')}</option>
-      </select>
-    </div>
-    <div class="col">
-      <label>${T('使用する CLI', 'CLI to use')}</label>
-      <select id="cliProvider">
-        <option value="claude" selected>Claude Code</option>
-        <option value="codex">Codex</option>
-        <option value="gemini">Gemini</option>
       </select>
     </div>
   </div>
@@ -597,12 +589,12 @@ https://example.com/dx-companies"></textarea>
   });
 
   // === ボタンハンドラ ===
-  // CLI Agent モード — 起動中の Claude/Codex/Gemini に直接依頼
+  // CLI Agent モード — 起動中の Claude Code CLI に直接依頼
   document.getElementById('cliRunBtn').addEventListener('click', async () => {
     const query = document.getElementById('cliInput').value.trim();
     if (!query) { alert(L('条件を入力してください', 'Please enter criteria')); return; }
     const limit = parseInt(document.getElementById('cliLimit').value, 10) || 30;
-    const provider = document.getElementById('cliProvider').value || 'claude';
+    const provider = 'claude';
     document.getElementById('progressPanel').classList.remove('hidden');
     document.getElementById('previewPanel').classList.add('hidden');
     document.getElementById('progressStage').textContent = provider + L(' CLI に依頼を送っています…', ' CLI: sending request…');

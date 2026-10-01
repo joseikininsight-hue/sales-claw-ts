@@ -42,13 +42,13 @@ In scope:
 - The Electron desktop app itself (`Sales Claw.exe` / `.dmg` / `.AppImage`)
 - The local dashboard server (`http://127.0.0.1:3765` / configured port)
 - Form-fill automation via MCP Playwright
-- AI runtime spawn handling (`claude -p` / `codex` / `gemini`)
+- AI runtime spawn handling (`claude` / `claude -p`)
 - Settings / credential file storage (`%APPDATA%/sales-claw/` etc.)
 - Auto-updater (`electron-updater` integration with GitHub Releases)
 - Dependency vulnerabilities that affect Sales Claw's runtime
 
 Out of scope:
-- Vulnerabilities in upstream tools (`claude` CLI, `codex` CLI, etc.) — report to those projects
+- Vulnerabilities in upstream tools (`claude` CLI, MCP servers, etc.) — report to those projects
 - Issues that require physical access to the user's machine
 - Brute-force / DoS against the local-only dashboard port (it doesn't bind to 0.0.0.0 by default)
 - Social engineering attacks
@@ -61,8 +61,8 @@ Sales Claw includes the following security defaults out of the box:
 2. **Dashboard session token** (`x-sales-claw-session` header) — random-generated per launch
 3. **Spawn env sanitization** — removes `ANTHROPIC_API_KEY` / `AWS_*` / `OPENAI_API_KEY` etc.
    from child processes by default (see `src/spawn-env-sanitizer.ts`)
-4. **Provider-home isolation** — Claude / Codex / Gemini credentials stored in
-   separate `provider-homes/<id>/` directories, not the user's `~/.claude`
+4. **Provider-home isolation** — Claude Code credentials stored in a
+   separate `provider-homes/claude/` directory, not the user's `~/.claude`
 5. **SSRF protection** — `parallel-analysis.ts::isSafeUrl` blocks private IPs,
    10進数/16進数 IPs, and `localhost` URLs
 6. **Path traversal protection** — file paths are resolved and validated

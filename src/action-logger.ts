@@ -370,6 +370,16 @@ export function getAllLogs(): ActionLogEntry[] {
   return cloneValue(loadLog());
 }
 
+/**
+ * 読み取り専用の全ログ参照 (structuredClone しない)。
+ * バッチ poller (2 秒毎) など頻繁に呼ばれ、かつ絶対に entry を書き換えない
+ * 呼び出し元専用。ログが数千件・数 MB になると毎回の deep copy が UI のカクつきに
+ * 直結していた。返り値を変更してはいけない。
+ */
+export function getAllLogsReadonly(): ReadonlyArray<ActionLogEntry> {
+  return loadLog();
+}
+
 /** 各企業の最新アクション 1 件ずつを返す。 */
 export function getLatestActions(): ActionLogEntry[] {
   const sqlite = getSqliteAdapter();
@@ -428,6 +438,7 @@ module.exports = {
   logAction,
   getCompanyLog,
   getAllLogs,
+  getAllLogsReadonly,
   getLatestActions,
   removeCompanyLogs,
   _test: {

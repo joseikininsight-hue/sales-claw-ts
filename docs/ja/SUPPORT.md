@@ -55,7 +55,7 @@ A: Windows code signing 未対応のため (詳細: [ROADMAP.md](../../ROADMAP.m
 ### Q: 自動更新が来ません
 A: 起動 5 秒後 + 6 時間ごとに GitHub Releases の `latest.yml` を polling します。Firewall で `api.github.com` がブロックされていないか確認してください。
 
-### Q: AI CLI (Claude/Codex/Gemini) のインストール先は？
+### Q: AI CLI (Claude Code) のインストール先は？
 A: Sales Claw とは別途、`npm install -g @anthropic-ai/claude-code` 等で別途インストールが必要です。詳細は [README.md](../../README.md) を参照。
 
 ### Q: ライセンス料・利用料はかかりますか？

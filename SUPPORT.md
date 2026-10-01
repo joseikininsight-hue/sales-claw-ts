@@ -61,7 +61,7 @@ A: The app polls GitHub Releases' `latest.yml` 5 seconds after launch and
 every 6 hours thereafter. Make sure your firewall isn't blocking
 `api.github.com`.
 
-### Q: Where do I install the AI CLI (Claude / Codex / Gemini)?
+### Q: Where do I install the AI CLI (Claude Code)?
 A: Separately from Sales Claw — for example
 `npm install -g @anthropic-ai/claude-code`. See [README.md](./README.md) for
 details.

@@ -53,8 +53,7 @@ describe('dashboard performance guards', () => {
     assert.match(serverSource, /getProviderVersionWarning/, 'old CLI versions should be detected before launch');
     assert.match(serverSource, /cliTooOld:\s*!!versionWarning/, 'AI status should expose old CLI warnings');
     assert.match(serverSource, /versionWarning:\s*cliStatus\.versionWarning/, 'setup diagnostics should expose old CLI warnings');
-    assert.match(serverSource, /normalizedProviderId === 'gemini' \? \['--debug', 'mcp', 'list'\]/, 'Gemini MCP list needs --debug to print configured servers');
-    assert.match(serverSource, /addArgs = \['--debug', 'mcp', 'add', 'playwright'/, 'Gemini MCP add should use the debuggable command path');
+    assert.match(serverSource, /const removeArgs = \['mcp', 'remove', '--scope', 'user', 'playwright'\]/, 'Claude MCP remove must target the user scope or the re-add fails');
     assert.match(routeSource, /getManagedAiProvider/, 'stop-ai should report the active managed provider');
     assert.match(routeSource, /managedPty && typeof getManagedAiProvider === 'function'/, 'stop-ai should prefer the active PTY provider over selected settings');
   });
@@ -85,15 +84,17 @@ describe('dashboard performance guards', () => {
       ['--permission-mode', 'auto', '--model', 'claude-sonnet-4-6', '--session-id', 'session-1'],
       'Claude should receive the configured model with --model',
     );
+  });
+
+  it('treats removed providers (codex / gemini) as Claude', () => {
+    const { normalizeProviderId, listProviders, buildLaunchArgs } = require('../dist-ts/src/ai-providers');
+    assert.deepEqual(listProviders().map((p) => p.id), ['claude'], 'only Claude Code CLI is supported');
+    assert.equal(normalizeProviderId('codex'), 'claude');
+    assert.equal(normalizeProviderId('gemini'), 'claude');
     assert.deepEqual(
-      buildLaunchArgs('codex', 'auto', { model: 'gpt-5-codex' }),
-      ['-a', 'never', '-s', 'danger-full-access', '-m', 'gpt-5-codex'],
-      'Codex should receive the configured model with -m',
-    );
-    assert.deepEqual(
-      buildLaunchArgs('gemini', 'auto', { model: 'gemini-2.5-pro' }),
-      ['--approval-mode', 'auto_edit', '-m', 'gemini-2.5-pro'],
-      'Gemini should receive the configured model with -m',
+      buildLaunchArgs('codex', 'auto', { model: 'claude-sonnet-4-6' }),
+      ['--permission-mode', 'auto', '--model', 'claude-sonnet-4-6'],
+      'legacy provider ids must launch the Claude CLI flags',
     );
   });
 

@@ -40,7 +40,6 @@ const { getLiveMonitorSummary } = require('../live-monitor');
  * @param {function} ctx.getManagedAiAutoSendSafe - () → boolean
  * @param {function} ctx.getManagedAiReservedCompanyNos - () → Set<number>
  * @param {function} ctx.cleanupStaleManagedAiMonitorEvents - (thresholdMs) → void
- * @param {function} ctx.getActiveHeadlessRun - () → run | null
  *
  * @param {function} ctx.getManagedAiBatchController - () → managedAiBatchController | null
  * @param {function} ctx.setManagedAiBatchActive - (value) → void (managedAiBatchController.activeBatch = value と同等)
@@ -65,7 +64,6 @@ module.exports = function createAiFormFillRoutes(ctx) {
     getManagedAiAutoSendSafe,
     getManagedAiReservedCompanyNos,
     cleanupStaleManagedAiMonitorEvents,
-    getActiveHeadlessRun,
     getManagedAiBatchController,
     setManagedAiBatchActive,
     clearManagedAiBatchPending,
@@ -76,25 +74,14 @@ module.exports = function createAiFormFillRoutes(ctx) {
   /**
    * provider 解決の優先順位 (active session first):
    *   1. 現在 PTY が走っている provider (= getManagedAiProvider)
-   *   2. headless run の provider
-   *   3. 明示指定された data.provider
-   *   4. settings 上の選択 (= getSelectedAiProvider)
-   *
-   * ユーザーの mental model は「いま動いてる AI に投げる」。launcher で
-   * Codex を起動したのに settings 既定が Claude のままだと、UI が
-   * `provider: 'claude'` を送って ensureClaudeAutomationReady で
-   * 「現在の管理セッションは Codex です」というエラーになる。
-   * 実 PTY を最優先にすることでこの ergonomic mismatch を吸収する。
-   * 明示指定 (explicitProvider) は PTY が無い時のフォールバックに退ける。
+   *   2. 明示指定された data.provider
+   *   3. settings 上の選択 (= getSelectedAiProvider)
+   * Claude Code のみサポートのため、いずれも最終的に 'claude' へ正規化される。
    */
   function resolveActiveProvider(explicitProvider) {
     const activePty = getClaudePty && getClaudePty();
     if (activePty && typeof getManagedAiProvider === 'function') {
       return normalizeProviderId(getManagedAiProvider());
-    }
-    const headless = getActiveHeadlessRun && getActiveHeadlessRun();
-    if (headless && headless.provider) {
-      return normalizeProviderId(headless.provider);
     }
     if (explicitProvider) return normalizeProviderId(explicitProvider);
     return normalizeProviderId(getSelectedAiProvider());
@@ -102,8 +89,21 @@ module.exports = function createAiFormFillRoutes(ctx) {
 
   // POST /api/ai-form-fill — queue work into the selected AI automation runtime
   async function handleAiFormFill(req, res) {
+    let data: any;
     try {
-      const data: any = await parseJsonBody(req);
+      data = await parseJsonBody(req);
+    } catch (e) {
+      jsonResponse(res, 400, { ok: false, error: e.message });
+      return;
+    }
+    await runAiFormFill(data, res);
+  }
+
+  // Phase A → Phase B キュー投入の本体。/api/error/retry からも同じ経路で呼ぶ
+  // (Phase A を飛ばすと siteExcerpt / messagePrompt が空のまま CLI に渡り、
+  //  プロンプト規約で error に落ちるため)。
+  async function runAiFormFill(data: any, res) {
+    try {
       const companyNos = Array.isArray(data && data.companyNos) ? data.companyNos : [];
       const providerId = resolveActiveProvider(data && data.provider);
       if (companyNos.length === 0) {
@@ -140,7 +140,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const claudePty = getClaudePty();
       const managedAiRecoveryTimer = getManagedAiRecoveryTimer();
       const managedAiBatchController = getManagedAiBatchController();
-      const ptyActuallyRunning = !!(claudePty || getActiveHeadlessRun());
+      const ptyActuallyRunning = !!claudePty;
       if (!ptyActuallyRunning) {
         // PTYが停止中かつリカバリタイマーもない → activeBatch + pending は確実に古い。
         // v2.0.10: pending も一緒にドレインする。
@@ -241,7 +241,18 @@ module.exports = function createAiFormFillRoutes(ctx) {
       const pipelineBuffer: any[] = [];
       const pipelinePhaseAByCompany = new Map<string, any>();
       let pipelineQueuedCount = 0;
+      let pipelineInFlight = 0;
       let pipelineQueueError: any = null;
+      // Phase B (CLI) が何も処理していない時は N 社溜まるのを待たずに即投入する。
+      //   旧: 常に parallelism 社 (既定 3) の Phase A 成功を待ってから最初のバッチを
+      //   送っていたため、CLI が数十秒〜数分アイドルになっていた。
+      function isPhaseBIdle() {
+        if (pipelineInFlight > 0) return false;
+        const controller = getManagedAiBatchController();
+        if (!controller) return true;
+        const pending = Array.isArray(controller.pending) ? controller.pending.length : 0;
+        return !controller.activeBatch && pending === 0;
+      }
       // v2.0.19: queueAiFormFill の呼び出しを Promise chain で **順次** 実行する。
       // 旧実装は Promise.resolve().then(...) で投げ放しだったため、Phase A の
       // onSuccess が連続発火すると enqueue 順序が逆転して controller.pending
@@ -253,6 +264,7 @@ module.exports = function createAiFormFillRoutes(ctx) {
         const batch = pipelineBuffer.splice(0);
         const localMap = new Map(batch.map((c: any) => [String(c.no), pipelinePhaseAByCompany.get(String(c.no))]));
         pipelineQueuedCount += batch.length;
+        pipelineInFlight += 1;
         appendDiagnosticEvent('phase_a_pipeline_flush', {
           provider: providerId,
           reason,
@@ -266,7 +278,8 @@ module.exports = function createAiFormFillRoutes(ctx) {
           phaseAByCompany: localMap,
           phaseASuccesses: batch.map((c: any) => c.phaseA),
           phaseAFailures: [],
-        })).catch((err: any) => {
+        })).then(() => { pipelineInFlight -= 1; }, (err: any) => {
+          pipelineInFlight -= 1;
           pipelineQueueError = err;
           appendDiagnosticEvent('phase_a_pipeline_enqueue_failed', {
             provider: providerId,
@@ -301,6 +314,8 @@ module.exports = function createAiFormFillRoutes(ctx) {
           pipelineBuffer.push(enriched);
           if (pipelineBuffer.length >= pipelineFlushSize) {
             pipelineEnqueueBuffer('buffer-full');
+          } else if (isPhaseBIdle()) {
+            pipelineEnqueueBuffer('phase-b-idle');
           }
         },
       } : {};
@@ -406,12 +421,21 @@ module.exports = function createAiFormFillRoutes(ctx) {
         ...result,
         phaseA: {
           successCount: phaseA.successes.length,
+          skippedCount: phaseASkipped.length,
           failureCount: phaseA.failures.length,
           elapsedMs: phaseA.elapsedMs,
-          failures: phaseA.failures.map((entry: any) => ({
-            companyNo: entry.companyNo,
+          // 一部成功時もスキップ理由を返す (旧: 全件失敗時しか返さず、
+          //   営業お断り / URL 未設定 で落ちた社がオペレーターに見えなかった)
+          skipped: phaseASkipped.map((entry: any) => ({
+            companyNo: entry.no,
             companyName: entry.companyName,
-            error: entry.error,
+            reason: entry.reason,
+            skipKind: entry.skipKind || null,
+          })),
+          failures: phaseA.failures.map((entry: any) => ({
+            companyNo: entry && entry.companyNo,
+            companyName: entry && entry.companyName,
+            error: entry && entry.error,
           })),
         },
       });
@@ -430,11 +454,12 @@ module.exports = function createAiFormFillRoutes(ctx) {
    * @param {string} pathname - URL.pathname (? 以降削除済み)
    * @returns {Promise<boolean>}
    */
-  return async function dispatch(req, res, pathname) {
+  async function dispatch(req, res, pathname) {
     if (pathname === '/api/ai-form-fill' && req.method === 'POST') {
       await handleAiFormFill(req, res);
       return true;
     }
     return false;
-  };
+  }
+  return Object.assign(dispatch, { runWithBody: runAiFormFill });
 };

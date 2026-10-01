@@ -40,7 +40,7 @@ spawn する設計のため、ユーザーのシェル env に上記が残って
 
 ### 1. spawn env の自動サニタイズ
 
-すべての `claude / codex / gemini` CLI 起動経路で、課金リーク env を
+すべての `claude` CLI 起動経路で、課金リーク env を
 **spawn options.env から削除** する `spawn-env-sanitizer.ts` を導入。
 
 | ファイル | 修正内容 |
@@ -79,12 +79,12 @@ GOOGLE_APPLICATION_CREDENTIALS
 GOOGLE_CLOUD_PROJECT
 GCLOUD_PROJECT
 
-# Codex / OpenAI
+# OpenAI (他社 AI の API キー — 念のため子プロセスに渡さない)
 OPENAI_API_KEY
 OPENAI_BASE_URL
 OPENAI_ORG_ID
 
-# Gemini
+# Google AI (他社 AI の API キー — 同上)
 GEMINI_API_KEY
 GOOGLE_API_KEY
 ```

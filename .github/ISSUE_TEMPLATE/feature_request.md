@@ -20,7 +20,7 @@ assignees: ''
 - [ ] ダッシュボード UI
 - [ ] フォーム入力ワークフロー
 - [ ] 企業リスト発見 (List Builder)
-- [ ] AI プロバイダ統合 (Claude / Codex / Gemini)
+- [ ] AI 連携 (Claude Code CLI)
 - [ ] 設定 / オンボーディング
 - [ ] ビルド / リリース / 自動更新
 - [ ] その他: 
